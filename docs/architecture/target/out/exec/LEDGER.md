@@ -32046,12 +32046,23 @@ OWNER:       campaign 15.
                  Src hunks of the re-exported diff match that patch
                  byte for byte. Amendment A records the composed
                  manifest fingerprint.
+                 Amendment B at
+                 e36455eda6d5ee7f7fd420a94e0825128383cb00, committed
+                 before the catch-up order fix
+                 (bb241d1d3d91da14f5fd212a8b262b0bd7ce68f3). Patch
+                 5c59f5b7113929b90fde326a645db374435fdf37c76653504d265f87796b52b7.
+                 The committed src diff matches that patch byte for
+                 byte. The two order tests are
+                 a8af6905a9793dcb81208c1e08c989008d64f0f4, red on
+                 9c79a934bf864d28e37c9cbff7a53984773e938e.
   MECHANISM:     On a symbol's first own event after a boundary, its
                  regime, point and window state is captured before
                  that event is applied. Boundaries are emitted in the
                  normal horizon-check step with content as of the
                  boundary time. Every boundary skipped by a real
-                 market event is emitted in order. Held-signal expiry
+                 market event is emitted in order: boundary time
+                 ascending, then horizon, scope, and symbol.
+                 Held-signal expiry
                  reads the boundary-time field. Window statistics use
                  one reduction. No flush occurs without a market
                  event. Pipeline order, micro-state sequence and all
@@ -32106,7 +32117,8 @@ OWNER:       campaign 15.
                  I1/I2/I3 empty. PENDING empty. Ratchet 14.
                  Wiring manifest and composition-root allowlist
                  unchanged.
-  DECISIONS:     D-182, D-183, D-184, D-185, as written in decisions.md.
+  DECISIONS:     D-182, D-183, D-184, D-185, D-186, D-187, as written
+                 in decisions.md.
   FINDINGS:      F-P23f-7 and F-P23f-8 closed by this rung.
                  F-P23c-k closed by this rung.
                  F-P23g-8: windowed features were computed on a window
@@ -32131,6 +32143,11 @@ OWNER:       campaign 15.
                  F-P23g-2: a session-close flush needs an explicit
                  session-close event injected only for a complete
                  session. Deferred with the timer design.
+                 F-P23g-18: Amendment A was written without a stop.
+                 F-P23g-19: catch-up scope order, found by review.
+                 Closed by D-186.
+                 F-P23g-20: Bugbot status reported as skipping before
+                 the review completed.
                  Phase ensemble: oracle mean +0.28 [-37.11, +115.07];
                  eight-name mean -58.82 [-134.08, +19.43]. Robustness
                  concern. Status of the alpha on this evidence:
@@ -32141,6 +32158,10 @@ OWNER:       campaign 15.
                  green. That matches the census prediction. The seven
                  red node ids are the ADDED list in E0 except the tie
                  test.
+                 On 9c79a934, before the catch-up order fix,
+                 test_catchup_orders_all_scopes_by_boundary_time and
+                 test_universe_context_uses_only_same_boundary_snapshots
+                 were red.
   CAPTURE:       baseline_pre-P-23g.json at
                  3c6ccbe620bcdada46d06657d65c39b210c57746 (5284 passed,
                  0 failed, 44 skipped, 3 xfailed; determinism 148;

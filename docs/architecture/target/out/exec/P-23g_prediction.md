@@ -118,3 +118,7 @@ Predictions: every E0 prediction is unchanged. No pin moves. The two new tests a
 
 - `tests/conformance/test_catchup_scope_order.py::test_catchup_orders_all_scopes_by_boundary_time`
 - `tests/conformance/test_catchup_scope_order.py::test_universe_context_uses_only_same_boundary_snapshots`
+
+## Amendment A evidence
+
+Reproduced from `LOCKED_PARITY_BASELINES` and `manifest_fingerprint` on this tree. Field additions only, with `level3_horizon_feature_snapshot` still locked at `251cc109c25a4c1124c3dab32b7168c09b6a9126f4092d977df08a740c59d04b`, hash to `4d3586adc75ce29e0d5c37cbcc44ea1ddd0d6401ddb390a944bb5a4b7a995ee2`. The same payload with that constant re-pinned to `f8824e5a288d64a3922c333a51416ce4b2db1251e6b2d8c815102fd81e6840ce` hashes to `3584bbafa3655ee336b1db04099b5a3c417dd8a0febfc967c69e3dc85a52ec32`.
