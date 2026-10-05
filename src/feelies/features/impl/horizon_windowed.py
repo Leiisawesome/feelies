@@ -252,26 +252,21 @@ class HorizonWindowedFeature:
         self._evict_before(state, asof_ns - self._window_ns)
         win: deque[tuple[int, float]] = state["win"]
         reducer = self._reducer
-
-        if any(ts > asof_ns for ts, _x in win):
-            live = [(ts, x) for ts, x in win if ts <= asof_ns]
-            n = len(live)
-            if n > 0:
-                mean = sum(x for _ts, x in live) / n
-                m2 = sum((x - mean) ** 2 for _ts, x in live)
-                latest = live[-1][1]
-                oldest = live[0][1]
-            else:
-                mean = 0.0
-                m2 = 0.0
-                latest = 0.0
-                oldest = 0.0
+        # One reduction for every boundary: the filtered two-pass moments.
+        # A frozen window and a window that still holds a later sample then
+        # return the same bits for the samples at or before as-of.
+        live = [(ts, x) for ts, x in win if ts <= asof_ns]
+        n = len(live)
+        if n > 0:
+            mean = sum(x for _ts, x in live) / n
+            m2 = sum((x - mean) ** 2 for _ts, x in live)
+            latest = live[-1][1]
+            oldest = live[0][1]
         else:
-            n = state["n"]
-            mean = state["mean"]
-            m2 = state["M2"]
-            latest = win[-1][1] if win else 0.0
-            oldest = win[0][1] if win else 0.0
+            mean = 0.0
+            m2 = 0.0
+            latest = 0.0
+            oldest = 0.0
 
         if n < self._min_samples or not win:
             # Percentile uses 0.5 (neutral prior) during warm-up, matching

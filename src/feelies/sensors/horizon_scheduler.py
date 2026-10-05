@@ -133,6 +133,7 @@ class HorizonScheduler:
         "_sequence_generator",
         "_last_boundary_symbol",
         "_last_boundary_universe",
+        "_captured_through",
         "_metric_collector",
         "_metrics_seq",
         "_auto_bind_anchor",
@@ -184,6 +185,7 @@ class HorizonScheduler:
         # subsequent events in the same window are no-ops.
         self._last_boundary_symbol: dict[tuple[int, str], int] = {}
         self._last_boundary_universe: dict[int, int] = {}
+        self._captured_through: dict[tuple[int, str], int] = {}
         # Count each emitted tick without perturbing the tick sequence.
         self._metric_collector = metric_collector
         self._metrics_seq: SequenceGenerator | None = (
@@ -198,6 +200,7 @@ class HorizonScheduler:
         self._session_open_locked = self._session_open_locked_init
         self._last_boundary_symbol.clear()
         self._last_boundary_universe.clear()
+        self._captured_through.clear()
         self._sequence_generator.reset()
         if self._metrics_seq is not None:
             self._metrics_seq.reset()
@@ -228,6 +231,28 @@ class HorizonScheduler:
         self._session_open_ns = ts_ns
         self._session_open_locked = True
 
+    def _bind_session_if_needed(self, timestamp_ns: int) -> None:
+        """Lock the session open before a claim or an emission.
+
+        The anchor rule matches the historical ``on_event`` bind. A session
+        that is already locked is left unchanged.
+        """
+        if self._session_open_locked:
+            return
+        if self._auto_bind_anchor is not None:
+            self._session_open_ns = self._auto_bind_anchor(timestamp_ns)
+        else:
+            self._session_open_ns = timestamp_ns
+        self._session_open_locked = True
+        _logger.info(
+            "HorizonScheduler.session_open_ns auto-bound to %d from "
+            "first-event timestamp %d (%s); production deployments "
+            "should set this from PlatformConfig",
+            self._session_open_ns,
+            timestamp_ns,
+            "RTH-open anchored" if self._auto_bind_anchor is not None else "raw first-event",
+        )
+
     def on_event(self, event: Event) -> tuple[HorizonTick, ...]:
         """Inspect ``event``; return any ticks crossed at its timestamp.
 
@@ -239,21 +264,7 @@ class HorizonScheduler:
         if not self._grid.horizons:
             return ()
 
-        if not self._session_open_locked:
-            if self._auto_bind_anchor is not None:
-                self._session_open_ns = self._auto_bind_anchor(event.timestamp_ns)
-            else:
-                self._session_open_ns = event.timestamp_ns
-            self._session_open_locked = True
-            _logger.info(
-                "HorizonScheduler.session_open_ns auto-bound to %d from "
-                "first-event timestamp %d (%s); production deployments "
-                "should set this from PlatformConfig",
-                self._session_open_ns,
-                event.timestamp_ns,
-                "RTH-open anchored" if self._auto_bind_anchor is not None else "raw first-event",
-            )
-
+        self._bind_session_if_needed(event.timestamp_ns)
         assert self._session_open_ns is not None
 
         ts = event.timestamp_ns
@@ -286,6 +297,40 @@ class HorizonScheduler:
 
         return tuple(emitted)
 
+    def claim_capture_keys(
+        self,
+        symbol: str,
+        timestamp_ns: int,
+    ) -> tuple[tuple[int, int, int], ...]:
+        """Boundaries strictly before *timestamp_ns* that *symbol* has not captured.
+
+        Does not emit. An unbound session is bound first, with the same rule as
+        ``on_event``, so boundary 0 is claimed before this event is applied.
+        """
+        self._bind_session_if_needed(timestamp_ns)
+        if (
+            not self._grid.horizons
+            or not self._session_open_locked
+            or self._session_open_ns is None
+        ):
+            return ()
+        if timestamp_ns <= self._session_open_ns:
+            return ()
+        open_ns = self._session_open_ns
+        claimed: list[tuple[int, int, int]] = []
+        for horizon in self._grid.horizons:
+            window_ns = horizon * _NS_PER_SECOND
+            last_strict = (timestamp_ns - open_ns - 1) // window_ns
+            if last_strict < 0:
+                continue
+            prev = self._captured_through.get((horizon, symbol), -1)
+            if last_strict <= prev:
+                continue
+            for index in range(prev + 1, last_strict + 1):
+                claimed.append((horizon, index, open_ns + index * window_ns))
+            self._captured_through[(horizon, symbol)] = last_strict
+        return tuple(claimed)
+
     # ── Internals ────────────────────────────────────────────────────
 
     def _emit_for_symbols(
@@ -298,18 +343,20 @@ class HorizonScheduler:
         for symbol in self._symbols_sorted:
             key = (horizon, symbol)
             last = self._last_boundary_symbol.get(key)
-            if last is not None and current_boundary <= last:
+            start = 0 if last is None else last + 1
+            if start > current_boundary:
                 continue
-            # On a late start, emit only the crossed boundary; empty prior buckets
-            # have no state worth backfilling.
+            # Every skipped index is emitted, in order, on the event that
+            # reaches it. There is no flush that a market event does not trigger.
             self._last_boundary_symbol[key] = current_boundary
-            yield self._make_tick(
-                horizon=horizon,
-                boundary_index=current_boundary,
-                ts_ns=ts_ns,
-                scope="SYMBOL",
-                symbol=symbol,
-            )
+            for boundary_index in range(start, current_boundary + 1):
+                yield self._make_tick(
+                    horizon=horizon,
+                    boundary_index=boundary_index,
+                    ts_ns=ts_ns,
+                    scope="SYMBOL",
+                    symbol=symbol,
+                )
 
     def _emit_for_universe(
         self,
@@ -319,17 +366,18 @@ class HorizonScheduler:
         ts_ns: int,
     ) -> Iterable[HorizonTick]:
         last = self._last_boundary_universe.get(horizon)
-        if last is not None and current_boundary <= last:
+        start = 0 if last is None else last + 1
+        if start > current_boundary:
             return
-        # Universe late-start behavior also skips empty prior boundaries.
         self._last_boundary_universe[horizon] = current_boundary
-        yield self._make_tick(
-            horizon=horizon,
-            boundary_index=current_boundary,
-            ts_ns=ts_ns,
-            scope="UNIVERSE",
-            symbol=None,
-        )
+        for boundary_index in range(start, current_boundary + 1):
+            yield self._make_tick(
+                horizon=horizon,
+                boundary_index=boundary_index,
+                ts_ns=ts_ns,
+                scope="UNIVERSE",
+                symbol=None,
+            )
 
     def _make_tick(
         self,
