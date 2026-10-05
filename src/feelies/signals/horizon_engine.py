@@ -21,6 +21,7 @@ from feelies.core.events import (
     RegimeState,
     SafetyReason,
     SafetyStateChange,
+    BoundaryStateCapture,
     SensorReading,
     Signal,
     SignalDirection,
@@ -102,6 +103,7 @@ class HorizonSignalEngine:
         "_metrics_seq",
         "_safety_seq",
         "_last_boundary_index",
+        "_boundary_state",
     )
 
     def __init__(
@@ -112,6 +114,7 @@ class HorizonSignalEngine:
         clock: Any | None = None,
         regime_min_discriminability: float = 0.0,
         metric_collector: MetricCollector | None = None,
+        boundary_state: BoundaryStateCapture | None = None,
     ) -> None:
         self._bus = bus
         self._signal_seq = signal_sequence_generator
@@ -137,6 +140,7 @@ class HorizonSignalEngine:
         self._attached: bool = False
         # Observe duplicate or out-of-order boundaries without blocking dispatch.
         self._last_boundary_index: dict[tuple[str, str], int] = {}
+        self._boundary_state = boundary_state
 
     def reset(self) -> None:
         """Clear run caches; registrations and bus wiring stay."""
@@ -216,6 +220,12 @@ class HorizonSignalEngine:
     def _on_regime_state(self, event: RegimeState) -> None:
         """Cache the latest ``RegimeState`` per ``(symbol, engine_name)``."""
         self._regime_cache[(event.symbol, event.engine_name)] = event
+
+    def regime_snapshot(self, symbol: str) -> dict[str, RegimeState]:
+        """Copy of the cached regime objects for *symbol*, keyed by engine."""
+        return {
+            engine: state for (sym, engine), state in self._regime_cache.items() if sym == symbol
+        }
 
     def _on_sensor_reading(self, event: SensorReading) -> None:
         """Cache warm scalar readings for boundary-safe gate bindings.
@@ -314,7 +324,12 @@ class HorizonSignalEngine:
                     is_stale,
                 )
 
-        regime = self._lookup_regime(snapshot.symbol, registered.gate)
+        regime = self._lookup_regime(
+            snapshot.symbol,
+            registered.gate,
+            snapshot.horizon_seconds,
+            snapshot.boundary_index,
+        )
         bindings = self._build_bindings(
             snapshot, regime, self._sensor_cache, self._regime_min_discriminability
         )
@@ -522,6 +537,7 @@ class HorizonSignalEngine:
                 sequence=self._signal_seq.next(),
                 source_layer="SIGNAL",
                 symbol=snapshot.symbol,
+                boundary_ts_ns=snapshot.boundary_ts_ns,
                 strategy_id=registered.alpha_id,
                 direction=SignalDirection.FLAT,
                 strength=0.0,
@@ -555,6 +571,7 @@ class HorizonSignalEngine:
                 timestamp_ns=snapshot.timestamp_ns,
                 correlation_id=snapshot.correlation_id,
                 sequence=self._safety_seq.next(),
+                boundary_ts_ns=snapshot.boundary_ts_ns,
                 source_layer="SIGNAL",
                 symbol=snapshot.symbol,
                 strategy_id=registered.alpha_id,
@@ -656,7 +673,13 @@ class HorizonSignalEngine:
 
     # ── Helpers ──────────────────────────────────────────────────────
 
-    def _lookup_regime(self, symbol: str, gate: RegimeGate) -> RegimeState | None:
+    def _lookup_regime(
+        self,
+        symbol: str,
+        gate: RegimeGate,
+        horizon_seconds: int = 0,
+        boundary_index: int = -1,
+    ) -> RegimeState | None:
         """Resolve the cached :class:`RegimeState` for *symbol*.
 
         Picks by ``gate.engine_name`` when declared; otherwise returns
@@ -667,7 +690,14 @@ class HorizonSignalEngine:
         deterministic rather than relying on dict insertion order and logs a
         warning so the ambiguity is visible
         in production (S9).
+
+        A boundary captured before this symbol's first later own event uses
+        that row. A boundary with no such event yet uses the live cache.
         """
+        if self._boundary_state is not None and boundary_index >= 0:
+            captured = self._boundary_state.regime_for(symbol, horizon_seconds, boundary_index)
+            if captured is not None:
+                return self._select_captured_regime(captured, symbol, gate)
         if gate.engine_name is not None:
             return self._regime_cache.get((symbol, gate.engine_name))
         # Multi-engine fallback — pick the most recently published
@@ -685,6 +715,34 @@ class HorizonSignalEngine:
                 best_engine = engine
         # Warn when fallback selection is ambiguous; operators
         # should always declare engine_name in multi-engine deployments.
+        if count > 1:
+            _logger.warning(
+                "HorizonSignalEngine: regime lookup for symbol %s found "
+                "%d engines (%r selected by latest timestamp); declare "
+                "engine_name in the alpha config to remove ambiguity",
+                symbol,
+                count,
+                best_engine,
+            )
+        return best
+
+    def _select_captured_regime(
+        self,
+        captured: Mapping[str, RegimeState],
+        symbol: str,
+        gate: RegimeGate,
+    ) -> RegimeState | None:
+        """Same selection rule as ``_lookup_regime``, over a pre-event copy."""
+        if gate.engine_name is not None:
+            return captured.get(gate.engine_name)
+        best: RegimeState | None = None
+        best_engine: str | None = None
+        count = 0
+        for engine, state in captured.items():
+            count += 1
+            if best is None or state.timestamp_ns > best.timestamp_ns:
+                best = state
+                best_engine = engine
         if count > 1:
             _logger.warning(
                 "HorizonSignalEngine: regime lookup for symbol %s found "
@@ -779,6 +837,7 @@ class HorizonSignalEngine:
             expected_half_life_seconds=registered.expected_half_life_seconds,
             disclosed_cost_total_bps=(registered.cost_arithmetic.cost_total_bps),
             disclosed_margin_ratio=(registered.cost_arithmetic.margin_ratio),
+            boundary_ts_ns=snapshot.boundary_ts_ns or raw.boundary_ts_ns,
         )
 
 

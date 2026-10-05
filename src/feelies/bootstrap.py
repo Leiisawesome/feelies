@@ -50,6 +50,7 @@ from feelies.core.config import ConfigSnapshot
 from feelies.core.events import (
     Alert,
     AlertSeverity,
+    BoundaryStateStore,
     Event,
     KillSwitchActivation,
     NBBOQuote,
@@ -601,11 +602,13 @@ def build_platform(
         metric_collector = InMemoryMetricCollector()
 
     # Create metrics first so sensor monitoring subscribes during composition.
+    boundary_state = BoundaryStateStore()
     sensor_registry, horizon_scheduler = _create_sensor_layer(
         config,
         bus,
         metric_collector=metric_collector,
         thread_safe_sequences=_seq_thread_safe,
+        boundary_state=boundary_state,
     )
     # The signal layer uses this list for dependency coverage checks.
     _built_horizon_features = _build_horizon_features(config)
@@ -620,6 +623,7 @@ def build_platform(
         regime_min_discriminability=config.regime_min_discriminability,
         metric_collector=metric_collector,
         thread_safe_sequences=_seq_thread_safe,
+        boundary_state=boundary_state,
     )
 
     # Subscribe composition after SIGNAL so synchronization observes updated caches.
@@ -800,6 +804,7 @@ def build_platform(
         position_manager_urgency_exec=config.position_manager_urgency_exec,
         net_shadow_portfolio_max_abs_qty=config.risk_max_position_per_symbol,
         mark_rail=mark_rail,
+        boundary_state=boundary_state,
     )
     _attach_notification_observer(bus, _NotificationObserver(alert_manager))
 
@@ -1369,6 +1374,7 @@ def _create_sensor_layer(
     *,
     metric_collector: InMemoryMetricCollector | None = None,
     thread_safe_sequences: bool = True,
+    boundary_state: BoundaryStateStore | None = None,
 ) -> tuple[SensorRegistry | None, HorizonScheduler | None]:
     """Compose and attach the sensor layer; return dispatch-facing components."""
     sensor_seq = SequenceGenerator(stream="sensor", thread_safe=thread_safe_sequences)
@@ -1476,6 +1482,7 @@ def _create_sensor_layer(
                 spec.sensor_id
                 for spec in (sensor_registry.specs if sensor_registry is not None else ())
             ),
+            boundary_state=boundary_state,
         )
         horizon_aggregator.attach()
         _mode_label = "active" if _active_features else "passive"
@@ -1531,6 +1538,7 @@ def _create_signal_layer(
     regime_min_discriminability: float = 0.0,
     metric_collector: InMemoryMetricCollector | None = None,
     thread_safe_sequences: bool = True,
+    boundary_state: BoundaryStateStore | None = None,
 ) -> HorizonSignalEngine | None:
     """Compose and attach the SIGNAL engine when SIGNAL alphas exist."""
     signal_seq = SequenceGenerator(stream="signal", thread_safe=thread_safe_sequences)
@@ -1571,6 +1579,7 @@ def _create_signal_layer(
         clock=clock,
         regime_min_discriminability=regime_min_discriminability,
         metric_collector=metric_collector,
+        boundary_state=boundary_state,
     )
     for module in signal_alphas:
         if not isinstance(module, LoadedSignalLayerModule):

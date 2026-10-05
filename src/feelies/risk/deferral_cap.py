@@ -65,6 +65,7 @@ from feelies.core.events import (
     SafetyStateChange,
     Side,
     Trade,
+    decision_time_ns,
 )
 from feelies.core.identifiers import SequenceGenerator, derive_order_id
 from feelies.core.position import Position
@@ -297,7 +298,7 @@ class DeferralCapController:
         existing = self._first_safe_off_ns.get(key)
         if existing is None:
             # First safe->OFF of a fresh anchor.
-            self._first_safe_off_ns[key] = (opened, event.timestamp_ns)
+            self._first_safe_off_ns[key] = (opened, decision_time_ns(event))
         elif existing[0] == opened:
             # Same open slice, already anchored — monotonic; do not re-anchor.
             pass
@@ -305,7 +306,7 @@ class DeferralCapController:
             # ``opened_at`` moved, so this is a different leg than the one the
             # stale anchor bound.  Normally a genuinely new episode
             # (flat->reopen), which must anchor to its own first safe->OFF.
-            self._first_safe_off_ns[key] = (opened, event.timestamp_ns)
+            self._first_safe_off_ns[key] = (opened, decision_time_ns(event))
 
     def _on_trade(self, trade: Trade) -> None:
         """Evaluate the ``min()`` deadline in event-time on ``Trade`` arrival.

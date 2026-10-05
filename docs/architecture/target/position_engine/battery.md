@@ -37,6 +37,8 @@ diff touching that path in a build rung is a STOP.
 
 ## Structural checks already in force (not battery members)
 
+- **Universe-independence (D-185).** A comparison of a symbol alone and in a wider universe is run with risk limits non-binding. A difference under the configured limits is attributed to the limit that binds.
+
 - **T7** (`tests/position_engine/test_p10_contract_surface.py`): the S15 runtime-subset check
   on an enabled build. T7 reuses S15's `_measure_phase4` by re-pointing that module's
   `build_platform`; if S15 stops exposing either, T7 must fail loudly, never pass vacuously.

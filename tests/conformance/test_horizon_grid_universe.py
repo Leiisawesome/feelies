@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import pytest
-
 from feelies.core.identifiers import SequenceGenerator
 from feelies.core.platform_config import PlatformConfig
 from feelies.core.session_clock import rth_open_ns
@@ -76,14 +74,6 @@ def test_p5_solo_boundaries_are_a_subset_of_the_wider_universe() -> None:
     assert not missing, f"solo-only boundaries {sorted(missing)}; share {share:.0%}"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "F-P23f-8: on a sparse tape a symbol run alone emits fewer boundaries "
-        "than in a wider universe. Next rung P-23g emits every boundary exactly "
-        "once, in order, with state as of the boundary time."
-    ),
-)
 def test_p5_boundary_sets_are_identical_alone_and_in_a_wider_universe() -> None:
     """BBB's boundary timestamps are the same set alone and in a wider universe."""
     alone_events, wider_events = _events(_open_ns())

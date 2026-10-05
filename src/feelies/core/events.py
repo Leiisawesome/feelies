@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum, auto
 from types import MappingProxyType
-from typing import Any, Literal
+from typing import Any, Literal, Protocol, runtime_checkable
 
 # Pinned-code-per-log rule. Log-level invalidation is event_schema_hash
 # (disk_event_cache._compute_schema_hash); this integer is the envelope pin.
@@ -194,6 +194,178 @@ class RegimeState(Event):
     discriminability: float = field(default=float("inf"), metadata={"unit": "1"})
 
 
+_BoundaryKey = tuple[str, int, int]
+_PointState = dict[tuple[str, int], dict[str, Any]]
+
+
+@runtime_checkable
+class BoundaryStateCapture(Protocol):
+    """Pre-event state for one symbol, keyed by the boundary it belongs to.
+
+    Callers use these methods. They do not assign the store's attributes.
+    """
+
+    def begin_event(
+        self,
+        symbol: str,
+        keys: tuple[tuple[int, int, int], ...],
+        regime_by_engine: Mapping[str, RegimeState],
+    ) -> None:
+        """Remember *regime_by_engine* for each not-yet-stored boundary key."""
+        ...
+
+    def needs_point_state(self, symbol: str) -> bool:
+        """True when *symbol*'s in-flight event still needs a feature copy."""
+        ...
+
+    def freeze_point_state(self, symbol: str, point_state: _PointState) -> None:
+        """Remember non-windowed feature state for the boundaries just begun."""
+        ...
+
+    def end_event(self) -> None:
+        """Drop the in-flight event. Stored boundary rows stay."""
+        ...
+
+    def regime_for(
+        self,
+        symbol: str,
+        horizon_seconds: int,
+        boundary_index: int,
+    ) -> Mapping[str, RegimeState] | None:
+        """Regime captured for this boundary, or None when none was stored."""
+        ...
+
+    def point_state_for(
+        self,
+        symbol: str,
+        horizon_seconds: int,
+        boundary_index: int,
+    ) -> _PointState | None:
+        """Non-windowed feature state for this boundary, or None."""
+        ...
+
+    def freeze_window_state(self, symbol: str, window_state: _PointState) -> None:
+        """Remember windowed feature state for the boundaries just begun."""
+        ...
+
+    def window_state_for(
+        self,
+        symbol: str,
+        horizon_seconds: int,
+        boundary_index: int,
+    ) -> _PointState | None:
+        """Windowed feature state for this boundary, or None."""
+        ...
+
+    def release_window(self, symbol: str, horizon_seconds: int, boundary_index: int) -> None:
+        """Drop one boundary's window copy after it has been finalized."""
+        ...
+
+
+class BoundaryStateStore:
+    """Capture taken immediately before a symbol's first own event after a boundary.
+
+    The row is reused whenever that boundary is later emitted. A boundary with
+    no own event after it yet is absent here; the caller uses current state.
+    """
+
+    __slots__ = ("_regime", "_point", "_window", "_pending_symbol", "_pending_keys")
+
+    def __init__(self) -> None:
+        self._regime: dict[_BoundaryKey, dict[str, RegimeState]] = {}
+        self._point: dict[_BoundaryKey, _PointState] = {}
+        self._window: dict[_BoundaryKey, _PointState] = {}
+        self._pending_symbol: str | None = None
+        self._pending_keys: tuple[tuple[int, int, int], ...] = ()
+
+    def begin_event(
+        self,
+        symbol: str,
+        keys: tuple[tuple[int, int, int], ...],
+        regime_by_engine: Mapping[str, RegimeState],
+    ) -> None:
+        self._pending_symbol = symbol
+        self._pending_keys = keys
+        regime = dict(regime_by_engine)
+        for horizon, index, _boundary_ts in keys:
+            key = (symbol, horizon, index)
+            if key not in self._regime:
+                self._regime[key] = regime
+
+    def needs_point_state(self, symbol: str) -> bool:
+        return symbol == self._pending_symbol and bool(self._pending_keys)
+
+    def freeze_point_state(self, symbol: str, point_state: _PointState) -> None:
+        if symbol != self._pending_symbol or not self._pending_keys:
+            return
+        for horizon, index, _boundary_ts in self._pending_keys:
+            key = (symbol, horizon, index)
+            if key not in self._point:
+                self._point[key] = point_state
+        self._pending_keys = ()
+
+    def end_event(self) -> None:
+        self._pending_symbol = None
+        self._pending_keys = ()
+
+    def regime_for(
+        self,
+        symbol: str,
+        horizon_seconds: int,
+        boundary_index: int,
+    ) -> Mapping[str, RegimeState] | None:
+        return self._regime.get((symbol, horizon_seconds, boundary_index))
+
+    def point_state_for(
+        self,
+        symbol: str,
+        horizon_seconds: int,
+        boundary_index: int,
+    ) -> _PointState | None:
+        return self._point.get((symbol, horizon_seconds, boundary_index))
+
+    def freeze_window_state(self, symbol: str, window_state: _PointState) -> None:
+        if symbol != self._pending_symbol or not self._pending_keys:
+            return
+        for horizon, index, _boundary_ts in self._pending_keys:
+            key = (symbol, horizon, index)
+            if key not in self._window:
+                self._window[key] = window_state
+
+    def window_state_for(
+        self,
+        symbol: str,
+        horizon_seconds: int,
+        boundary_index: int,
+    ) -> _PointState | None:
+        return self._window.get((symbol, horizon_seconds, boundary_index))
+
+    def release_window(self, symbol: str, horizon_seconds: int, boundary_index: int) -> None:
+        self._window.pop((symbol, horizon_seconds, boundary_index), None)
+
+    def reset(self) -> None:
+        """Drop stored rows so a second run does not reuse the first."""
+        self._regime.clear()
+        self._point.clear()
+        self._window.clear()
+        self.end_event()
+
+
+def decision_time_ns(event: Event) -> int:
+    """Nominal boundary time when the event carries one, else its trigger stamp.
+
+    ``timestamp_ns`` stays the triggering market event. Economic age, barrier,
+    and expiry read this helper so they do not use the crossing-event stamp.
+    """
+    boundary = int(getattr(event, "boundary_ts_ns", 0) or 0)
+    if boundary:
+        return boundary
+    alternate = int(getattr(event, "boundary_timestamp_ns", 0) or 0)
+    if alternate:
+        return alternate
+    return int(event.timestamp_ns)
+
+
 # ── Signal Events ───────────────────────────────────────────────────────
 
 
@@ -240,6 +412,7 @@ class Signal(Event):
     consumed_features: tuple[str, ...] = ()
     trend_mechanism: TrendMechanism | None = None
     expected_half_life_seconds: int = field(default=0, metadata={"unit": "s"})
+    boundary_ts_ns: int = field(default=0, metadata={"unit": "ns"})
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
@@ -559,6 +732,7 @@ class SafetyStateChange(Event):
     expected_half_life_seconds: int = field(default=0, metadata={"unit": "s"})
     disclosed_cost_total_bps: float = field(default=0.0, metadata={"unit": "bps"})
     disclosed_margin_ratio: float = field(default=0.0, metadata={"unit": "1"})
+    boundary_ts_ns: int = field(default=0, metadata={"unit": "ns"})
 
 
 # Layered sensor, signal, and portfolio event contracts.
@@ -780,6 +954,7 @@ class CrossSectionalContext(Event):
         default_factory=dict
     )
     completeness: float = field(default=0.0, metadata={"unit": "1"})
+    boundary_ts_ns: int = field(default=0, metadata={"unit": "ns"})
 
     def __post_init__(self) -> None:
         object.__setattr__(

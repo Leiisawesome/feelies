@@ -32035,3 +32035,144 @@ OWNER:       campaign 15.
                  in order, with state as of the boundary time).
                  Then the P-23b2 census.
 
+---
+
+## P-23g
+  PREDICTION:    P-23g_prediction.md at
+                 3c6ccbe620bcdada46d06657d65c39b210c57746, committed
+                 before the production change
+                 (ae2323e4d15746c9e0c18f745e33ddbab51ac60b). Patch
+                 93b40d3b3d909fe654b96674680d5b75acb25e48608624960f2782542e87a7b5.
+                 Src hunks of the re-exported diff match that patch
+                 byte for byte. Amendment A records the composed
+                 manifest fingerprint.
+                 Amendment B at
+                 e36455eda6d5ee7f7fd420a94e0825128383cb00, committed
+                 before the catch-up order fix
+                 (bb241d1d3d91da14f5fd212a8b262b0bd7ce68f3). Patch
+                 5c59f5b7113929b90fde326a645db374435fdf37c76653504d265f87796b52b7.
+                 The committed src diff matches that patch byte for
+                 byte. The two order tests are
+                 a8af6905a9793dcb81208c1e08c989008d64f0f4, red on
+                 9c79a934bf864d28e37c9cbff7a53984773e938e.
+  MECHANISM:     On a symbol's first own event after a boundary, its
+                 regime, point and window state is captured before
+                 that event is applied. Boundaries are emitted in the
+                 normal horizon-check step with content as of the
+                 boundary time. Every boundary skipped by a real
+                 market event is emitted in order: boundary time
+                 ascending, then horizon, scope, and symbol.
+                 Held-signal expiry
+                 reads the boundary-time field. Window statistics use
+                 one reduction. No flush occurs without a market
+                 event. Pipeline order, micro-state sequence and all
+                 existing timestamps are unchanged.
+  PARITY:        D-143 pre-registered break of the level-3 snapshot
+                 stream. Not a D-66 exemption. Legacy oracle stays
+                 10 fills / net 26.61 /
+                 ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e.
+                 Per-fill diff 0. Salt ensemble {24.03:1, 26.61:20,
+                 27.19:11}.
+                 Step D: 14 and 14 snapshots; differing field
+                 ofi_ewma_zscore; 10 values; max abs
+                 2.4424906541753444e-15; max rel
+                 6.294543275969185e-14; condition holds; attribution
+                 10 reduction, 0 capture. The field add alone leaves
+                 the hash at 251cc109. The reduction-only hunk
+                 replays to f8824e5a.
+                 Pin movers: EXPECTED_LEVEL3_SNAPSHOT_HASH
+                 251cc109c25a4c1124c3dab32b7168c09b6a9126f4092d977df08a740c59d04b
+                 -> f8824e5a288d64a3922c333a51416ce4b2db1251e6b2d8c815102fd81e6840ce
+                 (14 -> 14). Schema field tuples for Signal,
+                 SafetyStateChange and CrossSectionalContext gain
+                 boundary_ts_ns. SCHEMA_VERSION stays 1.
+                 Manifest fingerprint with the new fields and the
+                 old level-3 constant still locked: 4d3586ad….
+                 Composed fingerprint after the hash re-pin, the
+                 value the field-addition procedure pins:
+                 3584bbafa3655ee336b1db04099b5a3c417dd8a0febfc967c69e3dc85a52ec32.
+                 Compare: 64/64, changed 1 (the level-3 hash only).
+                 R-FIX 98 / -1317.04 /
+                 0ec66a9a48190680e564d519505ff9ed87e063ac4343c40040a590b85b38e9c2,
+                 unchanged. R-SYN 29 / -131.01 /
+                 ffc9161eb542967c93012064371dbff819e2b8c4d7485fcedfb175eb7fcfd575,
+                 unchanged.
+                 Phase ensemble moves at 90 s (-20.10 -> -17.34) and
+                 105 s (-20.59 -> -37.11). The other six phases are
+                 unchanged. Oracle mean +0.28 [-37.11, +115.07].
+                 Eight-name 2026-03-26, local evidence, not a pin:
+                 12 / +19.43 /
+                 6219609611306a8871aeb1cc11d2f3128f43ebe40c6931dc912d44d0d504542d.
+                 Salt ensemble mean 19.21625 [17.15, 19.43].
+                 Content bit-exact 100% on all eight (decision, and
+                 full content excluding the trigger stamp). Boundary
+                 sets identical on all eight.
+                 Joint-versus-solo as configured: APP 8, all others 0.
+                 Cause: the shared per-alpha exposure check
+                 (risk_wrapper.py:145-156). Cap-neutral: 0 on all
+                 eight, risk rejects 0/0.
+                 Oracle feature effect against b7f14032:
+                 book_imbalance_mean 75, book_imbalance_zscore 76,
+                 ofi_ewma_zscore 80.
+                 I1/I2/I3 empty. PENDING empty. Ratchet 14.
+                 Wiring manifest and composition-root allowlist
+                 unchanged.
+  DECISIONS:     D-182, D-183, D-184, D-185, D-186, D-187, as written
+                 in decisions.md.
+  FINDINGS:      F-P23f-7 and F-P23f-8 closed by this rung.
+                 F-P23c-k closed by this rung.
+                 F-P23g-8: windowed features were computed on a window
+                 truncated by the emission lateness (h30 median 0.9%,
+                 max 14.6%; h120 median 0.2%, max 3.6%).
+                 F-P23g-9 / F-P23g-13 (operator risk-policy item, not
+                 changed): the per-alpha exposure cap of 3,125 is
+                 shared across symbols and checked before the trade;
+                 sizing uses the full 12,500 allocation and ignores
+                 the cap; a first order of about 2.4 to 2.9 times the
+                 cap passes, and all other entries are then rejected.
+                 F-P23g-14: a trade that cannot emit must not claim
+                 capture keys.
+                 F-P23g-15 / F-P23g-16: one reduction path; the level-3
+                 hash moves by bit-level numerics.
+                 F-P23g-17 (next rung): the fix deep-copies every
+                 windowed deque for the symbol once per claiming
+                 event. Peak memory on the eight-name run rises
+                 899 MB -> 1,188 MB. The copy is on shared live code.
+                 Replace it with deferred eviction and require
+                 bit-identical output.
+                 F-P23g-2: a session-close flush needs an explicit
+                 session-close event injected only for a complete
+                 session. Deferred with the timer design.
+                 F-P23g-18: Amendment A was written without a stop.
+                 F-P23g-19: catch-up scope order, found by review.
+                 Closed by D-186.
+                 F-P23g-20: Bugbot status reported as skipping before
+                 the review completed.
+                 Phase ensemble: oracle mean +0.28 [-37.11, +115.07];
+                 eight-name mean -58.82 [-134.08, +19.43]. Robustness
+                 concern. Status of the alpha on this evidence:
+                 hypothesis.
+  FAIL-FIRST:    On 3c6ccbe6, before the production change, seven
+                 added tests were red and
+                 test_tie_membership_event_exactly_at_boundary was
+                 green. That matches the census prediction. The seven
+                 red node ids are the ADDED list in E0 except the tie
+                 test.
+                 On 9c79a934, before the catch-up order fix,
+                 test_catchup_orders_all_scopes_by_boundary_time and
+                 test_universe_context_uses_only_same_boundary_snapshots
+                 were red.
+  CAPTURE:       baseline_pre-P-23g.json at
+                 3c6ccbe620bcdada46d06657d65c39b210c57746 (5284 passed,
+                 0 failed, 44 skipped, 3 xfailed; determinism 148;
+                 dirty false). Taken with E0 committed and no
+                 production change.
+                 baseline_post-P-23g.json at
+                 cb29ca4a9a410c55d66cc0616240d6ed58ea3b1b (5293 passed,
+                 0 failed, 44 skipped, 2 xfailed; determinism 148;
+                 dirty false). Parity 64/64, changed 1 (the level-3
+                 hash only). The +9 passed are the eight new boundary
+                 tests and P5-identity, which is no longer an xfail.
+  NEXT:          P-23g2 (deferred eviction replacing the window copy;
+                 bit-identical output).
+

@@ -54,6 +54,7 @@ from feelies.kernel.forced_exit_reasons import (
 from feelies.core.events import (
     Alert,
     AlertSeverity,
+    BoundaryStateCapture,
     DeRiskRequirement,
     Event,
     HorizonTick,
@@ -79,6 +80,7 @@ from feelies.core.events import (
     SymbolHalted,
     Trade,
     TrendMechanism,
+    decision_time_ns,
 )
 from feelies.core.identifiers import SequenceGenerator, derive_order_id
 from feelies.core.mark_rail import MarkRailProtocol
@@ -3055,6 +3057,7 @@ class Orchestrator:
         session_by_strategy: Mapping[str, str] | None = None,
         halt_tradeability: _HaltTradeability | None = None,
         mark_rail: MarkRailProtocol | None = None,
+        boundary_state: BoundaryStateCapture | None = None,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -3126,6 +3129,7 @@ class Orchestrator:
         self._sensor_registry = sensor_registry
         self._horizon_scheduler = horizon_scheduler
         self._horizon_signal_engine = horizon_signal_engine
+        self._boundary_state = boundary_state
         # Hazard events use an isolated sequence so exits cannot shift other IDs.
         self._regime_hazard_detector = regime_hazard_detector
         self._hazard_seq = hazard_sequence_generator or SequenceGenerator(
@@ -3882,18 +3886,53 @@ class Orchestrator:
 
         if not self._events_prelogged:
             self._event_log.append(trade)
-        self._bus.publish(trade)
+        trade_may_emit = (
+            self._horizon_scheduler is not None
+            and self._trade_path_may_emit_horizon_ticks(trade.symbol)
+        )
+        armed = self._arm_boundary_capture(trade)
+        try:
+            self._bus.publish(trade)
 
-        router_on_trade = getattr(self._backend.order_router, "on_trade", None)
-        if router_on_trade is not None:
-            router_on_trade(trade)
+            router_on_trade = getattr(self._backend.order_router, "on_trade", None)
+            if router_on_trade is not None:
+                router_on_trade(trade)
 
-        # Trades may cross horizons only after a quote has published regime state.
-        if self._horizon_scheduler is not None and self._trade_path_may_emit_horizon_ticks(
-            trade.symbol
-        ):
-            for tick in self._horizon_scheduler.on_event(trade):
-                self._bus.publish(tick)
+            # Trades may cross horizons only after a quote has published regime state.
+            if trade_may_emit:
+                assert self._horizon_scheduler is not None
+                for tick in self._horizon_scheduler.on_event(trade):
+                    self._bus.publish(tick)
+        finally:
+            if armed and self._boundary_state is not None:
+                self._boundary_state.end_event()
+
+    def _arm_boundary_capture(self, event: NBBOQuote | Trade) -> bool:
+        """Freeze this symbol's state before its first own event after a boundary.
+
+        The micro-state sequence is unchanged: ticks are still published from
+        the horizon-check step after the event is applied. A later emission of
+        that boundary reads the stored row. Test doubles without
+        ``claim_capture_keys`` skip the freeze.
+        """
+        store = self._boundary_state
+        scheduler = self._horizon_scheduler
+        claim = getattr(scheduler, "claim_capture_keys", None) if scheduler is not None else None
+        if store is None or not callable(claim):
+            return False
+        # A trade that cannot emit must not consume the claim. It does not
+        # update feature state, and the quote that later emits the boundary
+        # has to freeze before that quote is applied.
+        if isinstance(event, Trade) and not self._trade_path_may_emit_horizon_ticks(event.symbol):
+            return False
+        keys = claim(event.symbol, event.timestamp_ns)
+        if not keys:
+            return False
+        engine = self._horizon_signal_engine
+        snapshot_regime = getattr(engine, "regime_snapshot", None) if engine is not None else None
+        regime = snapshot_regime(event.symbol) if callable(snapshot_regime) else {}
+        store.begin_event(event.symbol, keys, regime)
+        return True
 
     def _dispatch_sensor_layer(self, event: NBBOQuote, cid: str) -> None:
         """Record sensor stages and publish horizon ticks for a quote."""
@@ -4225,7 +4264,7 @@ class Orchestrator:
                 if (
                     sig.sequence in self._carryover_signal_sequences
                     and sig.horizon_seconds > 0
-                    and (_now_ns - sig.timestamp_ns) <= sig.horizon_seconds * 1_000_000_000
+                    and (_now_ns - decision_time_ns(sig)) <= sig.horizon_seconds * 1_000_000_000
                 ):
                     fresh.append(sig)
                 else:
@@ -4328,25 +4367,32 @@ class Orchestrator:
 
         # Sensor fan-out (+ router on_quote) runs synchronously inside
         # publish; time the call for hot-path attribution.
-        t_pub = time.perf_counter_ns()
-        self._bus.publish(quote)
-        self._tick_timings["sensor_fanout_ns"] = time.perf_counter_ns() - t_pub
-        # Use exchange time so risk and routing cross the RTH close together.
-        _maybe_flip_buying_power_at_rth_close(self, quote)
+        # Capture is armed before the quote is applied and held through the
+        # horizon-check publish, which stays after STATE_UPDATE.
+        armed = self._arm_boundary_capture(quote)
+        try:
+            t_pub = time.perf_counter_ns()
+            self._bus.publish(quote)
+            self._tick_timings["sensor_fanout_ns"] = time.perf_counter_ns() - t_pub
+            # Use exchange time so risk and routing cross the RTH close together.
+            _maybe_flip_buying_power_at_rth_close(self, quote)
 
-        # Reconcile quote-triggered fills and cancels before evaluating signals.
-        self._reconcile_resting_fills(cid)
+            # Reconcile quote-triggered fills and cancels before evaluating signals.
+            self._reconcile_resting_fills(cid)
 
-        # ── M1 → M2: STATE_UPDATE ──────────────────────────────
-        self._micro.transition(
-            MicroState.STATE_UPDATE,
-            trigger="event_logged",
-            correlation_id=cid,
-        )
-        _update_regime(self, quote, cid)
+            # ── M1 → M2: STATE_UPDATE ──────────────────────────────
+            self._micro.transition(
+                MicroState.STATE_UPDATE,
+                trigger="event_logged",
+                correlation_id=cid,
+            )
+            _update_regime(self, quote, cid)
 
-        # Optional sensor and horizon stages.
-        self._dispatch_sensor_layer(quote, cid)
+            # Optional sensor and horizon stages.
+            self._dispatch_sensor_layer(quote, cid)
+        finally:
+            if armed and self._boundary_state is not None:
+                self._boundary_state.end_event()
         self._maybe_transition_cross_sectional_bookend(cid)
         self._flush_pending_sized_intents(correlation_id=cid, quote=quote)
 
@@ -5093,7 +5139,7 @@ class Orchestrator:
                 standing_target_from_desired(
                     desired,
                     strategy_id=sig.strategy_id,
-                    signal_timestamp_ns=int(sig.timestamp_ns),
+                    signal_timestamp_ns=decision_time_ns(sig),
                     horizon_seconds=sig.horizon_seconds,
                     staleness_k=self._net_staleness_k,
                 )
@@ -5328,6 +5374,7 @@ class Orchestrator:
         _maybe_reset(self._sensor_registry)
         _maybe_reset(self._horizon_scheduler)
         _maybe_reset(self._horizon_signal_engine)
+        _maybe_reset(self._boundary_state)
         _maybe_reset(self._composition_engine)
         _maybe_reset(self._hazard_exit_controller)
         _maybe_reset(self._regime_hazard_detector)

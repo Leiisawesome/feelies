@@ -41,6 +41,7 @@ PINNED_PAYLOAD: dict[str, tuple[str, ...]] = {
         "signals_by_strategy_by_symbol",
         "snapshots_by_symbol",
         "completeness",
+        "boundary_ts_ns",
     ),
     "DeRiskRequirement": (
         "order_id",
@@ -235,6 +236,7 @@ PINNED_PAYLOAD: dict[str, tuple[str, ...]] = {
         "expected_half_life_seconds",
         "disclosed_cost_total_bps",
         "disclosed_margin_ratio",
+        "boundary_ts_ns",
     ),
     "SensorReading": (
         "symbol",
@@ -260,6 +262,7 @@ PINNED_PAYLOAD: dict[str, tuple[str, ...]] = {
         "consumed_features",
         "trend_mechanism",
         "expected_half_life_seconds",
+        "boundary_ts_ns",
     ),
     "SizedPositionIntent": (
         "strategy_id",
