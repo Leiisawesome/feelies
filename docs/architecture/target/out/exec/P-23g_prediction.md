@@ -101,3 +101,20 @@ Fail-first status on `b7f14032`, as the census predicted.
 Append-only. The original prediction above is unchanged.
 
 `4d3586adc75ce29e0d5c37cbcc44ea1ddd0d6401ddb390a944bb5a4b7a995ee2` is the manifest fingerprint with the new field tuples and the level-3 constant still locked at `251cc109…`. That is the value the census gate printed before the constant was re-pinned. The fingerprint hashes the locked baselines, so re-pinning `EXPECTED_LEVEL3_SNAPSHOT_HASH` to `f8824e5a…` composes it to `3584bbafa3655ee336b1db04099b5a3c417dd8a0febfc967c69e3dc85a52ec32`. The field-addition procedure (`test_parity_manifest.py:377-381`) pins the composed value. No other parity constant moves.
+
+## Amendment B
+
+Append-only. The original prediction and Amendment A are unchanged.
+
+Finding, Cursor Bugbot on PR #276 for commit `9c79a934bf864d28e37c9cbff7a53984773e938e` (review 5411365728, inline comment on `src/feelies/sensors/horizon_scheduler.py:380`). High severity. "Catch-up universe contexts see future snapshots." Catch-up emits every skipped `UNIVERSE` tick after all `SYMBOL` ticks for later indexes have already run. `UniverseSynchronizer` keeps one snapshot and signal per `(horizon, symbol)`, so an earlier catch-up context can attach a later-boundary snapshot while contemporaneous signals are dropped as after the barrier. Sparse tapes and the first event after session open hit this path. Additional locations: `src/feelies/composition/synchronizer.py:174-204` and `:256-348`. No other finding is in that review.
+
+Mechanism: `on_event` walks horizons, and for each horizon emits every symbol's full skipped index range before any universe tick of that horizon. The synchronizer's cache then holds the later snapshot when the earlier universe tick is built.
+
+Corrected order: boundary time ascending, then the standing rule inside that time — horizon ascending, `SYMBOL` before `UNIVERSE`, symbol ascending. Horizons whose boundaries fall on the same time stay in that standing order. That is the order `test_emission_order_horizon_then_scope_then_symbol` (`tests/sensors/test_horizon_scheduler.py:70`) pins for a single boundary.
+
+Patch delta sha256: `5c59f5b7113929b90fde326a645db374435fdf37c76653504d265f87796b52b7`.
+
+Predictions: every E0 prediction is unchanged. No pin moves. The two new tests are red on `9c79a934`:
+
+- `tests/conformance/test_catchup_scope_order.py::test_catchup_orders_all_scopes_by_boundary_time`
+- `tests/conformance/test_catchup_scope_order.py::test_universe_context_uses_only_same_boundary_snapshots`
