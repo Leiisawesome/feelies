@@ -6,14 +6,15 @@ Boundary math is **pure integer** (design doc §7.4 / §12.1):
 
 The scheduler emits one tick the first time a new ``boundary_index`` is
 crossed for each ``(horizon_seconds, scope, symbol)`` triplet — never
-    per-event. Emission ordering inside one ``on_event`` call is strict:
+per-event. When one event crosses several boundaries, emission order is:
 
-    sorted by horizon ascending,
-      then scope: SYMBOL before UNIVERSE,
-        then symbol ascending (None last for UNIVERSE)
+    boundary time ascending,
+      then horizon ascending,
+        then scope: SYMBOL before UNIVERSE,
+          then symbol ascending (None last for UNIVERSE)
 
-so two replays of the same event log produce a bit-identical tick
-sequence (Inv-C).
+One boundary time keeps horizon, then scope, then symbol. Two replays
+of the same event log produce a bit-identical tick sequence (Inv-C).
 
 `session_open_ns` is **lazily bound** when the platform configuration
 omits it: the first ``on_event`` call records ``event.timestamp_ns`` as
@@ -265,24 +266,50 @@ class HorizonScheduler:
             return ()
 
         self._bind_session_if_needed(event.timestamp_ns)
-        assert self._session_open_ns is not None
+        open_ns = self._session_open_ns
+        assert open_ns is not None
 
         ts = event.timestamp_ns
-        emitted: list[HorizonTick] = []
+        # (boundary time, horizon, index). Sorted so catch-up emits each
+        # boundary time before the next, and one time uses horizon order.
+        crossings: list[tuple[int, int, int]] = []
+        current_by_horizon: dict[int, int] = {}
 
         for horizon in self._grid.horizons:
             window_ns = horizon * _NS_PER_SECOND
-            elapsed = ts - self._session_open_ns
+            elapsed = ts - open_ns
             if elapsed < 0:
                 # Event predates the session open; do not emit.  This
                 # only happens with malformed inputs but we'd rather
                 # silently skip than emit a negative boundary index.
                 continue
             current_boundary = elapsed // window_ns
+            current_by_horizon[horizon] = current_boundary
+            earliest: int | None = None
+            for symbol in self._symbols_sorted:
+                last = self._last_boundary_symbol.get((horizon, symbol))
+                start = 0 if last is None else last + 1
+                if start <= current_boundary and (earliest is None or start < earliest):
+                    earliest = start
+            last_universe = self._last_boundary_universe.get(horizon)
+            start_universe = 0 if last_universe is None else last_universe + 1
+            if start_universe <= current_boundary and (
+                earliest is None or start_universe < earliest
+            ):
+                earliest = start_universe
+            if earliest is None:
+                continue
+            for boundary_index in range(earliest, current_boundary + 1):
+                crossings.append((open_ns + boundary_index * window_ns, horizon, boundary_index))
 
+        crossings.sort(key=lambda item: (item[0], item[1]))
+        emitted: list[HorizonTick] = []
+        for _boundary_ts, horizon, boundary_index in crossings:
+            current_boundary = current_by_horizon[horizon]
             emitted.extend(
                 self._emit_for_symbols(
                     horizon=horizon,
+                    boundary_index=boundary_index,
                     current_boundary=current_boundary,
                     ts_ns=ts,
                 )
@@ -290,6 +317,7 @@ class HorizonScheduler:
             emitted.extend(
                 self._emit_for_universe(
                     horizon=horizon,
+                    boundary_index=boundary_index,
                     current_boundary=current_boundary,
                     ts_ns=ts,
                 )
@@ -337,47 +365,51 @@ class HorizonScheduler:
         self,
         *,
         horizon: int,
+        boundary_index: int,
         current_boundary: int,
         ts_ns: int,
     ) -> Iterable[HorizonTick]:
+        if boundary_index > current_boundary:
+            return
         for symbol in self._symbols_sorted:
             key = (horizon, symbol)
             last = self._last_boundary_symbol.get(key)
             start = 0 if last is None else last + 1
-            if start > current_boundary:
+            if start != boundary_index:
                 continue
-            # Every skipped index is emitted, in order, on the event that
-            # reaches it. There is no flush that a market event does not trigger.
-            self._last_boundary_symbol[key] = current_boundary
-            for boundary_index in range(start, current_boundary + 1):
-                yield self._make_tick(
-                    horizon=horizon,
-                    boundary_index=boundary_index,
-                    ts_ns=ts_ns,
-                    scope="SYMBOL",
-                    symbol=symbol,
-                )
+            # This index is the next one owed. Catch-up walks indexes in
+            # boundary-time order, so the following index is emitted later.
+            self._last_boundary_symbol[key] = boundary_index
+            yield self._make_tick(
+                horizon=horizon,
+                boundary_index=boundary_index,
+                ts_ns=ts_ns,
+                scope="SYMBOL",
+                symbol=symbol,
+            )
 
     def _emit_for_universe(
         self,
         *,
         horizon: int,
+        boundary_index: int,
         current_boundary: int,
         ts_ns: int,
     ) -> Iterable[HorizonTick]:
+        if boundary_index > current_boundary:
+            return
         last = self._last_boundary_universe.get(horizon)
         start = 0 if last is None else last + 1
-        if start > current_boundary:
+        if start != boundary_index:
             return
-        self._last_boundary_universe[horizon] = current_boundary
-        for boundary_index in range(start, current_boundary + 1):
-            yield self._make_tick(
-                horizon=horizon,
-                boundary_index=boundary_index,
-                ts_ns=ts_ns,
-                scope="UNIVERSE",
-                symbol=None,
-            )
+        self._last_boundary_universe[horizon] = boundary_index
+        yield self._make_tick(
+            horizon=horizon,
+            boundary_index=boundary_index,
+            ts_ns=ts_ns,
+            scope="UNIVERSE",
+            symbol=None,
+        )
 
     def _make_tick(
         self,
