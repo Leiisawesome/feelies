@@ -32369,6 +32369,30 @@ OWNER:       campaign 15.
                  It is not closed here. The per-event window copy
                  is gone, the eight-name streams match 0fda7491,
                  and the eight-name peak is 944.4 MB.
+                 F-P23g2-8: the gatekeeper's files cap omitted
+                 baseline_pre-P-23g2.json and
+                 baseline_post-P-23g2.json, the same class of
+                 omission as P-23c1. The first local gate ran
+                 before the ledger commit, so it was not a gate
+                 on the final patch. The post capture at
+                 e6fcbd51 records that miss: 5298 passed, 1
+                 failed, and the failure is
+                 test_capture_misses_equal_keep. The pre capture
+                 at 0fda7491 is green: 5295 passed, 0 failed,
+                 44 skipped. Both files were produced by
+                 tools/exec/baseline.py capture. Parity constants
+                 are unchanged between them and match the P5 and
+                 V2 pins.
+                 F-P23g2-9: tools/arch/evidence/hotpath_executed.json
+                 is not git-tracked. .gitignore:30 ignores
+                 tools/arch/evidence/*.json. test_g45_keep calls
+                 hotpath.scan, and hotpath.py:546 raises
+                 SystemExit when that file is absent. The
+                 0fda7491 and b7f14032 worktrees had no profile
+                 because perfmeasure.py --mode profile had not
+                 been run there. The landing tree had the file
+                 because this rung regenerated it, and that file
+                 stays untracked.
   NEXT:          Merge of this rung closes F-P23g-17. Then the
                  P-23b2 census.
 
