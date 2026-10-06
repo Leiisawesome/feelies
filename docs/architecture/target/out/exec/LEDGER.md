@@ -32220,3 +32220,155 @@ OWNER:       campaign 15.
                  the manifest rows for P-30, and the tooling items.
   NEXT:          P-23g2. Then the P-23b2 census.
 
+---
+
+## P-23g2
+  PREDICTION:    P-23g2_prediction.md at
+                 723bcf2ab4f7c2a3310d532495065e560a02f559, committed
+                 before the production change. Sources at that commit
+                 are still 0fda7491. Landing patch (x)
+                 eac7b5567852358b10781cf79d730f2ca458a0bd5ce03ac19842f073d77e18b4.
+                 Normalized src hunks of the working tree match that
+                 patch byte for byte
+                 (4840771ae11814de045fe66d17d274afe660f09c598ca2b5d56c6c08ae65448c).
+                 Variant (y) was not applied.
+  MECHANISM:     Point state is still captured before a symbol's
+                 first own event after a boundary. Windowed deques
+                 stay live. While that event is in flight, eviction
+                 is held at the oldest unfinalised boundary for the
+                 symbol and horizon. finalize still reads the closed
+                 window [T-W, T]. events.py adds no dataclass field:
+                 retention_anchor_ns is a protocol method, and
+                 BoundaryStateStore keeps the earliest unfinalised
+                 boundary timestamp in memory. Schema-drift hashes
+                 Event subclass dataclass field names, so this hunk
+                 does not move the hash.
+  PARITY:        No pin movers. No locked-hash movers. No schema-hash
+                 movers. No fingerprint movers. No boundary-stream
+                 movers. No phase movers.
+  PRE CAPTURE:   On 0fda7491, one run each.
+                 Oracle configs/bt_app.yaml APP 2026-03-26:
+                 10 / 26.61 /
+                 ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e.
+                 Config hash
+                 7c5f1e8d7cdaea16770a2c35c2f7632796f0247737dd120d984afdcb4e55aef5.
+                 Wall 27.343 s. Peak 612782080 bytes.
+                 R-FIX reference engine: 98 / -1317.04 /
+                 0ec66a9a48190680e564d519505ff9ed87e063ac4343c40040a590b85b38e9c2.
+                 Config hash
+                 7d04fad61db4e3d2a85a68bb388185fd88c3bce58559ad3f262b888064d0a55d.
+                 R-SYN C_SYN seed 11 n=36000: 29 / -131.01 /
+                 ffc9161eb542967c93012064371dbff819e2b8c4d7485fcedfb175eb7fcfd575.
+                 Config hash
+                 1a6372533bf92f86dfcccc19409d16e1d2de4b85771c839d02473b685ff5c783.
+                 Level-3 snapshot hash
+                 f8824e5a288d64a3922c333a51416ce4b2db1251e6b2d8c815102fd81e6840ce
+                 (14 snapshots). Manifest fingerprint
+                 3584bbafa3655ee336b1db04099b5a3c417dd8a0febfc967c69e3dc85a52ec32.
+                 Schema-drift hash
+                 14e9e3913d3a73e0d8026ee62b277eef722d0b2d4dbdb299f9c5a233473f25e2.
+                 Cache event_schema_hash
+                 sha256:18e8861f5ff92ff6e8a779e4ddd6b1c0ab04a453bf6fcd08e16e5ce55e2cc2fa.
+                 Eight-name 2026-03-26: 12 / +19.43 /
+                 6219609611306a8871aeb1cc11d2f3128f43ebe40c6931dc912d44d0d504542d.
+                 Config hash
+                 84a57c87ac3ddb4269fa452f42db636cebb6ae8c1708bc2ab8b6a6618dabee1e.
+                 Wall 62.834 s. Peak 1187315712 bytes.
+                 Cap-neutral joint-versus-solo fill diffs 0 on APP,
+                 CROX, DIOD, ENSG, MLI, OLN, PCTY, RMBS. Rejects 0/0.
+  POST CAPTURE:  Same commands on the patched tree. Every pin above
+                 is equal to the pre capture, including config hashes.
+                 Oracle wall 20.857 s, peak 612896768 bytes.
+                 Eight-name wall 53.764 s, peak 944394240 bytes.
+                 Level-3 test passed against the locked hash.
+                 Schema-drift hash, cache event_schema_hash, and the
+                 manifest fingerprint were recomputed and matched the
+                 pre capture. Boundary streams, solo and joint, full
+                 and decision and full_ex_stamp, matched on all eight
+                 symbols (1092 boundaries each). Cap-neutral diffs
+                 stayed 0 and rejects stayed 0/0.
+                 Eight-phase grid, oracle and eight-name, trade hash
+                 and boundary-stream hash equal to 0fda7491 in all
+                 16 cells.
+  FAIL-FIRST:    On 723bcf2a, before the production change, T1 failed
+                 (boundary-capture allocation ratio 3.96, threshold
+                 1.5). The deque-copy control ratio was above 3.
+                 T2 held 32/32, T3 held 24/32 (salts 0-7 did not form
+                 two ordered boundaries), T4 held 32/32. On the patch,
+                 T1-T4 passed. Outside the repo: eager eviction in
+                 observe was killed by T2 and T3; a latest-boundary
+                 anchor was killed by T3; a strict edge on either
+                 side was killed by T4. The unmutated patch passed
+                 all four.
+  EVIDENCE:      tools/arch/evidence/hotpath_executed.json regenerated
+                 by tools/arch/perfmeasure.py --mode profile.
+                 test_g45_keep passed. The file stays gitignored.
+                 Tests added: tests/sensors/test_windowed_deferred_eviction.py.
+                 Tests modified: none.
+  COST:          head | final | b7f14032.
+                 Oracle wall s: 27.343 | 20.857 | 20.804.
+                 Eight-name wall s: 62.834 | 53.764 | 49.818.
+                 Eight-name peak MB: 1187.3 | 944.4 | 898.0
+                 (bytes / 1e6).
+                 Full gate s: 845.361 | 583.044 | 529.979.
+                 The final gate passed (5284 passed, 5 skipped,
+                 55 deselected, 1 xfailed). The head and b7f14032
+                 gate processes each failed only
+                 test_g45_keep, because that tree has no
+                 hotpath_executed.json and the test there raises
+                 SystemExit. Max deque length on the eight-name
+                 run, all three trees: 30:1446 120:3050 300:5123
+                 900:10129 1800:16685. The head run copied the
+                 window 1623 times (13.00 s inside the copy). The
+                 patched tree and b7f14032 copied it 0 times.
+                 Oracle wall 20.857 s is under the 38 s flag.
+                 Final gate 583.044 s is under the 700 s flag.
+  FINDINGS:      F-P23g2-1: the window's left edge is T-W, not the
+                 last own event minus W.
+                 F-P23g2-2: g45 is the source fingerprint at
+                 hotpath.py:104.
+                 F-P23g2-3: solo-versus-joint full content is short
+                 of 100% on APP, CROX, MLI, OLN, and RMBS, on head
+                 and on the patch equally. decision and
+                 full_ex_stamp are 100% on all eight.
+                 F-P23g2-4: eight-name peak 1187.3 MB on head,
+                 944.4 MB on the patch, 898.0 MB on b7f14032.
+                 F-P23g2-5: a repeat of CI attempt 1's pace still
+                 projects over 1200 s. This session's uncontended
+                 final gate was 583 s.
+                 F-P23g2-6: the gatekeeper's statement that the
+                 window's left edge was (last own event - W) was
+                 wrong. finalize uses [T-W, T]
+                 (horizon_windowed.py:252 and :258 on 0fda7491).
+                 Variant (y) is withdrawn.
+                 F-P23g2-7: unprofiled eight-name wall is 53.764 s
+                 on the patch and 49.818 s on b7f14032, a residual
+                 of 3.95 s. cProfile of the same command (profiled
+                 walls 139.405 s and 113.857 s) ranks cumulative
+                 time as parent frames of one hotter path, then
+                 the work b7f14032 does not do. Top 10 by
+                 cumulative-time difference, final file:line:
+                 backtest_runner.py:667 _run_backtest_phases_2_7
+                 +25.050 s; orchestrator.py:3829 _run_pipeline
+                 +23.605 s; orchestrator.py:3616 run_backtest
+                 +23.605 s; orchestrator.py:4178 _process_tick
+                 +22.606 s; orchestrator.py:4248
+                 _process_tick_inner +22.598 s; event_bus.py:70
+                 publish +21.720 s; sensors/registry.py:227
+                 _on_event +20.990 s; aggregator.py:295
+                 _on_sensor_reading +20.675 s (exclusive +2.877 s);
+                 aggregator.py:391 _copy_point_state +13.453 s,
+                 absent on b7f14032, of which copy.deepcopy is
+                 13.387 s cumulative and 5.896 s exclusive;
+                 orchestrator.py:3910 _arm_boundary_capture
+                 +2.607 s, absent on b7f14032. The profiled
+                 seconds are not wall-clock seconds. The leaf
+                 that b7f14032 lacks is the point-state deepcopy
+                 at aggregator.py:406.
+                 Propose closing F-P23g-17 when this rung merges.
+                 It is not closed here. The per-event window copy
+                 is gone, the eight-name streams match 0fda7491,
+                 and the eight-name peak is 944.4 MB.
+  NEXT:          Merge of this rung closes F-P23g-17. Then the
+                 P-23b2 census.
+
