@@ -222,6 +222,14 @@ class BoundaryStateCapture(Protocol):
         """Remember non-windowed feature state for the boundaries just begun."""
         ...
 
+    def retention_anchor_ns(self, symbol: str, horizon_seconds: int) -> int | None:
+        """Oldest unfinalised boundary time for this symbol and horizon.
+
+        Windowed features evict against this time instead of the triggering
+        event, so samples the boundary still needs stay in the live deque.
+        """
+        ...
+
     def end_event(self) -> None:
         """Drop the in-flight event. Stored boundary rows stay."""
         ...
@@ -244,23 +252,6 @@ class BoundaryStateCapture(Protocol):
         """Non-windowed feature state for this boundary, or None."""
         ...
 
-    def freeze_window_state(self, symbol: str, window_state: _PointState) -> None:
-        """Remember windowed feature state for the boundaries just begun."""
-        ...
-
-    def window_state_for(
-        self,
-        symbol: str,
-        horizon_seconds: int,
-        boundary_index: int,
-    ) -> _PointState | None:
-        """Windowed feature state for this boundary, or None."""
-        ...
-
-    def release_window(self, symbol: str, horizon_seconds: int, boundary_index: int) -> None:
-        """Drop one boundary's window copy after it has been finalized."""
-        ...
-
 
 class BoundaryStateStore:
     """Capture taken immediately before a symbol's first own event after a boundary.
@@ -269,12 +260,12 @@ class BoundaryStateStore:
     no own event after it yet is absent here; the caller uses current state.
     """
 
-    __slots__ = ("_regime", "_point", "_window", "_pending_symbol", "_pending_keys")
+    __slots__ = ("_regime", "_point", "_retain", "_pending_symbol", "_pending_keys")
 
     def __init__(self) -> None:
         self._regime: dict[_BoundaryKey, dict[str, RegimeState]] = {}
         self._point: dict[_BoundaryKey, _PointState] = {}
-        self._window: dict[_BoundaryKey, _PointState] = {}
+        self._retain: dict[tuple[str, int], int] = {}
         self._pending_symbol: str | None = None
         self._pending_keys: tuple[tuple[int, int, int], ...] = ()
 
@@ -286,11 +277,16 @@ class BoundaryStateStore:
     ) -> None:
         self._pending_symbol = symbol
         self._pending_keys = keys
+        self._retain.clear()
         regime = dict(regime_by_engine)
-        for horizon, index, _boundary_ts in keys:
+        for horizon, index, boundary_ts in keys:
             key = (symbol, horizon, index)
             if key not in self._regime:
                 self._regime[key] = regime
+            retain_key = (symbol, horizon)
+            prev = self._retain.get(retain_key)
+            if prev is None or boundary_ts < prev:
+                self._retain[retain_key] = boundary_ts
 
     def needs_point_state(self, symbol: str) -> bool:
         return symbol == self._pending_symbol and bool(self._pending_keys)
@@ -304,9 +300,13 @@ class BoundaryStateStore:
                 self._point[key] = point_state
         self._pending_keys = ()
 
+    def retention_anchor_ns(self, symbol: str, horizon_seconds: int) -> int | None:
+        return self._retain.get((symbol, horizon_seconds))
+
     def end_event(self) -> None:
         self._pending_symbol = None
         self._pending_keys = ()
+        self._retain.clear()
 
     def regime_for(
         self,
@@ -324,30 +324,10 @@ class BoundaryStateStore:
     ) -> _PointState | None:
         return self._point.get((symbol, horizon_seconds, boundary_index))
 
-    def freeze_window_state(self, symbol: str, window_state: _PointState) -> None:
-        if symbol != self._pending_symbol or not self._pending_keys:
-            return
-        for horizon, index, _boundary_ts in self._pending_keys:
-            key = (symbol, horizon, index)
-            if key not in self._window:
-                self._window[key] = window_state
-
-    def window_state_for(
-        self,
-        symbol: str,
-        horizon_seconds: int,
-        boundary_index: int,
-    ) -> _PointState | None:
-        return self._window.get((symbol, horizon_seconds, boundary_index))
-
-    def release_window(self, symbol: str, horizon_seconds: int, boundary_index: int) -> None:
-        self._window.pop((symbol, horizon_seconds, boundary_index), None)
-
     def reset(self) -> None:
         """Drop stored rows so a second run does not reuse the first."""
         self._regime.clear()
         self._point.clear()
-        self._window.clear()
         self.end_event()
 
 
