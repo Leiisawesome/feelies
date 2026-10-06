@@ -32396,3 +32396,90 @@ OWNER:       campaign 15.
   NEXT:          Merge of this rung closes F-P23g-17. Then the
                  P-23b2 census.
 
+---
+
+## RECORD P-23g2 merged
+  PR:            #277 (head 63af9e42043350fd81f9b34f1059d17ab6fe95f0,
+                 merge 15178f03c1b4b2247e5d034ee262c4fdf8b11cc4).
+  DIFF:          sha256 of git diff 0fda7491..63af9e42 is
+                 66b8346ad0361ab1a85a4037351f7d795238b5a61d56bbf497dfe71f96ed71a9.
+  CLOSED:        F-P23g-17. The per-event window copy is gone.
+                 Eviction waits at the oldest unfinalised boundary.
+                 finalize still reads the closed window [T-W, T].
+  PARITY:        Post-merge, one run each, on 15178f03. Equal to
+                 the pre capture.
+                 Oracle 10 / 26.61 /
+                 ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e.
+                 Config hash
+                 7c5f1e8d7cdaea16770a2c35c2f7632796f0247737dd120d984afdcb4e55aef5.
+                 R-FIX 98 / -1317.04 /
+                 0ec66a9a48190680e564d519505ff9ed87e063ac4343c40040a590b85b38e9c2.
+                 Config hash
+                 7d04fad61db4e3d2a85a68bb388185fd88c3bce58559ad3f262b888064d0a55d.
+                 R-SYN 29 / -131.01 /
+                 ffc9161eb542967c93012064371dbff819e2b8c4d7485fcedfb175eb7fcfd575.
+                 Config hash
+                 1a6372533bf92f86dfcccc19409d16e1d2de4b85771c839d02473b685ff5c783.
+                 Level-3 snapshot hash
+                 f8824e5a288d64a3922c333a51416ce4b2db1251e6b2d8c815102fd81e6840ce.
+                 Manifest fingerprint
+                 3584bbafa3655ee336b1db04099b5a3c417dd8a0febfc967c69e3dc85a52ec32.
+  FINDINGS:      F-P23g2-10: real-data run 37429560916 fetched
+                 APP 2026-03-25 on a cache miss via the workflow's
+                 populate-on-miss step. The dispatch was ordered by
+                 the gatekeeper's prompt; the fetch was not
+                 authorised by the operator.
+                 M4 trace. Step .github/workflows/ci.yml:374, job
+                 reference battery (real). The job runs only when
+                 github.event_name == workflow_dispatch
+                 (ci.yml:347). The step fetches a date only when
+                 ~/.feelies/cache/APP/${date}.jsonl.gz is absent
+                 (ci.yml:378).
+                 The cache key is
+                 feelies-eventcache-APP-2026-03-25_26-v2, restore-key
+                 feelies-eventcache-APP-2026-03-26-v1 (ci.yml:370).
+                 This run missed v2 and restored v1. v1 holds
+                 2026-03-26 only, so 2026-03-25 was not in the
+                 restored archive. The key string did not change.
+                 arch/exec runs 37208176357 and 37346716806 hit v2
+                 and then saw both days, so this is not an eviction
+                 of that entry. v2 was never saved in a scope
+                 exec/P-23g2 can read.
+                 The job needs 2026-03-25 because the 2026-03-26
+                 replay fits regime emissions on the prior session
+                 (D-63). ci.yml:220 says v2 adds that prior session.
+                 Real-data runs, fetched y/n from the logs:
+                 P-23f 37177745699 y (APP 2026-03-25);
+                 P-23f 37208176357 n (cache hit both days);
+                 P-23g 37278814209 y (APP 2026-03-25);
+                 P-23g 37295743881 y (APP 2026-03-25 after a v2
+                 restore that did not contain the file);
+                 P-23g 37346716806 n (cache hit both days).
+                 The key is masked on the fetch step: the env line
+                 is masked, and the live value does not occur in
+                 the step. Symbol-days fetched: 1 (APP 2026-03-25).
+                 The log prints quotes page 1 and trades page 1
+                 and does not print a page total. The post-job
+                 save of v2 failed: another job may be creating
+                 that cache.
+                 F-P23g2-11: baseline_post-P-23g2.json records
+                 tests.failed 1 (test_capture_misses_equal_keep)
+                 only because the ledger heading existed before
+                 the baseline files. Not a product failure. Rule:
+                 generate baselines before adding the heading.
+                 P-23g's post baseline records tests.failed 0
+                 (baseline_post-P-23g.json).
+                 F-P23g2-12: the residual eight-name cost versus
+                 b7f14032 is the point-state deep copy at
+                 aggregator.py:391 and aggregator.py:406.
+                 Deferred.
+  CI:            Merge run 37434572029 on 15178f03: success.
+                 check (ubuntu-latest) 818 s, under the 1200 s cap.
+                 reference battery (real) skipped. Its populate
+                 step was a cache hit for both days.
+  OPEN:          F-P23g2-12. Carried from the P-23g record and
+                 not closed here: F-P23g-9 / F-P23g-13, F-P23g-2,
+                 F-P23g-18, F-P23g-20, F-P23f-2, F-P23e-7,
+                 F-P23f-9, F-P23c-l, and the backlog named there.
+  NEXT:          P-23b2 census.
+
