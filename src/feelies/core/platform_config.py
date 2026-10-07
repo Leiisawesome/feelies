@@ -37,6 +37,22 @@ def latency_stress_ns(
     return fill_latency_ns * multiplier, market_data_latency_ns * multiplier
 
 
+def _parse_fill_report_latency_ms(raw: object, *, source: Path) -> int | None:
+    """None is today's immediate report. A non-negative int is milliseconds."""
+    if raw is None:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise ConfigurationError(
+            f"{source}: fill_report_latency_ms must be a non-negative integer "
+            f"or null, got {type(raw).__name__}: {raw!r}"
+        )
+    if raw < 0:
+        raise ConfigurationError(
+            f"{source}: fill_report_latency_ms must be non-negative, got {raw}"
+        )
+    return raw
+
+
 def compute_manifest_hash(source: Path | Mapping[str, Any]) -> str:
     """SHA-256 of an alpha spec's content.
 
@@ -188,6 +204,11 @@ class PlatformConfig:
     backtest_fill_latency_ns: int = DEFAULT_BACKTEST_FILL_LATENCY_NS
     # Feed delay before quotes and trades reach the pipeline.
     market_data_latency_ns: int = DEFAULT_MARKET_DATA_LATENCY_NS
+    # Backtest routers only. None reports a fill on the poll that first
+    # sees it. A set value holds FILLED and PARTIALLY_FILLED until the
+    # simulated clock is at or past the fill stamp plus this many
+    # milliseconds. PAPER never constructs those routers.
+    fill_report_latency_ms: int | None = None
 
     account_id: str = "default"
     # Maintenance floor below which a PDT-flagged account is barred from
@@ -446,6 +467,11 @@ class PlatformConfig:
         if self.market_data_latency_ns < 0:
             raise ConfigurationError(
                 f"market_data_latency_ns must be non-negative, got {self.market_data_latency_ns}"
+            )
+        if self.fill_report_latency_ms is not None and self.fill_report_latency_ms < 0:
+            raise ConfigurationError(
+                "fill_report_latency_ms must be non-negative or null, "
+                f"got {self.fill_report_latency_ms}"
             )
         if self.halt_resolution_blackout_seconds < 0:
             raise ConfigurationError("halt_resolution_blackout_seconds must be non-negative")
@@ -787,6 +813,8 @@ class PlatformConfig:
             data.pop("composition_gross_cap_pct")
         if self.composition_per_name_cap_pct == 0.05:
             data.pop("composition_per_name_cap_pct")
+        if self.fill_report_latency_ms is None:
+            data.pop("fill_report_latency_ms")
         return data
 
     @classmethod
@@ -1012,6 +1040,10 @@ class PlatformConfig:
                     "market_data_latency_ns",
                     DEFAULT_MARKET_DATA_LATENCY_NS,
                 )
+            ),
+            fill_report_latency_ms=_parse_fill_report_latency_ms(
+                data.get("fill_report_latency_ms"),
+                source=path,
             ),
             stop_loss_per_share=float(data.get("stop_loss_per_share", 0.0)),
             trail_activate_per_share=float(data.get("trail_activate_per_share", 0.0)),

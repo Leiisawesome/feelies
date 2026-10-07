@@ -8,7 +8,7 @@ displayed depth. Fill and limit prices snap to the Reg NMS tick grid.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from feelies.core.events import NBBOQuote, OrderAck, OrderAckStatus, OrderRequest, Side
@@ -16,6 +16,52 @@ from feelies.core.identifiers import SequenceGenerator
 from feelies.execution._fill_helpers import STOP_EXIT_REASONS
 from feelies.execution.cost_model import CostModel
 from feelies.execution.tick_size import snap_fill_price
+
+
+def release_fill_reports(
+    pending: list[OrderAck],
+    held: list[tuple[int, OrderAck]],
+    *,
+    now_ns: int,
+    delay_ns: int | None,
+) -> list[OrderAck]:
+    """Return acks visible on this poll.
+
+    ``delay_ns is None`` is today's poll: the pending list, unchanged,
+    so ``report_received_ns`` stays 0. Otherwise FILLED and
+    PARTIALLY_FILLED stay hidden until ``now_ns >= born + delay_ns``.
+    On release, ``timestamp_ns`` is the clock and ``report_received_ns``
+    is born + delay. Non-fill acks stay immediate.
+    """
+    if delay_ns is None:
+        acks = list(pending)
+        pending.clear()
+        return acks
+    immediate: list[OrderAck] = []
+    fresh: list[tuple[int, OrderAck]] = []
+    for ack in pending:
+        if ack.status in (OrderAckStatus.FILLED, OrderAckStatus.PARTIALLY_FILLED):
+            fresh.append((ack.timestamp_ns, ack))
+        else:
+            immediate.append(ack)
+    pending.clear()
+    released: list[OrderAck] = []
+    still: list[tuple[int, OrderAck]] = []
+    for born_ns, ack in (*held, *fresh):
+        due_ns = born_ns + delay_ns
+        if now_ns >= due_ns:
+            released.append(
+                replace(
+                    ack,
+                    timestamp_ns=now_ns,
+                    report_received_ns=due_ns,
+                )
+            )
+        else:
+            still.append((born_ns, ack))
+    held.clear()
+    held.extend(still)
+    return immediate + released
 
 
 @dataclass(frozen=True)

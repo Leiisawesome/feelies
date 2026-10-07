@@ -129,6 +129,7 @@ PINNED_PAYLOAD: dict[str, tuple[str, ...]] = {
         "cost_bps",
         "reason",
         "request_sequence",
+        "report_received_ns",
     ),
     "OrderRequest": (
         "order_id",

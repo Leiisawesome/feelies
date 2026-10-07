@@ -436,6 +436,14 @@ def _distribute_fill_to_strategies(
     return applied
 
 
+def _fill_report_received_ns(ack: OrderAck) -> int:
+    """Economic receive time. ``0`` falls back to the release clock."""
+    received = ack.report_received_ns
+    if received:
+        return received
+    return ack.timestamp_ns
+
+
 def _publish_slice_position_update(
     self: Any,
     *,
@@ -464,7 +472,7 @@ def _publish_slice_position_update(
             fill_price=fill_price,
             fill_quantity=fill_quantity,
             fill_ack_sequence=ack.sequence,
-            fill_timestamp_ns=ack.timestamp_ns,
+            fill_timestamp_ns=_fill_report_received_ns(ack),
             quantity=slice_position.quantity,
             avg_entry_price=slice_position.avg_entry_price,
         )
@@ -594,19 +602,20 @@ def _reconcile_fills(
         prev_position = self._positions.get(ack.symbol)
         prev_realized = prev_position.realized_pnl
         prev_qty = prev_position.quantity
+        received_ns = _fill_report_received_ns(ack)
         position = self._positions.update(
             ack.symbol,
             signed_qty,
             ack.fill_price,
             fees=ack.fees,
-            timestamp_ns=ack.timestamp_ns,
+            timestamp_ns=received_ns,
         )
         # Mirror the fill into the observational FIFO lot ledger.
         self._lot_ledger.apply_fill(
             ack.symbol,
             signed_qty,
             ack.fill_price,
-            timestamp_ns=ack.timestamp_ns,
+            timestamp_ns=received_ns,
             strategy_id=order.strategy_id,
             intent=self._order_trading_intent.get(ack.order_id, ""),
         )
@@ -618,7 +627,7 @@ def _reconcile_fills(
                 ack.symbol,
                 prev_qty,
                 position.quantity,
-                ack.timestamp_ns,
+                received_ns,
             )
 
         # Record per-slice fees and realized PnL for journal attribution.
@@ -651,7 +660,7 @@ def _reconcile_fills(
                         alpha_signed,
                         price,
                         fees=alloc_fees,
-                        timestamp_ns=ack.timestamp_ns,
+                        timestamp_ns=received_ns,
                     )
                     _publish_slice_position_update(
                         self,
@@ -681,7 +690,7 @@ def _reconcile_fills(
                     signed_qty,
                     ack.fill_price,
                     fees=ack.fees,
-                    timestamp_ns=ack.timestamp_ns,
+                    timestamp_ns=received_ns,
                 )
                 _publish_slice_position_update(
                     self,
@@ -709,7 +718,7 @@ def _reconcile_fills(
                     signed_qty,
                     ack.fill_price,
                     ack.fees,
-                    ack.timestamp_ns,
+                    received_ns,
                 )
         self._bus.publish(
             PositionUpdate(
@@ -795,7 +804,7 @@ def _reconcile_fills(
                         fill_price=ack.fill_price,
                         signal_timestamp_ns=order.timestamp_ns,
                         submit_timestamp_ns=order.timestamp_ns,
-                        fill_timestamp_ns=ack.timestamp_ns,
+                        fill_timestamp_ns=received_ns,
                         cost_bps=ack.cost_bps,
                         fees=leg.fees,
                         realized_pnl=leg.realized_pnl,
@@ -1542,6 +1551,28 @@ def _submit_tracked_order(
         self._reject_order_after_submit_failure(order, exc)
         return exc
     return None
+
+
+def _release_due_fill_reports(self: Any, correlation_id: str) -> None:
+    """Apply fill reports whose receive time has already arrived.
+
+    Backtest routers hold fills until born + L. Quote-health, stops, and
+    hazard read the book before the post-publish drain, so a report that
+    is already due has to land first. Routers without the hold leave the
+    method absent; L=None returns an empty list. No mode compare.
+    """
+    backend = self._backend
+    if backend is None:
+        return
+    release = getattr(backend.order_router, "release_due_fill_reports", None)
+    if not callable(release):
+        return
+    acks = release()
+    if not acks:
+        return
+    self._publish_and_apply_order_acks(acks)
+    _reconcile_fills(self, acks, correlation_id)
+    _escalate_unfilled_working_exits(self, acks, correlation_id)
 
 
 def _drain_async_fills(self: Any, correlation_id: str) -> None:
@@ -3859,6 +3890,7 @@ class Orchestrator:
 
     def _process_trade_inner(self, trade: Trade) -> None:
         """Log and publish one trade, then drive trade-sensitive layers."""
+        _release_due_fill_reports(self, trade.correlation_id)
         # Update halt state before applying the data-health gate.
         _update_halt_state(self, trade)
         # Update intraday SSR state from the trade tape.
@@ -4250,6 +4282,7 @@ class Orchestrator:
         so the exception handler has a clean boundary.
         """
         cid = quote.correlation_id
+        _release_due_fill_reports(self, cid)
         t_wall_start = self._clock.now_ns()
         self._tick_timings.clear()
         self._micro.bind_timing_sink(self._tick_timings)

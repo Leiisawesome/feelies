@@ -1069,6 +1069,7 @@ def _create_backend(
                 moc_bounds=moc_bounds,
                 moc_penalty_bps=config.cost_moc_penalty_bps,
                 trading_session_bounds=session_bounds,
+                fill_report_latency_ms=config.fill_report_latency_ms,
             )
             return _BackendBundle(backend=backend)
 
@@ -1088,6 +1089,7 @@ def _create_backend(
             moc_bounds=moc_bounds,
             moc_penalty_bps=config.cost_moc_penalty_bps,
             trading_session_bounds=session_bounds,
+            fill_report_latency_ms=config.fill_report_latency_ms,
         )
         return _BackendBundle(backend=backend)
 

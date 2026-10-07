@@ -253,3 +253,72 @@ def test_position_snapshot_stamp_equals_publication_clock() -> None:
 def test_pending_allowlist_stays_empty() -> None:
     """PENDING is empty. Adding an entry fails this test."""
     assert _PENDING == frozenset()
+
+
+def _run_synthetic_at_fill_report_latency(
+    tape: list[NBBOQuote],
+    latency_ms: int,
+) -> list[tuple[Event, int, int | None]]:
+    """Same runner as ``_run_synthetic``, with the fill-report delay set."""
+    log = InMemoryEventLog()
+    log.append_batch(list(tape))
+    config = PlatformConfig(
+        symbols=frozenset({"SYN"}),
+        mode=OperatingMode.BACKTEST,
+        alpha_specs=[_FIXTURE],
+        sensor_specs=_sensors(),  # type: ignore[arg-type]
+        regime_engine=None,
+        enforce_trend_mechanism=False,
+        session_open_ns=T0,
+        risk_max_gross_exposure_pct=80.0,
+        fill_report_latency_ms=latency_ms,
+    )
+    original_load = AlphaLoader.load
+    spec = synthetic_alpha_spec(None)
+
+    def _load(
+        self: AlphaLoader,
+        path: object,
+        param_overrides: dict[str, object] | None = None,
+    ) -> object:
+        if Path(str(path)) == _FIXTURE:
+            return self.load_from_dict(spec, source=str(_FIXTURE))
+        return original_load(self, path, param_overrides)  # type: ignore[arg-type]
+
+    AlphaLoader.load = _load  # type: ignore[method-assign]
+    try:
+        with _seams(None, None, True):
+            orchestrator, resolved = build_platform(config, event_log=log)
+            rows = _tap(orchestrator)
+            orchestrator.boot(resolved)
+            gc.disable()
+            try:
+                orchestrator.run_backtest()
+            finally:
+                gc.enable()
+    finally:
+        AlphaLoader.load = original_load  # type: ignore[method-assign]
+    return rows
+
+
+@pytest.mark.parametrize("latency_ms", [20, 250])
+def test_synthetic_seed11_i2_at_fill_report_latency(latency_ms: int) -> None:
+    """C_SYN seed 11 at a non-None delay. I2 holds and receive time is set."""
+    tape = make_tape(seed=11, n=36000, symbol="SYN", start_ns=T0, size=1000)
+    rows = _run_synthetic_at_fill_report_latency(tape, latency_ms)
+    filled = [
+        event
+        for event, _clock, _trigger in rows
+        if isinstance(event, OrderAck)
+        and event.status in (OrderAckStatus.FILLED, OrderAckStatus.PARTIALLY_FILLED)
+    ]
+    assert filled, "the tape must release a fill report"
+    _i1, i2, _i3 = _violations(rows)
+    assert i2 == []
+    for event, clock_ns, _trigger in rows:
+        if not isinstance(event, OrderAck):
+            continue
+        if event.status not in (OrderAckStatus.FILLED, OrderAckStatus.PARTIALLY_FILLED):
+            continue
+        assert event.timestamp_ns == clock_ns
+        assert event.report_received_ns != 0

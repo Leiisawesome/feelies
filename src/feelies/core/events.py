@@ -510,6 +510,12 @@ class OrderAck(Event):
     ``sequence`` is the ack event's own sequence within the producer's
     OrderAck stream. ``request_sequence`` is an additive back-reference
     to the originating OrderRequest sequence when the producer has it.
+
+    ``timestamp_ns`` is the release clock. ``report_received_ns`` is when
+    the fill report is received: born + fill-report latency in backtest.
+    ``0`` means the producer left it unset. Economic readers then use
+    ``timestamp_ns``. That covers L=None, and live, where the IB router
+    does not set this field.
     """
 
     TIME_CLASS = "action"
@@ -523,6 +529,7 @@ class OrderAck(Event):
     cost_bps: Decimal = field(default=Decimal("0"), metadata={"unit": "bps"})
     reason: str = ""
     request_sequence: int | None = field(default=None, metadata={"unit": "1"})
+    report_received_ns: int = field(default=0, metadata={"unit": "ns"})
 
 
 # ── Position Events ─────────────────────────────────────────────────────

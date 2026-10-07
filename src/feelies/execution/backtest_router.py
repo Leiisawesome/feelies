@@ -31,6 +31,7 @@ from feelies.execution.market_fill import (
     DeferredFill,
     append_market_fill_acks,
     append_reject_ack,
+    release_fill_reports,
     to_decimal,
 )
 from feelies.execution.moc_fill import MocFillController
@@ -82,9 +83,13 @@ class BacktestOrderRouter:
         moc_bounds: MocSessionBounds | None = None,
         moc_penalty_bps: Decimal | int | str | float = Decimal("0"),
         trading_session_bounds: TradingSessionBounds | None = None,
+        fill_report_latency_ms: int | None = None,
     ) -> None:
         self._clock = clock
         self._latency_ns = latency_ns
+        self._fill_report_delay_ns = (
+            None if fill_report_latency_ms is None else int(fill_report_latency_ms) * 1_000_000
+        )
         self._cost_model: CostModel = cost_model or ZeroCostModel()
         self._market_impact_factor = to_decimal(market_impact_factor, "market_impact_factor")
         self._max_impact_half_spreads = to_decimal(
@@ -106,6 +111,7 @@ class BacktestOrderRouter:
         self._last_quotes: dict[str, NBBOQuote] = {}
         self._prev_quotes: dict[str, NBBOQuote] = {}
         self._pending_acks: list[OrderAck] = []
+        self._held_fill_reports: list[tuple[int, OrderAck]] = []
         self._submitted_order_ids: set[str] = set()
         self._ack_seq = SequenceGenerator(stream="backtest_ack", thread_safe=True)
         self.locked_quote_reject_count: int = 0
@@ -131,6 +137,7 @@ class BacktestOrderRouter:
         self._last_quotes.clear()
         self._prev_quotes.clear()
         self._pending_acks.clear()
+        self._held_fill_reports.clear()
         self._submitted_order_ids.clear()
         self._deferred_markets.clear()
         self.locked_quote_reject_count = 0
@@ -348,9 +355,29 @@ class BacktestOrderRouter:
         )
 
     def poll_acks(self) -> list[OrderAck]:
-        acks = list(self._pending_acks)
-        self._pending_acks.clear()
-        return acks
+        delay_ns = self._fill_report_delay_ns
+        return release_fill_reports(
+            self._pending_acks,
+            self._held_fill_reports,
+            now_ns=0 if delay_ns is None else self._clock.now_ns(),
+            delay_ns=delay_ns,
+        )
+
+    def release_due_fill_reports(self) -> list[OrderAck]:
+        """Release fill reports that are already due. L=None returns nothing.
+
+        Does not change the pending queue when latency is unset, so a
+        tick-start call leaves today's poll for ``poll_acks``.
+        """
+        delay_ns = self._fill_report_delay_ns
+        if delay_ns is None:
+            return []
+        return release_fill_reports(
+            self._pending_acks,
+            self._held_fill_reports,
+            now_ns=self._clock.now_ns(),
+            delay_ns=delay_ns,
+        )
 
     def cancel_order(self, order_id: str) -> bool:
         """Cancel an acknowledged-but-unfilled MOC order by id.
