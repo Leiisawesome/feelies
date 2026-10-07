@@ -427,3 +427,38 @@ def test_p3c_shifted_symbol_does_not_move_app_fills(
     assert report["econ_old"] >= 1, report
     assert report["uniform_conflicts"] == 0, report
     assert report["econ_c"] == 0, report
+
+
+def test_fill_report_stamp_independent_of_other_symbol() -> None:
+    """At L=50, a shifted second symbol does not move APP fill price, qty, side, type, or time."""
+    from feelies.core.platform_config import PlatformConfig
+
+    bound = PlatformConfig.from_yaml
+    descriptor = PlatformConfig.__dict__["from_yaml"]
+
+    def _at_latency(path: object, *, strict: bool = False) -> object:
+        return replace(bound(path, strict=strict), fill_report_latency_ms=50)  # type: ignore[arg-type]
+
+    def _wrapped(cls: type[PlatformConfig], path: object, *, strict: bool = False) -> object:
+        del cls
+        return _at_latency(path, strict=strict)
+
+    PlatformConfig.from_yaml = classmethod(_wrapped)  # type: ignore[method-assign]
+    try:
+        base = replay_case(("base", "c"))
+        shifted = replay_case(("p3c", "c"))
+    finally:
+        PlatformConfig.from_yaml = descriptor  # type: ignore[method-assign]
+        PassiveLimitOrderRouter._seeded_uniform = _CONTENT_UNIFORM  # type: ignore[method-assign]
+
+    assert "error" not in base, base
+    assert "error" not in shifted, shifted
+
+    def _econ(row: dict[str, Any]) -> list[tuple[object, ...]]:
+        return [
+            (fill["time_ns"], fill["price"], fill["qty"], fill["side"], fill["type"])
+            for fill in row["fills"]
+        ]
+
+    assert base["fills"]
+    assert _econ(base) == _econ(shifted)
