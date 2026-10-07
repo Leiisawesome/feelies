@@ -32483,3 +32483,188 @@ OWNER:       campaign 15.
                  F-P23f-9, F-P23c-l, and the backlog named there.
   NEXT:          P-23b2 census.
 
+---
+
+## P-23b2
+  PREDICTION:    P-23b2_prediction.md at
+                 399e6105f28722138a370d7c27afa300fd24f5cb, committed
+                 before any production or test change. Sources at
+                 that commit are still 07cfbb0b. Landing patch (f+e)
+                 649f6225fb21ceb93ae3862aa3733f7963f5abc4bee02bdb05692229a2a629e1.
+                 The src diff of 07cfbb0b versus the implementation
+                 commit is byte-identical to that patch.
+  MECHANISM:     Backtest routers hold FILLED and PARTIALLY_FILLED
+                 until the simulated clock is at or past born plus
+                 fill_report_latency_ms. None is today's immediate
+                 poll: the pending list is returned unchanged and
+                 report_received_ns stays 0. On release,
+                 OrderAck.timestamp_ns is the release clock and
+                 report_received_ns is born plus the delay. Economic
+                 readers use report_received_ns when it is non-zero
+                 and otherwise timestamp_ns. A due report is released
+                 at the start of each quote tick and each trade tick,
+                 before quote-health, stops, de-risk, and hazard.
+                 No mode compare. Paper does not construct those
+                 routers. SCHEMA_VERSION stays 1. The key is popped
+                 from the config snapshot when it is None.
+  PARITY:        Two movers, both pre-registered. D-188.
+                 EXPECTED_MANIFEST_FINGERPRINT
+                 3584bbafa3655ee336b1db04099b5a3c417dd8a0febfc967c69e3dc85a52ec32
+                 -> fdf270da3b4384f5af5c29bd2fb3bb3b6f38690944104709384b085d0bbe8e05.
+                 PINNED_PAYLOAD["OrderAck"] gains report_received_ns.
+                 Schema-drift hash
+                 14e9e3913d3a73e0d8026ee62b277eef722d0b2d4dbdb299f9c5a233473f25e2
+                 -> b8f2c819b344da5db7de08169530a1fc33cf41541fce8c31ec4e03b2f25c316f.
+                 Cache event_schema_hash stays
+                 sha256:18e8861f5ff92ff6e8a779e4ddd6b1c0ab04a453bf6fcd08e16e5ce55e2cc2fa.
+                 The 28 replay hashes do not move. Level-3 stays
+                 f8824e5a288d64a3922c333a51416ce4b2db1251e6b2d8c815102fd81e6840ce.
+                 No other parity constant moves.
+  PRE CAPTURE:   On 07cfbb0b, one run each.
+                 Oracle configs/bt_app.yaml APP 2026-03-26:
+                 10 / 26.61 /
+                 ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e.
+                 Config hash
+                 7c5f1e8d7cdaea16770a2c35c2f7632796f0247737dd120d984afdcb4e55aef5.
+                 R-FIX reference engine: 98 / -1317.04 /
+                 0ec66a9a48190680e564d519505ff9ed87e063ac4343c40040a590b85b38e9c2.
+                 Config hash
+                 7d04fad61db4e3d2a85a68bb388185fd88c3bce58559ad3f262b888064d0a55d.
+                 R-SYN C_SYN seed 11 n=36000: 29 / -131.01 /
+                 ffc9161eb542967c93012064371dbff819e2b8c4d7485fcedfb175eb7fcfd575.
+                 Config hash
+                 1a6372533bf92f86dfcccc19409d16e1d2de4b85771c839d02473b685ff5c783.
+                 Level-3 snapshot hash
+                 f8824e5a288d64a3922c333a51416ce4b2db1251e6b2d8c815102fd81e6840ce
+                 (14 snapshots). Manifest fingerprint
+                 3584bbafa3655ee336b1db04099b5a3c417dd8a0febfc967c69e3dc85a52ec32.
+                 Schema-drift hash
+                 14e9e3913d3a73e0d8026ee62b277eef722d0b2d4dbdb299f9c5a233473f25e2.
+                 Cache event_schema_hash
+                 sha256:18e8861f5ff92ff6e8a779e4ddd6b1c0ab04a453bf6fcd08e16e5ce55e2cc2fa.
+                 Eight-name 2026-03-26: 12 / +19.43 /
+                 6219609611306a8871aeb1cc11d2f3128f43ebe40c6931dc912d44d0d504542d.
+                 Config hash
+                 84a57c87ac3ddb4269fa452f42db636cebb6ae8c1708bc2ab8b6a6618dabee1e.
+                 Parity-constant count: 64 across 25 modules.
+                 baseline_pre-P-23b2.json on that clean tree:
+                 5299 passed, 0 failed, 44 skipped; determinism
+                 148 passed, 0 failed.
+  POST CAPTURE:  baseline_post-P-23b2.json on implementation commit
+                 1293d4f6a88e83926b9a83670a8d7db782139941, dirty false,
+                 before this heading: 5311 passed, 0 failed,
+                 44 skipped; determinism 148 passed, 0 failed;
+                 parity-constant count 64. Level-3
+                 test_snapshot_stream_matches_locked_baseline passed.
+                 Fingerprint and schema-drift hash are the two values
+                 in PARITY. The L=None economic remeasure (oracle,
+                 R-FIX, R-SYN, eight-name, config hashes) is the
+                 post-heading check against this PRE CAPTURE.
+  FAIL-FIRST:    On 399e6105, before the production change, T1-T11
+                 failed. T1 AttributeError, release_due_fill_reports
+                 absent. T2, T3, T4, T6, T8, T9 TypeError, unexpected
+                 fill_report_latency_ms. T5 ImportError,
+                 _fill_report_received_ns. T7 and T10 and T11
+                 TypeError, PlatformConfig has no
+                 fill_report_latency_ms. On the patch, T1-T11 passed.
+                 T8 over 32 salts: PROPERTY, 24 non-vacuous (salts
+                 8-31 pierce the stop), 8 vacuous (salts 0-7 bid
+                 149.80 does not). T10 over 32 salts: PROPERTY,
+                 32 non-vacuous, 0 vacuous; the release-clock stamp
+                 fails all 32 and the receive-time stamp passes all
+                 32. Outside the repo: M1 economic readers use
+                 timestamp_ns, killed by T10; M2 early release
+                 removed, killed by T8 and T9; M3 strict inequality,
+                 killed by T3; M4 hold on non-fill acks, killed by
+                 T6; M5 L=None path holds, killed by T1; M6 receive
+                 time equals the release clock, killed by T4. The
+                 unmutated patch passed the control set.
+  EVIDENCE:      tools/arch/evidence/hotpath_executed.json regenerated
+                 by tools/arch/perfmeasure.py --mode profile.
+                 test_g45_keep passed. The file stays gitignored.
+                 Tests added: tests/execution/test_fill_report_latency.py
+                 and the T8-T11 additions. Existing test bodies were
+                 not edited. Re-pins: EXPECTED_MANIFEST_FINGERPRINT
+                 and PINNED_PAYLOAD["OrderAck"] only.
+                 wiring_manifest.py was not changed.
+  FINDINGS:      F-P23b2-1: the OperatingMode compare at patched
+                 orchestrator.py:1393 is an in-engine branch.
+                 test_mode_parity.py:60-64 and test_mode_seam.py:165-168
+                 fail on it. The landing patch uses getattr and does
+                 not compare modes.
+                 F-P23b2-2: test_g45_keep raises on a stale
+                 source_fingerprint (hotpath.py:97-104). The profile
+                 is gitignored; the scan did not reach the new
+                 functions. Regenerated locally on this rung.
+                 F-P23b2-3: compute_parity_hash excludes timestamps
+                 (backtest_report.py:807-808), so oracle and eight
+                 hashes stay ab3a2b3f and 62196096 while
+                 fill_timestamp_ns moves.
+                 F-P23b2-4: under (p) at L>0, numbering p3c
+                 content-seed economics move (econ_c 2/3/4/3). Under
+                 (p-own) econ_c stays 0. The old-seed control moves
+                 in both.
+                 F-P23b2-5: R-FIX pinned net is not monotone in L.
+                 The first price change is one cent, onto a later
+                 quote, after the exit's order id has already moved.
+                 F-P23b2-6: the 3,125 alpha cap is current exposure
+                 (risk_wrapper.py:148, :282, :338-352; equity
+                 platform_config.py:186; budget
+                 sig_benign_midcap_v1.alpha.yaml:143-146). Oracle max
+                 notional 9370.08 already exceeds it at the L=None
+                 book and does not grow with L. Share overshoot
+                 versus 500 is 0.
+                 F-P23b2-7: the first p3c divergence is a Signal
+                 timestamp from another symbol's trade and is present
+                 at L=None.
+                 F-P23b2-8: the L-induced fill-time move is the
+                 release-clock stamp; (r-due) removes it and breaks I2.
+                 F-P23b2-9: R-FIX at L=250 changes net and hash between
+                 the two stamps because the reference deadline uses
+                 the stamp.
+                 F-P23b2-10: quote-health flatten (orchestrator.py:4311)
+                 and stop/derisk inside bus.publish(quote) (:4375)
+                 read the book before _reconcile_resting_fills (:4381);
+                 the trade path never drains.
+                 F-P23b2-11: the uncontended gates are 557.43 s and
+                 548.09 s, so the 1015.71 s census gate was concurrent
+                 load.
+                 F-P23b2-12: report_received_ns keeps I2 and makes
+                 economic time born+L; (f) R-FIX equals (r-due) at
+                 L20, L50, L100, and L250; the stamp test is PROPERTY
+                 on (r-clock) and PASS on (f) and (f+e).
+                 F-P23b2-13: (f+e) moves R-FIX fills, net, and hash at
+                 every L>0 versus (r-due), while oracle and eight
+                 hashes and p3c econ_c stay put; receive delay is
+                 still exactly L.
+                 F-P23b2-14: the first (f+e) delay pass wrapped only
+                 poll_acks, so the lists were empty; the rerun through
+                 release_due_fill_reports reproduced the same R-FIX
+                 economics.
+                 F-P23b2-15: the gatekeeper's claim that every order
+                 decision follows a drain was wrong for quote-health
+                 flatten, stops, de-risk and the trade path (Part 2
+                 R0c). Early release fixes this in backtest.
+                 F-P23b2-16: live has no early release (only the
+                 backtest routers provide it) and leaves
+                 report_received_ns at 0, so readers use timestamp_ns,
+                 which live sets at the broker callback. Paper
+                 campaign: make early release a router-protocol method.
+                 F-P23b2-17: pre-trade risk reads reported positions
+                 only; working orders and unreported fills are not
+                 counted (basic_risk.py:285, :360, :751). Operator's
+                 exposure-cap decision.
+                 F-P23b2-18: battery known-answer members fail at any
+                 non-None L (census Q3.8). A non-None default is an
+                 oracle break and an operator decision.
+                 F-P23b2-19: HorizonTick.boundary_ts_ns defaults to 0.
+                 Zero means unset for direct construction; the
+                 scheduler always sets it (events.py:850-852). P-23g
+                 did not bump a schema version when it added that
+                 field. SCHEMA_VERSION stays 1 (events.py:30).
+  CLOSE:         Propose closing R1 (D-120, F-R1 at decisions.md:277)
+                 at merge. Not closed on this rung.
+  LOCKED BREAK:  D-188, citing D-143. P-23g recorded its own locked
+                 break as D-184.
+  NEXT:          Operator review. Do not merge.
+
