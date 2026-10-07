@@ -32671,3 +32671,97 @@ OWNER:       campaign 15.
                  break as D-184.
   NEXT:          Operator review. Do not merge.
 
+---
+
+## RECORD P-23b2 merged
+  PR:            #278 (head c5eed428095ec871057e4c3f47c84abb67ed656b,
+                 merge a2f1fa323b0660c23d4bcc51cb1b43164b990c47).
+  DIFF:          sha256 of git diff 07cfbb0b..c5eed428 is
+                 0d10ca2b9399f7353ec09776cd5f23b2baca1c524a787a80ea5b1f2256a4c845.
+  CLOSED:        R1. D-120 and F-R1 (the row the census cited at
+                 decisions.md:277). fill_report_latency_ms is the
+                 parameter. None is today's immediate poll. The plan
+                 row at phase14_position_engine.md:97 is closed.
+  D-188:         Operator decision, verbatim, 2026-10-07: locked manifest
+                 fingerprint break APPROVED, CONDITIONAL on exact
+                 reproduction of
+                 fdf270da3b4384f5af5c29bd2fb3bb3b6f38690944104709384b085d0bbe8e05
+                 with no other mover. Precedent D-143. Not an oracle
+                 exemption. The field add that produces it is E0.7:
+                 PINNED_PAYLOAD["OrderAck"] gains report_received_ns,
+                 and the schema-drift hash moves
+                 14e9e3913d3a73e0d8026ee62b277eef722d0b2d4dbdb299f9c5a233473f25e2
+                 to
+                 b8f2c819b344da5db7de08169530a1fc33cf41541fce8c31ec4e03b2f25c316f.
+                 No third mover. The legacy oracle is not exempted and
+                 stays 10 fills / net 26.61 /
+                 ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e.
+                 P-23g recorded its locked break as D-184. Exact
+                 reproduction held on a2f1fa32.
+  CORRECTION:    HorizonTick.boundary_ts_ns is at events.py:859, not
+                 events.py:850-852. Lines 851-852 are horizon_seconds
+                 and boundary_index. Zero still means unset for direct
+                 construction; the scheduler still sets the field.
+                 SCHEMA_VERSION stays 1 (events.py:30).
+  PARITY:        Post-merge, one run each, on a2f1fa32. Equal to the
+                 pre capture, except the two pre-registered movers.
+                 Oracle 10 / 26.61 /
+                 ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e.
+                 Config hash
+                 7c5f1e8d7cdaea16770a2c35c2f7632796f0247737dd120d984afdcb4e55aef5.
+                 R-FIX 98 / -1317.04 /
+                 0ec66a9a48190680e564d519505ff9ed87e063ac4343c40040a590b85b38e9c2.
+                 Config hash
+                 7d04fad61db4e3d2a85a68bb388185fd88c3bce58559ad3f262b888064d0a55d.
+                 R-SYN 29 / -131.01 /
+                 ffc9161eb542967c93012064371dbff819e2b8c4d7485fcedfb175eb7fcfd575.
+                 Config hash
+                 1a6372533bf92f86dfcccc19409d16e1d2de4b85771c839d02473b685ff5c783.
+                 Level-3 snapshot hash
+                 f8824e5a288d64a3922c333a51416ce4b2db1251e6b2d8c815102fd81e6840ce.
+                 Manifest fingerprint
+                 fdf270da3b4384f5af5c29bd2fb3bb3b6f38690944104709384b085d0bbe8e05.
+                 Schema-drift hash
+                 b8f2c819b344da5db7de08169530a1fc33cf41541fce8c31ec4e03b2f25c316f.
+                 Eight-name 12 / +19.43 /
+                 6219609611306a8871aeb1cc11d2f3128f43ebe40c6931dc912d44d0d504542d.
+                 Config hash
+                 84a57c87ac3ddb4269fa452f42db636cebb6ae8c1708bc2ab8b6a6618dabee1e.
+                 L=50 R-FIX spot check 82 / -1290.78 /
+                 222a9cb382539ba2ea606686d5a357436c8692fb6c87a11202389e201ccabb06.
+                 Disk cache only. No fetch.
+  FINDINGS:      F-P23b2-20: the landed source differs from gated
+                 patch 649f6225 by one formatter-required blank line
+                 before release_fill_reports (market_fill.py). git
+                 diff 1293d4f6..c5eed428 -- src is that one added
+                 line. ast.dump of the file is identical at both
+                 commits (sha256
+                 6d00644e2d8776923cbddc53a09698e0d06626ee1d9e5698cf37b6baa92cb89c).
+                 Rule: a probe's final-patch gate is the full
+                 prepush, not the test suite alone.
+                 F-P23b2-21: CI check job 1039 s on the PR head
+                 (run 37602783296), 87% of the 1200 s cap. Last
+                 eight check-job durations, newest first:
+                 1039 s 37602783296 success;
+                 935 s 37436621147 success;
+                 818 s 37434572029 success;
+                 933 s 37427856234 success;
+                 921 s 37419991223 failure;
+                 812 s 37305364420 success;
+                 1043 s 37303501756 cancelled;
+                 988 s 37295685714 success.
+                 F-P23b2-22: T8 and T9 were appended to
+                 tests/kernel/test_orchestrator_async_fill_latency.py,
+                 which existed at 07cfbb0b. The gatekeeper's cap
+                 called it a new file. git diff --numstat
+                 07cfbb0b..c5eed428 shows 202 additions and 0
+                 deletions in that file.
+  CI:            Merge run 37606608194 on a2f1fa32: success.
+                 check (ubuntu-latest) 725 s, under the 1200 s cap.
+                 reference battery (real) skipped.
+  OPEN:          Carried, not closed: F-P23b2-16 (live early
+                 release, paper campaign), F-P23b2-17 (in-flight
+                 exposure, operator's cap decision), F-P23b2-18
+                 (a non-None default is an oracle break).
+  NEXT:          Operator review of the carried findings.
+
