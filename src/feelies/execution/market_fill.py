@@ -17,6 +17,7 @@ from feelies.execution._fill_helpers import STOP_EXIT_REASONS
 from feelies.execution.cost_model import CostModel
 from feelies.execution.tick_size import snap_fill_price
 
+
 def release_fill_reports(
     pending: list[OrderAck],
     held: list[tuple[int, OrderAck]],

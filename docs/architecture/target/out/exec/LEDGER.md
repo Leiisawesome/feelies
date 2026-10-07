@@ -32492,7 +32492,10 @@ OWNER:       campaign 15.
                  that commit are still 07cfbb0b. Landing patch (f+e)
                  649f6225fb21ceb93ae3862aa3733f7963f5abc4bee02bdb05692229a2a629e1.
                  The src diff of 07cfbb0b versus the implementation
-                 commit is byte-identical to that patch.
+                 commit is byte-identical to that patch. A later
+                 format commit adds the blank line ruff format
+                 requires before release_fill_reports. No other
+                 source line changes.
   MECHANISM:     Backtest routers hold FILLED and PARTIALLY_FILLED
                  until the simulated clock is at or past born plus
                  fill_report_latency_ms. None is today's immediate
