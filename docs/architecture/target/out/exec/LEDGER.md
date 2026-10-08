@@ -32861,3 +32861,48 @@ OWNER:       campaign 15.
                  b8f2c819b344da5db7de08169530a1fc33cf41541fce8c31ec4e03b2f25c316f.
                  Parity-constant count 64.
 
+---
+
+## RECORD T-2 merged
+  PR:            #279 (head 352912f32322871d3e0057a4f9c745176e501ea6,
+                 merge 2c753a7584d811f96a65c9e0611084ac324ead09).
+  DIFF:          sha256 of git diff 1672070c..352912f3 is
+                 bf19624dfc83a4e431ca3e6bc04747dd4d8c597a66bb38e0baba83ff46cb0314.
+  PINS:          Held on 2c753a75. Oracle 10 / 26.61 /
+                 ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e.
+                 Manifest fingerprint
+                 fdf270da3b4384f5af5c29bd2fb3bb3b6f38690944104709384b085d0bbe8e05.
+                 Schema-drift
+                 b8f2c819b344da5db7de08169530a1fc33cf41541fce8c31ec4e03b2f25c316f.
+                 Parity-constant count 64.
+  FINDINGS:      F-T2-10: CI for arch/exec commits runs as PR #249
+                 and reads the cache stored on
+                 refs/pull/249/merge. It stays warm only while
+                 arch/exec receives pushes; after 7 idle days it is
+                 evicted and check and parity oracle fail closed.
+                 Remedy: both days on main, which needs this
+                 workflow on main and one operator-authorised
+                 fetch. Not done. Operator option: seed main.
+                 F-T2-11: backtest_runner.py:742 returns None when
+                 the prior session file is missing, so regime
+                 calibration is skipped silently. The parity-oracle
+                 test catches it (line 402); the six
+                 drain-invariance tests do not. CI is covered by
+                 the guard.
+                 F-T2-12: mutant-kill shards and the synthetic
+                 battery restore the event cache but do not read
+                 it (P3). Harmless; restore could be dropped later.
+                 F-T2-13: under xdist the CI summary line omits
+                 "deselected"; passed, skipped and xfailed match
+                 the serial run.
+  F-T2-7:        Operator option: seed main. A dispatch on a new
+                 exec/* branch fails closed until main holds both
+                 days; seeding main needs this workflow on main
+                 and one operator-authorised fetch. Not done.
+  BACKLOG:       Tooling backlog carried unchanged.
+  CI:            Merge run 37726778253 on 2c753a75: success.
+                 check (ubuntu-latest) 512 s, under the 1200 s cap.
+                 Tests step 424 s. Guards that ran printed
+                 complete. Populate skipped. No cache save.
+                 reference battery (real) skipped.
+
