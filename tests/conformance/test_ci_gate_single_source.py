@@ -19,3 +19,4 @@ def test_ci_gate_is_single_source() -> None:
     assert _EXPR not in ci
     assert "scripts/prepush.py --fast" in ci
     assert "ci_gate_expr.txt" in prepush.read_text(encoding="utf-8")
+    assert 'uv run pytest -m "$(cat scripts/ci_gate_expr.txt)" -q -n 4' in ci

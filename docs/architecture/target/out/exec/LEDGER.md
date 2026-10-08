@@ -32765,3 +32765,99 @@ OWNER:       campaign 15.
                  (a non-None default is an oracle break).
   NEXT:          Operator review of the carried findings.
 
+---
+
+## T-2
+
+  PR:            draft against arch/exec. Not merged. Nothing on main.
+  BASE:          1672070cd1db2bf06cac606ded000a10af171833
+  PREDICTION:    T-2_prediction.md, committed in dec65fba, before this
+                 heading. E0.1-E0.7 as written there.
+  PRE-CAPTURE:   baseline_pre-T-2.json, captured on the clean base and
+                 committed in 6f5d57b5, before this heading.
+  POST-CAPTURE:  baseline_post-T-2.json, captured on clean f1c237e0.
+                 Full suite 5320 passed, 0 failed, 44 skipped, exit 0.
+                 Determinism 148 passed, exit 0. compare parity-only:
+                 64 -> 64, changed 0.
+  CHANGE:        Check job Tests step only: pytest -n 4. prepush stays
+                 serial. pytest-xdist 3.8.0 and execnet 2.1.2 are the
+                 only lock additions. Every event-cache step is
+                 restore-only. check, parity oracle, and the real-data
+                 job fail when a required day is absent. Ingest runs
+                 only on workflow_dispatch with inputs.allow_fetch
+                 true, then one explicit save, then the guard again.
+                 Mutant-kill reports the guard and does not fail the
+                 job, and never fetches or saves.
+  FINDINGS:      F-T2-1 run 37305364420 attempt 1 was cancelled at
+                 1218s on a commit whose attempt 2 finished in 812s.
+                 F-T2-2 exec/* dispatches miss 2026-03-25 because the
+                 full v2 cache is on refs/heads/arch/exec, and mutant
+                 kill saves an incomplete v2 that later exact-hits
+                 (runs 37429560916, 37295743881).
+                 F-T2-3 the check and parity-oracle populate steps
+                 still call the vendor on a miss.
+                 F-T2-4 the nightly dispatcher fires workflow_dispatch,
+                 which skips the check job (ci.yml:47).
+                 F-T2-5 the check and parity-oracle jobs could fetch
+                 on a miss on pull_request and push; gated in this
+                 rung.
+                 F-T2-6 mutant-kill shards saved an incomplete archive
+                 under the full key; all jobs are now restore-only.
+                 F-T2-7 a dispatch on a new exec/* branch fails closed
+                 until main holds both days; seeding main needs this
+                 workflow on main and one operator-authorised fetch.
+                 Not done here.
+                 F-T2-8 the nightly dispatch skips the check job
+                 (originally ci.yml:47; the condition is unchanged).
+                 Recorded, not changed.
+                 F-T2-9 the check job's gate selects six tests in
+                 tests/conformance/test_drain_content_invariance.py.
+                 replay_case loads APP/2026-03-26 at line 151 and does
+                 not catch CacheReplayError, so a missing file fails.
+                 A missing APP/2026-03-25 returns None
+                 (src/feelies/harness/backtest_runner.py:742) and is
+                 not a skip. The parity-oracle job's
+                 test_app_20260326_backtest_baseline_from_disk_cache
+                 reads the cache: a missing 2026-03-26 fails when
+                 FEELIES_REQUIRE_BASELINE_CACHE is set
+                 (test_backtest_app_baseline.py:282); a missing
+                 2026-03-25 fails the calibration assertion at line
+                 402. test_app_baseline_config_contract_hash (line
+                 428) does not read the cache and is selected by the
+                 gate. The real-data job's battery_real tests load
+                 APP/2026-03-26 (tests/position_engine/scenarios.py
+                 _real_bundle); with the flag set, a miss fails
+                 (scenarios.py:2597). Mutant-kill runs
+                 `-m not battery_real` (kill.py:111) on synthetic
+                 catchers and does not read the event cache. The
+                 synthetic reference-battery job does not either.
+                 This rung still fails closed on check, parity
+                 oracle, and real-data.
+  BACKLOG:       Census C3, unchanged, not this rung. prepush runs
+                 the gate expression (scripts/prepush.py:44), so the
+                 functional trade pin at
+                 test_backtest_app_baseline.py:309 stays out; the
+                 config-hash pin does run (0.01s). CI has no
+                 reversed-order battery pass (D-148). The real-data
+                 job loops APP and two dates only.
+                 test_no_drain_fill_while_off_level uses
+                 _SALT_COUNT = 32 (test_passive_limit_router.py:10);
+                 raising it to 64 stays under a second.
+                 tools/exec/baseline.py:93-109 misses 7 module-level
+                 64-hex bindings the AST scan sees, including
+                 EXPECTED_ORCHESTRATOR_STREAMS and
+                 EXPECTED_STOP_EXIT_STREAMS.
+  PINS:          No mover. Oracle 10 / 26.61 /
+                 ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e.
+                 R-FIX 98 / -1317.04 /
+                 0ec66a9a48190680e564d519505ff9ed87e063ac4343c40040a590b85b38e9c2.
+                 R-SYN 29 / -131.01 /
+                 ffc9161eb542967c93012064371dbff819e2b8c4d7485fcedfb175eb7fcfd575.
+                 Level-3
+                 f8824e5a288d64a3922c333a51416ce4b2db1251e6b2d8c815102fd81e6840ce.
+                 Manifest fingerprint
+                 fdf270da3b4384f5af5c29bd2fb3bb3b6f38690944104709384b085d0bbe8e05.
+                 Schema-drift
+                 b8f2c819b344da5db7de08169530a1fc33cf41541fce8c31ec4e03b2f25c316f.
+                 Parity-constant count 64.
+
