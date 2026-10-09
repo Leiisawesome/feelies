@@ -168,9 +168,8 @@ class TestThroughFillInsideLatencyWindow:
         assert router.resting_order_count == 1
 
     def test_fill_prices_off_post_eligibility_quote_not_stale_cross(self) -> None:
-        """The stale in-window cross offers a BETTER price (99.90) than the
-        post-eligibility cross (99.98).  The fill must price off the
-        post-eligibility quote — pricing at 99.90 would be lookahead."""
+        """q_p is the in-window 99.80/99.90 book. The flush quote is
+        99.90/99.98. This zero within-L1 router takes q_p at 99.90."""
         clock = SimulatedClock(start_ns=5000)
         router = self._router(clock)
         router.on_quote(_quote("AAPL", "100.00", "100.10", ts=5000))
@@ -185,7 +184,9 @@ class TestThroughFillInsideLatencyWindow:
         router.on_quote(_quote("AAPL", "99.90", "99.98", ts=6500))
         fills = _fills(router.poll_acks())
         assert len(fills) == 1
-        assert fills[0].fill_price == Decimal("99.98")
+        assert fills[0].fill_price == Decimal("99.90")
+        assert fills[0].fees == Decimal("0")
+        assert fills[0].reason == ""
         assert fills[0].timestamp_ns == 6500
 
 
