@@ -637,6 +637,12 @@ class PassiveLimitOrderRouter:
                 # order is not yet live at the exchange, so this quote cannot
                 # fill it (mirrors the aggressive path's deferred-fill gate).
                 continue
+            if pending.total_ticks == 0:
+                pending, done = self._take_marketable_on_arrival(pending, quote)
+                self._resting_orders[order_id] = pending
+                if done:
+                    to_remove.append(order_id)
+                    continue
             pending.total_ticks += 1
             action = self._evaluate_fill(pending, quote)
 
@@ -721,6 +727,70 @@ class PassiveLimitOrderRouter:
 
         for oid in to_remove:
             self._remove_resting(oid)
+
+    def _quote_prevailing_at_arrival(
+        self,
+        pending: _PendingOrder,
+        quote: NBBOQuote,
+    ) -> NBBOQuote:
+        """Quote prevailing at go-live (R2 q_p)."""
+        if quote.exchange_timestamp_ns == pending.ack_timestamp_ns:
+            return quote
+        return self._prev_quotes.get(quote.symbol, quote)
+
+    def _take_marketable_on_arrival(
+        self,
+        pending: _PendingOrder,
+        quote: NBBOQuote,
+    ) -> tuple[_PendingOrder, bool]:
+        """Hand a limit that locks or crosses q_p to the submit-time taker.
+
+        The bool means the order is complete. Submit-time routing is unchanged.
+        A limit that does not lock or cross q_p is returned unchanged.
+        """
+        book = self._quote_prevailing_at_arrival(pending, quote)
+        request = pending.request
+        if pending.side == Side.BUY:
+            contra = book.ask
+            depth = book.ask_size
+            marketable = pending.limit_price >= contra
+        else:
+            contra = book.bid
+            depth = book.bid_size
+            marketable = pending.limit_price <= contra
+        if not marketable:
+            return pending, False
+        reject_ts = max(self._clock.now_ns(), pending.ack_timestamp_ns)
+        if book.bid >= book.ask:
+            self._reject(
+                request,
+                f"crossed or locked quote bid={book.bid} ask={book.ask}",
+                timestamp_ns=reject_ts,
+            )
+            return pending, True
+        if depth <= 0:
+            self._reject(
+                request,
+                f"zero depth on {request.side.name} side "
+                f"(bid_size={book.bid_size}, ask_size={book.ask_size})",
+                timestamp_ns=reject_ts,
+            )
+            return pending, True
+        if request.limit_price is not None:
+            fill_mid = (book.bid + book.ask) / Decimal("2")
+            if (request.side == Side.BUY and fill_mid > request.limit_price) or (
+                request.side == Side.SELL and fill_mid < request.limit_price
+            ):
+                self._reject(
+                    request,
+                    f"deferred fill mid {fill_mid} violates "
+                    f"{request.side.name} limit {request.limit_price} "
+                    f"(BBO moved adversely during latency window)",
+                    timestamp_ns=reject_ts,
+                )
+                return pending, True
+        self._execute_market_fill(request, quote, fill_ts=reject_ts, book=book)
+        return pending, True
 
     def _evaluate_fill(self, pending: _PendingOrder, quote: NBBOQuote) -> str:
         """Determine whether a resting order fills, cancels, or continues.
