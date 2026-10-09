@@ -32906,3 +32906,139 @@ OWNER:       campaign 15.
                  complete. Populate skipped. No cache save.
                  reference battery (real) skipped.
 
+---
+
+## P-23b3
+
+  PR:            draft against arch/exec. Not merged. Nothing on main.
+  BASE:          49bbabd1eeb5bc808d25b95fae333b68327fa2a5
+  PREDICTION:    P-23b3_prediction.md, committed in 7b4e7fc6, before
+                 any production or test change. Sources at that
+                 commit are still 49bbabd1. Landing patch (t-agg)
+                 2ffbf64c529a2700fa314ac98e623aa68d08626e3e98a529b399dfbe84f4b990.
+                 src/feelies/execution/passive_limit_router.py at
+                 05f40257 is that patch. File sha256
+                 82e89ffca3c24865fdbf0cdb0ee4e32eb56db8803c7b6dd03486c8fce3c74c41.
+  MECHANISM:     On the first eligible tick, a resting limit that
+                 locks or crosses the quote prevailing at go-live
+                 (q_p) is filled by _execute_market_fill on that
+                 book. The flush quote is the trigger. Submit-time
+                 routing is unchanged. The resting path already
+                 emitted ACKNOWLEDGED, so the take does not emit a
+                 second one. A crossed book or a zero-depth side
+                 rejects with the submit-time reason. Size above
+                 the displayed touch walks the existing impact
+                 model and is clamped to the limit. reason stays
+                 empty. No OrderAck field. No config key. Paper
+                 does not construct this router.
+  PRE-CAPTURE:   baseline_pre-P-23b3.json, captured on clean
+                 49bbabd1 and committed in ddfe4e96, before this
+                 heading. Full suite 5320 passed, 0 failed, 44
+                 skipped. Determinism 148 passed. Parity constants
+                 64. BASELINE GREEN.
+  POST-CAPTURE:  baseline_post-P-23b3.json, captured on clean
+                 05f40257 and committed in ddfe4e96, before this
+                 heading. Full suite 5329 passed, 0 failed, 44
+                 skipped, exit 0. Determinism 148 passed, exit 0.
+                 compare parity-only: 64 -> 64, changed 0.
+  CHANGE:        passive_limit_router.py only, byte-identical to
+                 (t-agg). One existing test body retargeted to the
+                 taker fill on q_p. New file
+                 tests/execution/test_arrival_marketable_limit.py.
+                 hotpath_executed.json regenerated locally and not
+                 committed. wiring_manifest.py, market_fill.py,
+                 bootstrap.py, and every schema and manifest pin
+                 unchanged.
+  EVIDENCE:      Phase 1 is the only predicted mover, and these
+                 hashes are evidence, not locked pins. Oracle
+                 2 / -8.35 /
+                 da5bc4e4169728fcf7504f04881210f0e5ce9a7b044730b0061115b48ad4da75
+                 (from 2 / -13.00 / 5e1cee0e…). Eight-name
+                 18 / -85.10 /
+                 540c9dc15b030c096c383e770cc94fe83e12469713e1b45a646a4a71225a86fa
+                 (from 18 / -89.75 / 53f6cf46…). Affected order:
+                 FILLED qty 30 px 399.93 fee 0.80 reason ''.
+  FINDINGS:      F-P23b3-1 incidence is one full take, phase 1
+                 only, 0/32 salts and 1/8 phases, so a salt
+                 property test is below the floor of 8.
+                 F-P23b3-2 eligibility-before-live is no on both
+                 paths; the asymmetry is that aggressive prices
+                 pre-live q_p and passive today does not.
+                 F-P23b3-3 queue-ahead 0 is the hazard regime, not
+                 the front of a price-time queue.
+                 F-P23b3-4 OrderAck has no liquidity-side field
+                 (events.py:523-532); the taker slice leaves
+                 reason="".
+                 F-P23b3-5 R-SYN never builds the passive router.
+                 F-P23b3-6 predicted pin failures, not re-pinned:
+                 s17's three sites on (t-rest) only, and the
+                 hot-path fingerprint on both.
+                 F-P23b3-7 the splice and the resim agree, +5.55,
+                 fee only; the prototype observer delta -0.80 is
+                 not the journal net.
+                 F-P23b3-8 the zero band is an empty remainder, not
+                 evidence the two remainder models match.
+                 F-P23b3-9 S5 under (t-agg) is equal with the submit
+                 path unedited; the reusable call is
+                 _execute_market_fill with book=q_p, and a second
+                 _submit_aggressive_market would open another ack
+                 and another latency window
+                 (passive_limit_router.py:422-460).
+                 F-P23b3-10 (t-rest2) S2 consumes displayed size
+                 twice on one flush (taker 80, then maker through
+                 80) and drains 40 at the limit; that is the
+                 (t-rest) remainder, now without external assigns.
+                 F-P23b3-11 the excess clamp at market_fill.py:316-320
+                 binds on the S3 lock (99.91 snapped, 99.90 filled)
+                 and leaves the R0 prices 99.92/99.96 unchanged.
+                 F-P23b3-12 a _PendingOrder method that assigns those
+                 three fields fails reset totality; the fresh
+                 record passes s17 and reset.
+                 F-P23b3-13 a full take still differs by the
+                 within-L1 premium: tape 399.93 / +4.65 under
+                 (t-agg), 399.90 / +5.55 under (t-rest2); the
+                 observer splice delta -0.80 is the fee leg, and
+                 the journal net is the economics.
+                 F-P23b3-14 arrival marketability uses the snapped
+                 pending.limit_price; the clamp and the submit
+                 decision use request.limit_price. On-tick limits
+                 in S1-S6 and the phase-1 order match. A sub-tick
+                 limit can classify differently; none did here.
+                 F-P23b3-15 (t-agg) rejects a crossed arrival book
+                 and zero depth with the flush messages; (t-rest2)
+                 returns the order unchanged on a crossed book.
+                 Locks on the 82 runs: 0.
+                 F-P23b3-16 cap-neutral phase 0 is identical across
+                 (t-rest), (t-agg), and (t-rest2); the arrival-take
+                 order is the phase-1 run.
+                 F-P23b3-17 both prepushes failed only the two
+                 predicted nodes; the ratchet stayed 14 because
+                 both new stamps use fill_ts.
+                 F-P23b3-18 the gatekeeper's first prototypes
+                 ((t-rest), (t-limit)) would have given one
+                 situation two fill models; (t-agg) reuses the
+                 submit-time function.
+                 F-P23b3-19 P5: snap_limit_price floors a BUY and
+                 ceils a SELL (tick_size.py:41-45). The router snaps
+                 at passive_limit_router.py:594, after the submit
+                 check at 587-591, which uses the requested limit.
+                 On a penny-grid contra that snap does not change
+                 classification. T8 passed on the patched tree: every
+                 sub-tick buy and sell limit on the on-grid books
+                 classified the same at arrival as at the pre-snap
+                 submit check. On 49bbabd1 the same grid failed, 40
+                 cells, first SELL limit=99.991 bid=100.00 ask=100.10
+                 submit resting false and arrival a maker through.
+                 The reversed-snap mutant failed 16 cells, first BUY
+                 limit=100.091 bid=100.00 ask=100.10 submit resting
+                 true and arrival a taker.
+                 F-P23b3-20 a crossed or empty arrival book now
+                 rejects, as at submit (T7). Incidence 0 in 82 runs.
+  CLOSE:         Propose closing F-P23b-a
+                 (docs/architecture/target/position_engine/decisions.md:285)
+                 and the plan row
+                 (docs/architecture/target/out/phase14_position_engine.md:98)
+                 at merge. The taker slice is the submit-time fee
+                 and an empty reason. There is no liquidity-side
+                 field to set (F-P23b3-4).
+
