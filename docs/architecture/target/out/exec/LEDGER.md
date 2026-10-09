@@ -33042,3 +33042,58 @@ OWNER:       campaign 15.
                  and an empty reason. There is no liquidity-side
                  field to set (F-P23b3-4).
 
+---
+
+## RECORD P-23b3 merged
+  PR:            #280 (head f6d19eeaf9508587dbd4276c6332432603b6389e,
+                 merge 8277290f5afc1370fddd16d09ceffbeb43bfb9ce).
+  DIFF:          sha256 of git diff 49bbabd1..f6d19eea is
+                 c50242a01ab9f6ab1a55facf11d53cc973b90f694346c4bee63219b4924df103.
+  CLOSED:        F-P23b-a
+                 (docs/architecture/target/position_engine/decisions.md:285)
+                 and the plan row
+                 (docs/architecture/target/out/phase14_position_engine.md:98).
+                 A marketable arrival limit takes the arrival book.
+                 The taker slice is the submit-time fee and an empty
+                 reason. There is no liquidity-side field to set
+                 (F-P23b3-4).
+  PINS:          Held on 8277290f. Disk cache only. No fetch.
+                 Oracle 10 / 26.61 /
+                 ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e.
+                 R-FIX 98 / -1317.04 /
+                 0ec66a9a48190680e564d519505ff9ed87e063ac4343c40040a590b85b38e9c2.
+                 R-SYN 29 / -131.01 /
+                 ffc9161eb542967c93012064371dbff819e2b8c4d7485fcedfb175eb7fcfd575.
+                 Level-3
+                 f8824e5a288d64a3922c333a51416ce4b2db1251e6b2d8c815102fd81e6840ce.
+                 Manifest fingerprint
+                 fdf270da3b4384f5af5c29bd2fb3bb3b6f38690944104709384b085d0bbe8e05.
+                 Schema-drift
+                 b8f2c819b344da5db7de08169530a1fc33cf41541fce8c31ec4e03b2f25c316f.
+                 Parity-constant count 64.
+                 Eight-name 12 / +19.43 /
+                 6219609611306a8871aeb1cc11d2f3128f43ebe40c6931dc912d44d0d504542d.
+                 Oracle phase 1 spot check 2 / -8.35 /
+                 da5bc4e4169728fcf7504f04881210f0e5ce9a7b044730b0061115b48ad4da75.
+  F-P23b3-21:    CI check job 880 s (Tests 771 s) on the PR head
+                 (run 37887841352) against 474-675 s in T-2.
+                 Last eight check-job and Tests-step durations,
+                 newest first:
+                 490 s / 419 s, 37901934800, merge 8277290f, success;
+                 880 s / 771 s, 37887841352, PR head f6d19eea, success;
+                 675 s / 567 s, 37727665009, success;
+                 512 s / 424 s, 37726778253, success;
+                 474 s / 392 s, 37723489401, success;
+                 1018 s / 916 s, 37608336436, success;
+                 725 s / 642 s, 37606608194, success;
+                 1039 s / 934 s, 37602783296, success.
+                 Watch rule: any check job above 960 s (80% of the
+                 1200 s cap) opens a tooling census before the next
+                 code rung. This rung's checks are 880 s and 490 s,
+                 both under 960 s.
+  CI:            Merge run 37901934800 on 8277290f: success.
+                 check (ubuntu-latest) 490 s, under the 1200 s cap.
+                 Tests step 419 s. Guards that ran printed
+                 complete. Populate skipped. No cache save.
+                 reference battery (real) skipped.
+
