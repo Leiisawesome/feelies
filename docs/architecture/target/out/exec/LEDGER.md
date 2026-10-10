@@ -33097,3 +33097,135 @@ OWNER:       campaign 15.
                  complete. Populate skipped. No cache save.
                  reference battery (real) skipped.
 
+
+
+## P-23a2
+
+  PR:            draft against arch/exec. Not merged. Nothing on main.
+  BASE:          154ee44c7dfaa21539ba19519678d795ac2ac781
+  PREDICTION:    P-23a2_prediction.md, committed in 2422eb5a, before
+                 any production or test change. Sources at that
+                 commit are still 154ee44c. Landing patch (s2)
+                 fcc9c2d341e19d5aa1e4be0557cb22e8bcb53ed3af12b5a9313eb2a93cc8ba25,
+                 19 tracked files, hunks byte-identical.
+  MECHANISM:     A fill ack is published only once the simulated
+                 clock has reached that order's arrival time.
+                 require_fill_live raises FillBeforeLiveError when
+                 clock_ns < ack_timestamp_ns. Equality is allowed,
+                 and the published stamp is the clock. Reject and
+                 cancel acks stamp the clock and have no guard.
+                 HorizonMetricsCollector, the dropped-legs alert,
+                 and HorizonSignalEngine._emit_metric stamp the
+                 publication clock. _cached_real folds -0.0 to 0.0
+                 before the cache key. The _session_digest_key
+                 docstring matches the key it builds.
+  PRE-CAPTURE:   baseline_pre-P-23a2.json, captured on clean
+                 154ee44c and committed in f5294cef, before this
+                 heading. Full suite 5329 passed, 0 failed, 44
+                 skipped, exit 0. Determinism 148 passed, exit 0.
+                 Parity constants 64. BASELINE GREEN.
+  POST-CAPTURE:  baseline_post-P-23a2.json, captured on clean
+                 91975fad and committed in f5294cef, before this
+                 heading. Full suite 5333 passed, 0 failed, 44
+                 skipped, exit 0. Determinism 148 passed, exit 0.
+                 Parity constants 64. BASELINE GREEN.
+  CHANGE:        Eight src files and eleven test files, hunks
+                 byte-identical to (s2). New file
+                 tests/execution/test_fill_before_live_guard.py.
+                 hotpath_executed.json regenerated locally and not
+                 committed. wiring_manifest.py and the
+                 composition-root scanner rows unchanged.
+  RATCHET:       Shrinks from 14 to exactly {IB _fill_to_ack,
+                 sized_intent_legs._mint, sized_intent_orders._mint,
+                 registry._emit_reading_metrics,
+                 registry._emit_nonfinite_metric}. PENDING empty.
+  DISPOSITION:   IB _fill_to_ack -> paper campaign (D-63/D-144).
+                 The two _mint rows -> portfolio-path census.
+                 The two registry rows -> F-P23a2-15.
+  FINDINGS:      F-P23a2-1 On ReplayFeed the fill and cancel floor
+                 does not bind. Every fired fill had ne_clock 0, so
+                 stamping the publication clock left the four
+                 journals unchanged.
+                 F-P23a2-2 Five ratchet rows remain. IB is paper/live
+                 and stays under D-144/D-63. The two _mint sites
+                 copy the intent's market time into PDT, RTH, and
+                 the journal signal and submit times. The two
+                 registry metrics have no clock; reading metrics
+                 are off in backtest.
+                 F-P23a2-3 Signed zero never becomes a successful
+                 _cached_real entry. str and JSON keep the sign.
+                 _DEC_PACK still distinguishes it and was left
+                 alone.
+                 F-P23a2-4 The _session_digest_key docstring omitted
+                 the config path, credited rail_wrapper with keying
+                 the cache, and called clock_tag and resolution_key
+                 process-visible seams. Those two arguments are
+                 discarded inside _cached_real.
+                 F-P23a2-5 At stage E the real battery fails the
+                 same eight NONVACUOUS nodes on 154ee44c and on
+                 (s2). PositionEngine is a stub
+                 (src/feelies/position/engine.py:20) and does not
+                 publish PositionSnapshot or PositionClosed. The
+                 reference battery passed both orders.
+                 F-P23a2-6 Cap-neutral economics and journal times
+                 match per symbol. Order ids differ in the joint
+                 universe. The joint hash is not 66329ce2 because
+                 equity stayed the sizer base. Joint is 18 / +41.49
+                 / f98a588d1f79f639308439da7437a2b5b66fa343d71d35a3632db12e3ffb0da8.
+                 F-P23a2-7 The first census prepush failed only
+                 because the gitignored hot-path profile still
+                 fingerprinted HEAD. CI regenerates that file. The
+                 patch bytes did not change.
+                 F-P23a2-8 On ReplayFeed the publication clock is
+                 already at or past arrival when a fill is
+                 published, so FillBeforeLiveError did not trip on
+                 the four pins, the 80 ensemble cells, or the
+                 cap-neutral runs.
+                 F-P23a2-9 The 19 before-live FILL publications are
+                 frozen-clock unit tests. Each fixture clock was
+                 advanced to the ack time, and the two latency
+                 tests now require stamp == clock == 6000.
+                 F-P23a2-10 A resting cancel inside the latency
+                 window removes the order immediately. A deferred
+                 market or aggressive order is invisible to
+                 cancel_order and can still fill. Measured
+                 incidence is 0.
+                 F-P23a2-11 The eight TestAppendMarketFillAcks gate
+                 failures were the detector calling
+                 append_market_fill_acks with no router clock.
+                 After that skip they are 14 passed and 0 hits.
+                 test_g45_keep failed on that gate because the
+                 gitignored hot-path profile was stale.
+                 F-P23a2-12 The bootstrap change is one constructor
+                 keyword and moves no wiring-manifest or
+                 composition-root row.
+                 F-P23a2-13 The five REJECT and three CANCEL
+                 detector nodes still pass, because they assert
+                 the stamp is at or after the published ACK, and
+                 the clock at those publications already is.
+                 F-P23a2-14 Stage A plus the reference engine
+                 reports 37 synthetic failures, all "passed before
+                 its stage" (green_from is B-E), both orders. The
+                 CI reference battery at stage E is 76/76 both
+                 orders.
+                 F-P23a2-15 The gatekeeper assigned the two registry
+                 rows to P-30. P-30 is the production position
+                 engine. Both rows stay in the ratchet with no
+                 owner. Backlog item: sensor registry gets a clock.
+                 F-P23a2-16 The cap-neutral recipe (equity 50000
+                 and capital_allocation_pct 25 as configured;
+                 platform position 1000000, gross 10000, drawdown
+                 10000; alpha position 1000000, gross 10000,
+                 drawdown 10000; PDT unwired; regime scale as
+                 configured) is the standard until it is committed
+                 in the identity-model rung. Joint 18 / +41.49 /
+                 f98a588d.
+                 F-P23a2-17 Cancel inside the latency window: a
+                 resting limit is removed at once; a deferred
+                 market or aggressive order is unreachable by
+                 cancel_order (returns false) and can still fill.
+                 Incidence 0. Backlog, trigger: before any alpha
+                 that cancels within the order latency.
+                 F-P23a2-18 Battery reporting standard is reference
+                 stage E 76/76 and real 12/12, both orders. The
+                 stage-E real failures are the pre-P-30 stub set.
