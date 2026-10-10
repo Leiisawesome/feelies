@@ -484,7 +484,7 @@ class BasicRiskEngine:
             return
         self._bus.publish(
             Alert(
-                timestamp_ns=intent.timestamp_ns,
+                timestamp_ns=self._clock.now_ns(),
                 correlation_id=intent.correlation_id,
                 sequence=self._alert_seq.next(),
                 source_layer="RISK",

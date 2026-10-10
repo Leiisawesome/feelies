@@ -1838,6 +1838,7 @@ def _create_composition_layer(
 
     horizon_metrics = HorizonMetricsCollector(
         bus=bus,
+        clock=clock,
         metric_sequence_generator=metric_seq,
     )
     horizon_metrics.attach()

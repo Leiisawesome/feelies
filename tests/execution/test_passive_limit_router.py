@@ -1089,12 +1089,11 @@ class TestLatency:
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=5500))
         assert router.poll_acks() == []
 
+        clock.set_time(6000)
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6500))
         acks2 = router.poll_acks()
         assert acks2[0].status == OrderAckStatus.FILLED
-        # Deferred FILLED uses max(ack_ts, clock.now_ns()) after the first
-        # quote whose exchange timestamp reaches submit-time eligibility.
-        assert acks2[0].timestamp_ns == 6000
+        assert acks2[0].timestamp_ns == clock.now_ns() == 6000
 
     def test_deferred_aggressive_fill_ts_no_double_latency_when_clock_tracks_exchange(
         self,
@@ -1133,6 +1132,7 @@ class TestLatency:
         router.submit(_market_order("AAPL"))
         router.poll_acks()
 
+        clock.set_time(6000)
         router.on_quote(
             _quote(
                 "AAPL",
@@ -1182,6 +1182,7 @@ class TestLatency:
             OrderAckStatus.ACKNOWLEDGED,
         ]
 
+        clock.set_time(6000)
         router.on_quote(
             _quote(
                 "AAPL",
@@ -1292,6 +1293,7 @@ class TestLatency:
             OrderAckStatus.ACKNOWLEDGED,
         ]
 
+        clock.set_time(6000)
         router.on_quote(_quote("AAPL", "151.00", "151.02", ts=6500))
         fills = [ack for ack in router.poll_acks() if ack.status == OrderAckStatus.FILLED]
         assert len(fills) == 1
@@ -1317,6 +1319,7 @@ class TestLatency:
             OrderAckStatus.ACKNOWLEDGED,
         ]
 
+        clock.set_time(6000)
         router.on_quote(_quote("AAPL", "151.00", "151.02", ts=6500))
         fills = [ack for ack in router.poll_acks() if ack.status == OrderAckStatus.FILLED]
         assert len(fills) == 1

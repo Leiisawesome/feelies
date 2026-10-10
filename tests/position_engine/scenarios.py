@@ -1648,13 +1648,18 @@ _SESSION_DIGESTS: dict[tuple[str, ...], tuple[Widened, ...]] = {}
 
 
 def _session_digest_key(tape: str) -> tuple[str, ...]:
-    """Tape id plus every process-visible seam that changes a widened digest.
+    """Identity of one widened session digest.
 
     ``tape`` is the caller tape id; its parameters are in that string.
-    Unset engine and rail resolve to the production stub. Dwell and slippage
-    resolve to ``0``, matching the rail. ``engine_factory``, ``rail_wrapper``,
-    and ``attach_sink`` are per-call arguments of ``run_real`` and already key
-    that cache; they are not process state here.
+    Unset ``FEELIES_ENGINE`` and ``FEELIES_RAIL`` resolve to the production
+    stub paths. Unset ``FEELIES_RAIL_DWELL_NS`` and
+    ``FEELIES_RAIL_SLIPPAGE_TICKS`` resolve to ``0``. The last element is
+    the posix path of ``_APP_CONFIG``.
+
+    ``engine_factory`` and ``attach_sink`` are arguments of ``_cached_real``.
+    ``rail_wrapper`` and ``quote_transform`` are not: ``run_real`` bypasses
+    that cache when either is set. ``clock_tag`` and ``resolution_key`` are
+    arguments of ``_cached_real`` and are discarded inside it.
     """
     engine = (
         os.environ.get("FEELIES_ENGINE", "").strip() or "feelies.position.engine.PositionEngine"
@@ -2767,6 +2772,8 @@ def run_real(
     attach_sink: bool = True,
     digest_only: bool = False,
 ) -> Records:
+    if fraction is not None:
+        fraction = 0.0 if fraction == 0.0 else fraction
     if _instrumented_run(rail_wrapper, quote_transform):
         return _execute_real(
             end_index,

@@ -1664,6 +1664,24 @@ def test_float_pack_keeps_signed_zero() -> None:
     assert spans[1] != spans[0]
 
 
+def test_run_real_fraction_folds_signed_zero_before_the_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """-0.0 and 0.0 are one cache key. A non-zero value is unchanged."""
+    seen: list[float | None] = []
+
+    def spy(end_index: int | None, fraction: float | None, *_rest: object) -> object:
+        del end_index
+        seen.append(fraction)
+        raise RuntimeError("stop")
+
+    monkeypatch.setattr("tests.position_engine.scenarios._cached_real", spy)
+    for fraction in (-0.0, 0.0, 0.5, -0.5):
+        with pytest.raises(RuntimeError, match="stop"):
+            run_real(fraction=fraction)
+    assert [str(value) for value in seen] == ["0.0", "0.0", "0.5", "-0.5"]
+
+
 def test_numeric_pack_keeps_type() -> None:
     """1, True, and 1.0 each keep their own encoding."""
     spans, keys = _pack_spans([1, True, 1.0])
