@@ -151,6 +151,7 @@ def test_router_deferred_fill_uses_doubled_latency() -> None:
         ),
     )
     assert router.poll_acks() == []
+    clock.set_time(latency_ns)
     router.on_quote(
         NBBOQuote(
             timestamp_ns=final_ex_ts + 100,
@@ -235,6 +236,7 @@ def test_passive_router_aggressive_fallback_uses_doubled_latency() -> None:
         ),
     )
     assert router.poll_acks() == []
+    clock.set_time(latency_ns)
     router.on_quote(
         NBBOQuote(
             timestamp_ns=final_ex_ts + 100,
@@ -318,6 +320,7 @@ def test_passive_router_resting_post_uses_doubled_latency() -> None:
 
     # Final quote at the stressed deadline: same through-fill condition,
     # now honoured.
+    clock.set_time(post_eligible_ns)
     router.on_quote(
         NBBOQuote(
             timestamp_ns=final_ex_ts + 100,

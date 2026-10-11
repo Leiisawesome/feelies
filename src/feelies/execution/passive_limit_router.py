@@ -37,6 +37,7 @@ from feelies.execution.market_fill import (
     append_market_fill_acks,
     append_reject_ack,
     release_fill_reports,
+    require_fill_live,
     to_decimal,
 )
 from feelies.execution.moc_fill import MocFillController
@@ -445,7 +446,9 @@ class PassiveLimitOrderRouter:
                     f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
                 )
                 return
-            self._execute_market_fill(request, quote, fill_ts=ack_ts)
+            fill_ts = self._clock.now_ns()
+            require_fill_live(fill_ts, ack_ts, order_id=request.order_id)
+            self._execute_market_fill(request, quote, fill_ts=fill_ts)
             return
 
         # Deferred fills: depth is checked on the quote prevailing at arrival.
@@ -473,28 +476,16 @@ class PassiveLimitOrderRouter:
             # T3: physical-time latency model; not a raw cross-class compare.
             if quote.exchange_timestamp_ns < dm.fill_deadline_exchange_ns:
                 if ticks_for_symbol >= self._max_resting_ticks:
-                    # Preserve monotonic ordering of the order's ack stream:
-                    # the timeout fires precisely because exchange time has
-                    # not yet reached the latency deadline, so ``clock.now_ns()``
-                    # may be < the stored ACKNOWLEDGED timestamp.
                     self._reject(
                         req,
                         f"deferred aggressive timeout after "
                         f"{ticks_for_symbol} ticks (no latency-eligible quote)",
-                        timestamp_ns=max(
-                            self._clock.now_ns(),
-                            dm.ack_timestamp_ns,
-                        ),
                     )
                     continue
                 remaining.append(
                     replace(dm, ticks_for_symbol=ticks_for_symbol),
                 )
                 continue
-            # Post-ACK reject paths must floor at ``ack_timestamp_ns`` so
-            # REJECTED never timestamps before ACKNOWLEDGED (mirrors the
-            # ``max_resting_ticks`` timeout path above).
-            reject_ts = max(self._clock.now_ns(), dm.ack_timestamp_ns)
             pricing = (
                 quote
                 if quote.exchange_timestamp_ns == dm.fill_deadline_exchange_ns
@@ -504,7 +495,6 @@ class PassiveLimitOrderRouter:
                 self._reject(
                     req,
                     f"crossed or locked quote bid={pricing.bid} ask={pricing.ask}",
-                    timestamp_ns=reject_ts,
                 )
                 continue
             depth = pricing.ask_size if req.side == Side.BUY else pricing.bid_size
@@ -513,7 +503,6 @@ class PassiveLimitOrderRouter:
                     req,
                     f"zero depth on {req.side.name} side "
                     f"(bid_size={pricing.bid_size}, ask_size={pricing.ask_size})",
-                    timestamp_ns=reject_ts,
                 )
                 continue
             # Marketable LIMIT orders route here via ``_post_passive``. The mid
@@ -528,7 +517,6 @@ class PassiveLimitOrderRouter:
                         f"deferred fill mid {fill_mid} violates "
                         f"{req.side.name} limit {req.limit_price} "
                         f"(BBO moved adversely during latency window)",
-                        timestamp_ns=reject_ts,
                     )
                     continue
             if self._rth_reject_entry_if_needed(
@@ -536,7 +524,8 @@ class PassiveLimitOrderRouter:
                 quote.exchange_timestamp_ns,
             ):
                 continue
-            fill_ts = max(self._clock.now_ns(), dm.ack_timestamp_ns)
+            fill_ts = self._clock.now_ns()
+            require_fill_live(fill_ts, dm.ack_timestamp_ns, order_id=req.order_id)
             self._execute_market_fill(req, quote, fill_ts=fill_ts, book=pricing)
         self._deferred_aggressive = remaining
 
@@ -556,7 +545,7 @@ class PassiveLimitOrderRouter:
             return
         priced = quote if book is None else book
         if fill_ts is None:
-            fill_ts = self._clock.now_ns() + self._latency_ns
+            fill_ts = self._clock.now_ns()
         append_market_fill_acks(
             self._pending_acks,
             self._ack_seq,
@@ -655,10 +644,6 @@ class PassiveLimitOrderRouter:
                     self._reject(
                         pending.request,
                         rth_reason,
-                        timestamp_ns=max(
-                            self._clock.now_ns(),
-                            pending.ack_timestamp_ns,
-                        ),
                     )
                     to_remove.append(order_id)
                     continue
@@ -760,12 +745,10 @@ class PassiveLimitOrderRouter:
             marketable = pending.limit_price <= contra
         if not marketable:
             return pending, False
-        reject_ts = max(self._clock.now_ns(), pending.ack_timestamp_ns)
         if book.bid >= book.ask:
             self._reject(
                 request,
                 f"crossed or locked quote bid={book.bid} ask={book.ask}",
-                timestamp_ns=reject_ts,
             )
             return pending, True
         if depth <= 0:
@@ -773,7 +756,6 @@ class PassiveLimitOrderRouter:
                 request,
                 f"zero depth on {request.side.name} side "
                 f"(bid_size={book.bid_size}, ask_size={book.ask_size})",
-                timestamp_ns=reject_ts,
             )
             return pending, True
         if request.limit_price is not None:
@@ -786,10 +768,11 @@ class PassiveLimitOrderRouter:
                     f"deferred fill mid {fill_mid} violates "
                     f"{request.side.name} limit {request.limit_price} "
                     f"(BBO moved adversely during latency window)",
-                    timestamp_ns=reject_ts,
                 )
                 return pending, True
-        self._execute_market_fill(request, quote, fill_ts=reject_ts, book=book)
+        fill_ts = self._clock.now_ns()
+        require_fill_live(fill_ts, pending.ack_timestamp_ns, order_id=request.order_id)
+        self._execute_market_fill(request, quote, fill_ts=fill_ts, book=book)
         return pending, True
 
     def _evaluate_fill(self, pending: _PendingOrder, quote: NBBOQuote) -> str:
@@ -942,7 +925,6 @@ class PassiveLimitOrderRouter:
         request: OrderRequest,
         reason: str,
         *,
-        timestamp_ns: int | None = None,
         release_submitted_id: bool = True,
     ) -> None:
         """Emit a REJECTED ack for the given order request.
@@ -950,6 +932,7 @@ class PassiveLimitOrderRouter:
         Clears ``order_id`` from :attr:`_submitted_order_ids` unless
         ``release_submitted_id=False`` (duplicate submissions — the id may
         still belong to an in-flight resting or deferred aggressive order).
+        The ack stamp is the publication clock.
         """
         append_reject_ack(
             self._pending_acks,
@@ -958,7 +941,6 @@ class PassiveLimitOrderRouter:
             self._clock.now_ns(),
             request,
             reason,
-            timestamp_ns=timestamp_ns,
             release_submitted_id=release_submitted_id,
         )
         if release_submitted_id and self._submitted_order_journal is not None:
@@ -1007,8 +989,14 @@ class PassiveLimitOrderRouter:
         # price improvement, so snap on the limit-price grid instead.
         fill_price = snap_limit_price(pending.side, fill_price)
         # The resting order is already live at the exchange (gated by
-        # Entry latency is already in ack_timestamp_ns; do not charge it twice.
-        fill_ts = max(self._clock.now_ns(), pending.ack_timestamp_ns)
+        # exchange time versus ack_timestamp_ns). The fill stamp is the
+        # publication clock; entry latency is not charged again.
+        fill_ts = self._clock.now_ns()
+        require_fill_live(
+            fill_ts,
+            pending.ack_timestamp_ns,
+            order_id=pending.request.order_id,
+        )
 
         costs = self._cost_model.compute(
             symbol=pending.request.symbol,
@@ -1057,15 +1045,14 @@ class PassiveLimitOrderRouter:
     ) -> None:
         """Append a terminal cancel-style ack for ``pending`` with ``reason``.
 
-        Shared by the timeout-cancel and explicit-cancel paths. Floors the
-        timestamp at ``pending.ack_timestamp_ns`` so the terminal ack never
-        precedes ACKNOWLEDGED.
+        Shared by the timeout-cancel and explicit-cancel paths. The stamp
+        is the publication clock. ACKNOWLEDGED was stamped at an earlier
+        clock reading.
         """
         cancel_fees = self._cancel_fees(pending.request.quantity)
-        cancel_ts = max(self._clock.now_ns(), pending.ack_timestamp_ns)
         self._pending_acks.append(
             OrderAck(
-                timestamp_ns=cancel_ts,
+                timestamp_ns=self._clock.now_ns(),
                 correlation_id=pending.request.correlation_id,
                 sequence=self._ack_seq.next(),
                 order_id=pending.request.order_id,

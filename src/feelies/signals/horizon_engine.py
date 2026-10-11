@@ -603,9 +603,11 @@ class HorizonSignalEngine:
             exchange_timestamp_ns=ts_ns,
             sequence=seq,
         )
+        clock = self._clock
+        assert clock is not None
         self._metric_collector.record(
             MetricEvent(
-                timestamp_ns=ts_ns,
+                timestamp_ns=clock.now_ns(),
                 correlation_id=cid,
                 sequence=seq,
                 source_layer="SIGNAL",

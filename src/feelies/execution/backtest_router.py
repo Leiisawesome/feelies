@@ -32,6 +32,7 @@ from feelies.execution.market_fill import (
     append_market_fill_acks,
     append_reject_ack,
     release_fill_reports,
+    require_fill_live,
     to_decimal,
 )
 from feelies.execution.moc_fill import MocFillController
@@ -256,7 +257,8 @@ class BacktestOrderRouter:
                     f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
                 )
                 return
-            fill_ts = ack_ts
+            fill_ts = self._clock.now_ns()
+            require_fill_live(fill_ts, ack_ts, order_id=request.order_id)
             self._execute_market_fill(request, quote, fill_ts)
         else:
             # Deferred fills: depth is validated on the quote prevailing at arrival.
@@ -295,12 +297,10 @@ class BacktestOrderRouter:
                         dm.request,
                         f"deferred market timeout after "
                         f"{ticks_for_symbol} ticks (no latency-eligible quote)",
-                        timestamp_ns=max(self._clock.now_ns(), dm.ack_timestamp_ns),
                     )
                     continue
                 remaining.append(replace(dm, ticks_for_symbol=ticks_for_symbol))
                 continue
-            reject_ts = max(self._clock.now_ns(), dm.ack_timestamp_ns)
             pricing = (
                 quote
                 if quote.exchange_timestamp_ns == dm.fill_deadline_exchange_ns
@@ -310,7 +310,6 @@ class BacktestOrderRouter:
                 self._reject(
                     dm.request,
                     f"crossed or locked quote bid={pricing.bid} ask={pricing.ask}",
-                    timestamp_ns=reject_ts,
                 )
                 continue
             depth = pricing.ask_size if dm.request.side == Side.BUY else pricing.bid_size
@@ -320,7 +319,6 @@ class BacktestOrderRouter:
                     dm.request,
                     f"zero depth on {dm.request.side.name} side "
                     f"(bid_size={pricing.bid_size}, ask_size={pricing.ask_size})",
-                    timestamp_ns=reject_ts,
                 )
                 continue
             if self._rth_reject_entry_if_needed(
@@ -328,7 +326,8 @@ class BacktestOrderRouter:
                 quote.exchange_timestamp_ns,
             ):
                 continue
-            fill_ts = max(self._clock.now_ns(), dm.ack_timestamp_ns)
+            fill_ts = self._clock.now_ns()
+            require_fill_live(fill_ts, dm.ack_timestamp_ns, order_id=dm.request.order_id)
             self._execute_market_fill(dm.request, pricing, fill_ts)
         self._deferred_markets = remaining
 
@@ -415,7 +414,6 @@ class BacktestOrderRouter:
         request: OrderRequest,
         reason: str,
         *,
-        timestamp_ns: int | None = None,
         release_submitted_id: bool = True,
     ) -> None:
         append_reject_ack(
@@ -425,6 +423,5 @@ class BacktestOrderRouter:
             self._clock.now_ns(),
             request,
             reason,
-            timestamp_ns=timestamp_ns,
             release_submitted_id=release_submitted_id,
         )

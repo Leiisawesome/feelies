@@ -61,19 +61,10 @@ _CLOCK_CALLS = frozenset(
 _KNOWN_NONCLOCK = frozenset(
     {
         ("src/feelies/broker/ib/router.py", "_fill_to_ack", "OrderAck"),
-        ("src/feelies/execution/market_fill.py", "append_reject_ack", "OrderAck"),
-        ("src/feelies/execution/market_fill.py", "append_market_fill_acks", "OrderAck"),
-        ("src/feelies/execution/moc_fill.py", "cancel_pending", "OrderAck"),
-        ("src/feelies/execution/passive_limit_router.py", "_emit_passive_fill", "OrderAck"),
-        ("src/feelies/execution/passive_limit_router.py", "_append_cancel_ack", "OrderAck"),
         ("src/feelies/execution/sized_intent_legs.py", "_mint", "OrderRequest"),
         ("src/feelies/risk/sized_intent_orders.py", "_mint", "OrderRequest"),
-        ("src/feelies/monitoring/horizon_metrics.py", "_publish_metric", "MetricEvent"),
-        ("src/feelies/monitoring/horizon_metrics.py", "_publish_alert", "Alert"),
-        ("src/feelies/risk/basic_risk.py", "_emit_dropped_legs_alert", "Alert"),
         ("src/feelies/sensors/registry.py", "_emit_reading_metrics", "MetricEvent"),
         ("src/feelies/sensors/registry.py", "_emit_nonfinite_metric", "MetricEvent"),
-        ("src/feelies/signals/horizon_engine.py", "_emit_metric", "MetricEvent"),
     }
 )
 
