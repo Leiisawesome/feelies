@@ -8,6 +8,7 @@ WARNING when a ``SizedPositionIntent`` carries a degraded optimizer
 from __future__ import annotations
 
 from feelies.bus.event_bus import EventBus
+from feelies.core.clock import SimulatedClock
 from feelies.core.events import Alert, SizedPositionIntent, TargetPosition
 from feelies.core.identifiers import SequenceGenerator
 from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
@@ -35,6 +36,7 @@ def _collector() -> tuple[EventBus, list[Alert]]:
     bus.subscribe(Alert, lambda a: alerts.append(a))
     collector = HorizonMetricsCollector(
         bus=bus,
+        clock=SimulatedClock(start_ns=1),
         metric_sequence_generator=SequenceGenerator(),
     )
     collector.attach()

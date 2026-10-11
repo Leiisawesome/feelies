@@ -1,6 +1,6 @@
 """Forbidden-reads matrix (G37).
 
-One row per forbidden (engine, fact) pair. Engines are the twelve
+One row per forbidden (engine, fact) pair. Engines are the
 independence-contract modules transcribed from pyproject.toml. Facts are
 the contracts already enumerated in wiring_manifest.SUBSCRIPTIONS,
 gate_registry.GATE_REGISTRY, and sequence_authority.STREAM_AUTHORITIES.
@@ -47,6 +47,7 @@ ENGINES: tuple[str, ...] = (
     "feelies.broker",
     "feelies.monitoring",
     "feelies.forensics",
+    "feelies.position",
 )
 
 

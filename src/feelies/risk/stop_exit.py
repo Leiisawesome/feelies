@@ -42,6 +42,7 @@ from decimal import Decimal
 from typing import Protocol
 
 from feelies.bus.event_bus import EventBus
+from feelies.core.clock import Clock
 from feelies.core.events import NBBOQuote, DeRiskRequirement, Side
 from feelies.core.identifiers import SequenceGenerator, derive_order_id
 from feelies.core.position import PositionStore
@@ -152,6 +153,7 @@ class StopExitController:
         "_attached",
         "_peak_pnl_per_share",
         "_pending_exit_symbols",
+        "_clock",
     )
 
     def __init__(
@@ -162,12 +164,14 @@ class StopExitController:
         position_store: PositionStore,
         policy: StopExitPolicy,
         trading_session_bounds: _SessionBounds | None = None,
+        clock: Clock | None = None,
     ) -> None:
         self._bus = bus
         self._seq = sequence_generator
         self._position_store = position_store
         self._policy = policy
         self._bounds = trading_session_bounds
+        self._clock = clock
         self._attached = False
         # Peak favourable excursion for the trailing stop, as
         # ``symbol -> (open_episode_start_ns, peak)``.  The episode is part of the
@@ -303,7 +307,7 @@ class StopExitController:
 
         side = Side.SELL if quantity > 0 else Side.BUY
         req = DeRiskRequirement(
-            timestamp_ns=quote.timestamp_ns,
+            timestamp_ns=self._clock.now_ns() if self._clock is not None else quote.timestamp_ns,
             correlation_id=quote.correlation_id,
             sequence=self._seq.next(),
             source_layer=STOP_EXIT_SOURCE_LAYER,

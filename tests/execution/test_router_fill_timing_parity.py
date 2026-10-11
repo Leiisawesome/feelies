@@ -168,9 +168,8 @@ class TestThroughFillInsideLatencyWindow:
         assert router.resting_order_count == 1
 
     def test_fill_prices_off_post_eligibility_quote_not_stale_cross(self) -> None:
-        """The stale in-window cross offers a BETTER price (99.90) than the
-        post-eligibility cross (99.98).  The fill must price off the
-        post-eligibility quote — pricing at 99.90 would be lookahead."""
+        """q_p is the in-window 99.80/99.90 book. The flush quote is
+        99.90/99.98. This zero within-L1 router takes q_p at 99.90."""
         clock = SimulatedClock(start_ns=5000)
         router = self._router(clock)
         router.on_quote(_quote("AAPL", "100.00", "100.10", ts=5000))
@@ -185,7 +184,9 @@ class TestThroughFillInsideLatencyWindow:
         router.on_quote(_quote("AAPL", "99.90", "99.98", ts=6500))
         fills = _fills(router.poll_acks())
         assert len(fills) == 1
-        assert fills[0].fill_price == Decimal("99.98")
+        assert fills[0].fill_price == Decimal("99.90")
+        assert fills[0].fees == Decimal("0")
+        assert fills[0].reason == ""
         assert fills[0].timestamp_ns == 6500
 
 
@@ -365,7 +366,11 @@ class TestCancelReplenishAtRestingLevel:
     def test_explicit_cancel_inside_window_floors_ts_and_blocks_fill(self) -> None:
         """A client cancel inside the latency window emits CANCELLED
         timestamped no earlier than ACKNOWLEDGED (monotonic per-order ack
-        stream), and a later crossing quote must not fill the dead order."""
+        stream), and a later crossing quote must not fill the dead order.
+
+        Original pin: the ACK stamp was 7000. T2 publishes it at the
+        clock (5000). Eligibility stays 7000.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
             clock,
@@ -376,7 +381,8 @@ class TestCancelReplenishAtRestingLevel:
         router.submit(_limit("AAPL", Side.BUY, 100, "100.00", order_id="c1"))
         ack = router.poll_acks()[0]
         assert ack.status == OrderAckStatus.ACKNOWLEDGED
-        assert ack.timestamp_ns == 7000
+        assert ack.timestamp_ns == 5000
+        assert router._resting_orders["c1"].ack_timestamp_ns == 7000
 
         clock.set_time(5500)  # inside the window
         assert router.cancel_order("c1") is True
@@ -637,7 +643,10 @@ class TestPassiveAggressiveEligibilityParity:
         acks = router.poll_acks()
         assert {a.order_id for a in acks} == {"passive", "aggressive"}
         assert all(a.status == OrderAckStatus.ACKNOWLEDGED for a in acks)
-        assert all(a.timestamp_ns == self._DEADLINE_NS for a in acks)
+        # T2: published at the clock. The old deadline stays eligibility.
+        assert all(a.timestamp_ns == self._SUBMIT_NS for a in acks)
+        assert router._resting_orders["passive"].ack_timestamp_ns == self._DEADLINE_NS
+        assert router._deferred_aggressive[0].ack_timestamp_ns == self._DEADLINE_NS
 
     def test_both_paths_share_one_exchange_time_deadline(self) -> None:
         clock = SimulatedClock(start_ns=self._SUBMIT_NS)

@@ -27,6 +27,7 @@ from feelies.core.events import (
     Signal,
     SignalDirection,
     TrendMechanism,
+    decision_time_ns,
 )
 
 _logger = logging.getLogger(__name__)
@@ -293,7 +294,7 @@ class CrossSectionalRanker:
         raw = sign * sig.strength * sig.edge_estimate_bps
         decay = 1.0
         if decay_enabled and sig.expected_half_life_seconds > 0:
-            age_ns = max(0, ctx.timestamp_ns - sig.timestamp_ns)
+            age_ns = max(0, decision_time_ns(ctx) - decision_time_ns(sig))
             age_s = age_ns / 1e9
             hl = float(sig.expected_half_life_seconds)
             decay = max(self._decay_floor, math.exp(-age_s / hl))

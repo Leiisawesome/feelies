@@ -70,7 +70,9 @@ def _long_book(quantity: int = 100, mark: str = "100") -> MemoryPositionStore:
     """A long position, marked flat unless the case wants a loss."""
     store = MemoryPositionStore()
     store.update(_SYMBOL, quantity, Decimal("100"))
-    store.update_mark(_SYMBOL, Decimal(mark))
+    store.update_mark(
+        _SYMBOL, Decimal(mark), bid=Decimal(mark), ask=Decimal(mark) + Decimal("0.01")
+    )
     return store
 
 
@@ -260,7 +262,7 @@ class TestForceFlattenStates:
         store = MemoryPositionStore()
         # A $120k unrealized loss on a $100k account: live NAV is -$20k.
         store.update(_SYMBOL, 2000, Decimal("100"))
-        store.update_mark(_SYMBOL, Decimal("40"))
+        store.update_mark(_SYMBOL, Decimal("40"), bid=Decimal("40"), ask=Decimal("40.01"))
 
         verdict = engine.check_order(_order(Side.SELL, 2000), store)
         assert verdict.action is RiskAction.FORCE_FLATTEN, (

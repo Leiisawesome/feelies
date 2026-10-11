@@ -73,6 +73,7 @@ def build_backtest_backend(
     moc_bounds: MocSessionBounds | None = None,
     moc_penalty_bps: float = 0.0,
     trading_session_bounds: TradingSessionBounds | None = None,
+    fill_report_latency_ms: int | None = None,
 ) -> tuple[ExecutionBackend, BacktestOrderRouter]:
     """Build a backtest ExecutionBackend from an injected market-data source.
 
@@ -103,6 +104,7 @@ def build_backtest_backend(
         moc_bounds=moc_bounds,
         moc_penalty_bps=moc_penalty_bps,
         trading_session_bounds=trading_session_bounds,
+        fill_report_latency_ms=fill_report_latency_ms,
     )
 
     backend = ExecutionBackend(
@@ -136,6 +138,7 @@ def build_passive_limit_backend(
     moc_bounds: MocSessionBounds | None = None,
     moc_penalty_bps: float = 0.0,
     trading_session_bounds: TradingSessionBounds | None = None,
+    fill_report_latency_ms: int | None = None,
 ) -> tuple[ExecutionBackend, PassiveLimitOrderRouter]:
     """Build a backtest backend with passive limit order fill model.
 
@@ -174,6 +177,7 @@ def build_passive_limit_backend(
         moc_bounds=moc_bounds,
         moc_penalty_bps=Decimal(str(moc_penalty_bps)),
         trading_session_bounds=trading_session_bounds,
+        fill_report_latency_ms=fill_report_latency_ms,
     )
 
     backend = ExecutionBackend(
