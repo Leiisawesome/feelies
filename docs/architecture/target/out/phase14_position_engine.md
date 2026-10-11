@@ -73,36 +73,42 @@ Each rung opens with a report-only census; the block is written from that eviden
 | P-21a | A | DONE. Fixture schedule, stage-gate hook, markers, member-1 seams, D-29/D-32 | hook self-tests; fixture schedule | hold |
 | P-21b | A | harness (scenarios.py), APP config, CI battery_real step; members 1, 2, 4 | 1, 2, 4-birth red NONVACUOUS; 4-rail green | hold |
 | P-21c | A | spec closure for members 3, 5, 6 (contracts §9, D-40..D-48); docs only | docs tests | hold |
-| P-21d | A | implemented (PR #257), pending merge. members 3, 5; tape injectors set_quote, excise | each red for its stated reason | hold |
-| P-21e | A | implemented (PR #258), pending merge. member 6 spec closure; shift_from, remove_side_run; doc integrity; capture ignore | red for its stated reason | hold |
-| P-21f | A | implemented (PR #260), pending merge. Member 6 tests (A1–A6, real + synthetic) + member 4 unusable-side clause; green_from per battery.md | red via NONVACUOUS (member 6) and UNUSABLE_SIDE (member 4 clause) | hold |
+| P-21d | A | DONE (merged dfc9b9a5, PR #257). members 3, 5; tape injectors set_quote, excise | each red for its stated reason | hold |
+| P-21e | A | DONE (merged 37aa506c, PR #258). member 6 spec closure; shift_from, remove_side_run; doc integrity; capture ignore | red for its stated reason | hold |
+| P-21f | A | DONE (merged fa537c59, PR #260). Member 6 tests (A1–A6, real + synthetic) + member 4 unusable-side clause; green_from per battery.md | red via NONVACUOUS (member 6) and UNUSABLE_SIDE (member 4 clause) | hold |
 | P-22 | A | split: P-22s/P-22a1/P-22a2f/P-22a2/P-22b | see P-22s, P-62a, P-22a1, P-22a2f, P-22a2, P-22b | hold |
-| P-22s | A | implemented (PR #261), pending merge. Spec closure G1–G9, member 11 pull-forward, member 1 immutability and member 2 D>0 clauses. Docs only. Parity prediction NONE; captures skipped. | docs tests | NONE |
-| P-62a | A | implemented (PR #262), pending merge. Admit source_layer=POSITION on the engine-8 copy path (MARKET, slice-scoped, through check_order); ADVERSE_EXCURSION in the stop-slippage set. Prediction NONE. | POSITION requirement on the copy path; ADVERSE_EXCURSION in the stop-slippage set | NONE |
+| P-22s | A | DONE (merged 3b3beced, PR #261). Spec closure G1–G9, member 11 pull-forward, member 1 immutability and member 2 D>0 clauses. Docs only. Parity prediction NONE; captures skipped. | docs tests | NONE |
+| P-62a | A | DONE (merged 6c00c5d0, PR #262). Admit source_layer=POSITION on the engine-8 copy path (MARKET, slice-scoped, through check_order); ADVERSE_EXCURSION in the stop-slippage set. Prediction NONE. | POSITION requirement on the copy path; ADVERSE_EXCURSION in the stop-slippage set | NONE |
 | P-22a1 | A | G10/N1–N7 spec, additive schema, engine/rail resolution, attribution, reference rail (D-62), import guard, member 1/2/11 clauses. Prediction NONE for the 64 constants. | S-09 pin moves as predicted; members 1/2/11 gated NONVACUOUS at A; member 4 rail and unusable-side green on the reference rail | NONE |
 | P-22a2f | A | G11 rejected-exit re-emission, PRECONDITION level, m2 dwell and m11 constructions, A3 END_OF_TAPE branch, F-P13b strict xfail. Tests and spec only (D-106..D-109). | PRECONDITION red at every stage; members gate at A with PRECONDITION passing; 64/64 hold; baseline GREEN | hold |
-| P-22a2 | A | implemented (PR pending), pending merge. Reference engine; members 1–6 and 11 green on the reference at stage E | stage E synthetic 44/44, real 9/9; stage A member outcomes unchanged except added self-tests | NONE |
-| tooling | A | implemented (PR A #267, PR B #266), pending merge. Opt-in broker/network markers, paper guard, profile fingerprint, single-source pre-push gate, nightly dispatcher on main. Resolves D-110. Backlog: a permanent CI order check (pytest-randomly or a reversed pass). | opt-in hook; paper guard; prepush.py | NONE |
-| P-22b | A | implemented (PR #268), pending merge. Broken engines B1–B11 killed by their named members; kill runner; battery holes J1–J6 closed | 11/11 PROPERTY kills; reference control 0 failures | NONE |
+| P-22a2 | A | DONE (merged e5e363f2, PR #265). Reference engine; members 1–6 and 11 green on the reference at stage E | stage E synthetic 44/44, real 9/9; stage A member outcomes unchanged except added self-tests | NONE |
+| tooling | A | DONE (merged 25215bc8, PR #267; merged eae14b6c, PR #266). Opt-in broker/network markers, paper guard, profile fingerprint, single-source pre-push gate, nightly dispatcher on main. Resolves D-110. Backlog: a permanent CI order check (pytest-randomly or a reversed pass). | opt-in hook; paper guard; prepush.py | NONE |
+| P-22b | A | DONE (merged e98cff2d, PR #268). Broken engines B1–B11 killed by their named members; kill runner; battery holes J1–J6 closed | 11/11 PROPERTY kills; reference control 0 failures | NONE |
 | S-1 | — | simulator timing census, report only: R1 fill-report latency is implicit; R2 aggressive fills are priced on the first quote at or after arrival; R3 ACKNOWLEDGED is published at clock C and stamped C plus fill latency; the knowledge-time invariant | report | hold |
-| P-23 | — | knowledge-time domain and the R1–R3 fixes. Pre-registered break. Every platform-emitted timestamp_ns is the simulated clock at emission; market-derived records also carry the source quote's exchange time | timestamp_ns at or before the clock at publication | break |
-| P-23a | — | implemented, pending merge. Two-class timestamps, causality invariants, publication-clock stamps, cross-class age compares. Pre-registered break of EXPECTED_MARKET_FILL_HASH and EXPECTED_RISK_VERDICT_HASH | I1 and I3 hold; I2 only PENDING; oracle 10 / 24.61 / 18f6bb4e | break |
-| P-23b | — | implemented (PR #270), pending merge. R2 prices a deferred aggressive fill on the quote prevailing at arrival. Legacy oracle unchanged (10 / 24.61 / 18f6bb4e). | pre-registered break | break |
+| P-23 | — | DONE (D-189). R1 by P-23b2 (merged a2f1fa32, PR #278). R2 by P-23b (merged 3eae11bd, PR #270). R3 by P-23a (merged 02d4719f, PR #269; f643416b): ACKNOWLEDGED stamps the publication clock (backtest_router.py:240). Every platform-emitted timestamp_ns is the simulated clock at emission; market-derived records also carry the source quote's exchange time. | timestamp_ns at or before the clock at publication | break |
+| P-23a | — | DONE (merged 02d4719f, PR #269). Two-class timestamps, causality invariants, publication-clock stamps, cross-class age compares. Pre-registered break of EXPECTED_MARKET_FILL_HASH and EXPECTED_RISK_VERDICT_HASH | I1 and I3 hold; I2 only PENDING; oracle 10 / 24.61 / 18f6bb4e | break |
+| P-23b | — | DONE (merged 3eae11bd, PR #270). R2 prices a deferred aggressive fill on the quote prevailing at arrival. Legacy oracle unchanged (10 / 24.61 / 18f6bb4e). | pre-registered break | break |
 | P-23d | — | Option C (D-161, D-162). The drain uniform is keyed on market content only (symbol, vendor sequence number, exchange timestamp, side, level). Orders at the same side, level and event share one draw. `order_id` and `ticks_at_level` are not inputs. Order ids are unchanged. | operator exemption of the legacy oracle | break |
-| P-23c1 | — | implemented, pending merge. GateDecision, DeRiskRequirement, and PositionSnapshot are action-class on the publication clock (D-168). The policy-deadline compare operand is unchanged. PENDING I2 is empty. Oracle unchanged: 10 / 26.61 / c95f4e5c. | PENDING empty; I2 holds on the reference run | hold |
-| P-23c2 | — | implemented, pending merge. A held single-alpha signal is released only by an NBBOQuote of its own symbol, and is priced and sized from that quote (D-172). Global horizon closure is kept (D-173). Timer closure and immediate actuation are deferred (D-174). Oracle unchanged: 10 / 26.61 / c95f4e5c. | own-symbol release | hold |
-| P-23e | — | implemented, pending merge. One regime calibration per symbol, fitted on that symbol's own prior-session quotes, with the cap applied per symbol (D-175). D-63's lookahead rule is unchanged (D-176). The pooled fit is only the fallback for a symbol with no own prior quotes (D-177). Oracle unchanged: 10 / 26.61 / c95f4e5c. | per-symbol prior-session prefix | hold |
-| P-23f | — | implemented, pending merge. An unset backtest session_open anchors the horizon grid at the exchange regular-session open (D-178). Third D-66 exemption reserved: 10 / 26.61 / ab3a2b3f, replacing c95f4e5c. The operator declares the break at merge. | exchange-open grid | break |
-| P-23g | — | implemented, pending merge. A boundary is emitted once, in order, with content as of the boundary time (D-182). Window statistics use one reduction (D-183). Locked level-3 snapshot hash break under D-143 (D-184): 251cc109 → f8824e5a, 14 snapshots, windowed values only. Legacy oracle unchanged: 10 / 26.61 / ab3a2b3f. Universe-independence is tested with risk limits non-binding (D-185). | boundary-time content | break |
+| P-23c1 | — | DONE (merged e1e636a4, PR #272). GateDecision, DeRiskRequirement, and PositionSnapshot are action-class on the publication clock (D-168). The policy-deadline compare operand is unchanged. PENDING I2 is empty. Oracle unchanged: 10 / 26.61 / c95f4e5c. | PENDING empty; I2 holds on the reference run | hold |
+| P-23c2 | — | DONE (merged 1c6d9263, PR #273). A held single-alpha signal is released only by an NBBOQuote of its own symbol, and is priced and sized from that quote (D-172). Global horizon closure is kept (D-173). Timer closure and immediate actuation are deferred (D-174). Oracle unchanged: 10 / 26.61 / c95f4e5c. | own-symbol release | hold |
+| P-23e | — | DONE (merged 6a3928f4, PR #274). One regime calibration per symbol, fitted on that symbol's own prior-session quotes, with the cap applied per symbol (D-175). D-63's lookahead rule is unchanged (D-176). The pooled fit is only the fallback for a symbol with no own prior quotes (D-177). Oracle unchanged: 10 / 26.61 / c95f4e5c. | per-symbol prior-session prefix | hold |
+| P-23f | — | DONE (merged 70842f9d, PR #275). An unset backtest session_open anchors the horizon grid at the exchange regular-session open (D-178). Third D-66 exemption reserved: 10 / 26.61 / ab3a2b3f, replacing c95f4e5c. The operator declares the break at merge. | exchange-open grid | break |
+| P-23g | — | DONE (merged 44ebba03, PR #276). A boundary is emitted once, in order, with content as of the boundary time (D-182). Window statistics use one reduction (D-183). Locked level-3 snapshot hash break under D-143 (D-184): 251cc109 → f8824e5a, 14 snapshots, windowed values only. Legacy oracle unchanged: 10 / 26.61 / ab3a2b3f. Universe-independence is tested with risk limits non-binding (D-185). | boundary-time content | break |
+| P-23g2 | — | DONE (merged 15178f03, PR #277). F-P23g-17 closed: eviction waits at the oldest unfinalised boundary; finalize still reads the closed window. | bit-identical to P-23g | hold |
 | P-23b2 | — | DONE (merged a2f1fa32, PR #278). R1 closed: fill_report_latency_ms, default None. | parameter plus sweep | hold |
 | P-23b3 | — | DONE (merged 8277290f, PR #280). F-P23b-a closed: a marketable arrival limit takes the arrival book. | taker at arrival | hold |
-| P-23c | — | position engine on action time: rail visibility time, engine records and the horizon compare; contract, reference, and battery; pre-registered known-answer shifts. Also F-P23d-h: `horizon_scheduler.py:259` closes every configured symbol's horizon on any symbol's event. | known-answer shifts | break |
+| P-23c | — | DONE by P-23c1 (merged e1e636a4, PR #272) and P-23c2 (merged 1c6d9263, PR #273) (D-189). Remainder deferred, not done: timer closure and immediate actuation (D-174), global closure kept (D-173), session-close flush (F-P23g-2). | known-answer shifts | break |
 | P-23a2 | — | DONE (merged 566b4f6c, PR #281). Fill acks publish on the clock. The ratchet is the five remaining rows. | five rows | hold |
+| T-2 | — | DONE (merged 2c753a75, PR #279). Check-job Tests is pytest -n 4; event-cache steps are restore-only (LEDGER.md:32782). | CI guard | hold |
+| P-24 | — | Identity-model census: order ids independent of event numbering and universe; an economic trade hash that excludes order_id; commit the cap-neutral harness and its recipe (F-P23a2-16). Covers F-P23d-f, F-P23d-g, F-D1-3. Before P-30. | census | hold |
 | P-30 | B | skeleton behaviour on the P-10 surface: stub cell born and closed from slice fills, stub gates, the two-phase step, snapshots to the sink; implements the contracts §8 seam PositionEngine(gate_order=...) (member 1 depends on it). Conformance: the production engine's subscriptions are exactly contracts §0's list (MarkRailUpdate, SlicePositionUpdate, Signal) (D-135). PositionClosed has no constructor in src (D-145); the production constructor is in scope here | members 1, 2 green | hold |
+| P-39 | — | Member 9 authoring under the stage-A rule (D-189): spec closure; reference engine extended; at least one broken engine per member; killed with a named member; reference control clean. Before P-40. Deferred (D-91); authored here. | member 9 | hold |
 | P-40 | C | rail complete (ages, absences, window, warm-up, worst-side, forced, dwelled); PlatformConfig position_rail_slippage_ticks and position_rail_dwell_ns (D-40). rail side usability per D-62: classify once in the orchestrator mark path, pass the result to store and rail; no second classify call site | + 4 (rail half), 9 | hold |
+| P-49 | — | Member 10 authoring under the stage-A rule (D-189): spec closure; reference engine extended; at least one broken engine per member; killed with a named member; reference control clean. Before P-50. Deferred (D-91); authored here. | member 10 | hold |
 | P-50 | D | position cell: birth from fill, entry rational, excursion, extremes, deadline, states, closing record | + 4 (birth), 10, 11 | hold |
 | P-51 | D | entry admission refusals and no-scale-in for owned alphas | member 10 refusal cases | hold |
 | P-52 | D | invalidation intake; kernel stops emitting its own exit for owned slices | member 10, 5 (invalidation cases) | hold |
+| P-59 | — | Members 7 and 8 authoring under the stage-A rule (D-189): spec closure; reference engine extended; at least one broken engine per member; killed with a named member; reference control clean. Before P-60. Deferred (D-91); authored here. Member 8 adverse half greens at P-60; favorable half and member 7 green at P-61. | members 7, 8 | hold |
 | P-60 | E | adverse gate (drawn level, blind limit, never-skips) | + 6, 8 (adverse half) | hold |
 | P-61 | E | favorable gate (blocks, forms, arming) | + 6, 8 (favorable half), 7 | hold |
 | P-62 | E | precedence and requirement path: `source_layer="POSITION"` accepted, MARKET, `ADVERSE_EXCURSION` in the stop-slippage set | all eleven green | hold |
@@ -111,6 +117,36 @@ Each rung opens with a report-only census; the block is written from that eviden
 
 Order inside a stage is fixed; stages do not overlap; no stage begins while an earlier
 gate is red.
+
+## Deferred from P-23
+
+Not done (D-189). Re-open when research evidence shows actuation delay matters.
+
+| Item | Record | Trigger |
+|---|---|---|
+| timer closure and immediate actuation | D-174 | re-open when research evidence shows actuation delay matters |
+| global closure kept | D-173; horizon_scheduler.py:289 | re-open when research evidence shows actuation delay matters |
+| session-close flush | F-P23g-2 | re-open when research evidence shows actuation delay matters |
+
+## Off-ladder tracked items
+
+Not a stage gate (D-189).
+
+| Item | Finding | Trigger |
+|---|---|---|
+| portfolio-path census (both `_mint` ratchet rows) | F-P23c-l; sized_intent_legs._mint and sized_intent_orders._mint (LEDGER.md:33143) | before any PORTFOLIO alpha |
+| sensor-registry clock | F-P23a2-15 | when the registry is touched |
+| cancel inside the latency window | F-P23a2-17 | before any alpha that cancels within order latency |
+| passive drain lookahead coverage | F-P23a2-19 | before P-40 |
+| point-state deep copy cost | F-P23g2-12; aggregator.py:391 and aggregator.py:406 | if a check job exceeds 960 s (LEDGER.md:33309) |
+| exposure-cap policy and in-flight exposure | F-P23b2-17 | operator decision |
+| default fill-report latency | F-P23b2-18 | operator decision |
+| maker adverse-selection charges | execution/cost_model.py:41 (`passive_adverse_selection_bps`) | paper campaign |
+| live early release | F-P23b2-16 | paper campaign |
+| live grid origin | F-P23f-2 | paper campaign |
+| live calibration | F-P23e-7 | paper campaign |
+| IB stamp row | D-144; LEDGER.md:33142 (`IB _fill_to_ack`) | paper campaign |
+| seeding main | F-T2-7, F-T2-10 | paper campaign |
 
 ## Round trip (what comes back for review)
 
