@@ -33361,3 +33361,9 @@ OWNER:       campaign 15.
                  P-30); the dwell clause is green_from C (D-87;
                  test_battery_m2_no_lookahead.py:28). Bugbot medium
                  finding: disposition "fixed in Amendment A".
+
+## RECORD P-29 merged
+  PR:            #282 (head baa8b4ec5c6a7e168050b2bb50b009e0acf3e241,
+                 merge 469d1bc62e0b41adb41bb9cbf2f0d328efbfcf7e).
+  DIFF:          sha256 of git diff 93fe56ee..baa8b4ec is
+                 818808cd6992e059e498768f6d4423a19a2051072201f9401644dbd6af8f7b5b.
