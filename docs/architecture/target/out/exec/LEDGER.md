@@ -33229,3 +33229,89 @@ OWNER:       campaign 15.
                  F-P23a2-18 Battery reporting standard is reference
                  stage E 76/76 and real 12/12, both orders. The
                  stage-E real failures are the pre-P-30 stub set.
+
+## RECORD P-23a2 merged
+  PR:            #281 (head 25b44ba60acb4cc15ed116d1cfc3b94023f84034,
+                 merge 566b4f6ce1dff51035a79100e3c7b53d3fc87597).
+  DIFF:          sha256 of git diff 154ee44c..25b44ba6 is
+                 53b439c2e63f972d521a3a1dcda22661ac65bb111b3d55728c21e166b97aea38.
+  CLOSED:        the plan row
+                 (docs/architecture/target/out/phase14_position_engine.md:100).
+                 Fill acks publish on the clock. The ratchet is the
+                 five remaining rows.
+  PINS:          Held on 566b4f6c. Disk cache only. No fetch.
+                 Oracle 10 / 26.61 /
+                 ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e.
+                 R-FIX 98 / -1317.04 /
+                 0ec66a9a48190680e564d519505ff9ed87e063ac4343c40040a590b85b38e9c2.
+                 R-SYN 29 / -131.01 /
+                 ffc9161eb542967c93012064371dbff819e2b8c4d7485fcedfb175eb7fcfd575.
+                 Level-3
+                 f8824e5a288d64a3922c333a51416ce4b2db1251e6b2d8c815102fd81e6840ce.
+                 Manifest fingerprint
+                 fdf270da3b4384f5af5c29bd2fb3bb3b6f38690944104709384b085d0bbe8e05.
+                 Schema-drift
+                 b8f2c819b344da5db7de08169530a1fc33cf41541fce8c31ec4e03b2f25c316f.
+                 Parity-constant count 64.
+                 Eight-name 12 / +19.43 /
+                 6219609611306a8871aeb1cc11d2f3128f43ebe40c6931dc912d44d0d504542d.
+                 Ratchet is the five rows: IB _fill_to_ack,
+                 sized_intent_legs._mint, sized_intent_orders._mint,
+                 registry._emit_reading_metrics,
+                 registry._emit_nonfinite_metric.
+  F-P23a2-19:    Lookahead mutant killed on 154ee44c and on
+                 25b44ba6. The fill is held on the eligible quote;
+                 the next quote with a later exchange time supplies
+                 the price and the stamp. Injection: 25b44ba6
+                 backtest_router.py:296 and
+                 passive_limit_router.py:631; 154ee44c
+                 backtest_router.py:294 and
+                 passive_limit_router.py:642.
+                 test_fill_at_t_unchanged_by_later_quote failed on
+                 both (len(fills)==0). The passive prefix test
+                 passed on both.
+  F-P23a2-20:    Triggering-quote pricing (pricing = quote) on
+                 25b44ba6, injected at backtest_router.py:304 and
+                 passive_limit_router.py:489. Killed by 22 tests
+                 under tests/execution/:
+                 test_same_order_id_allowed_after_deferred_reject;
+                 test_deferred_market_rejects_zero_depth_at_fill_quote;
+                 test_deferred_market_queues_despite_zero_depth_on_submit_quote;
+                 test_deferred_marketable_limit_rejects_when_mid_exceeds_limit_after_latency;
+                 test_marketable_limit_same_order_id_retry_after_deferred_reject;
+                 test_no_quote_in_window_prices_the_submit_quote
+                 [backtest, passive];
+                 test_locked_arrival_quote_rejects
+                 [backtest, passive];
+                 test_locked_flush_quote_fills_at_arrival_quote
+                 [backtest, passive];
+                 test_other_symbol_does_not_price_the_order
+                 [backtest, passive];
+                 test_in_window_quote_prices_over_the_flush_quote
+                 [backtest, passive];
+                 test_zero_depth_on_arrival_quote_rejects
+                 [backtest, passive];
+                 test_depth_on_arrival_quote_fills_when_flush_is_empty
+                 [backtest, passive];
+                 test_marketable_limit_is_checked_on_the_arrival_mid;
+                 test_nonzero_latency_defers_fill_until_post_eligibility_quote;
+                 test_nonzero_latency_market_defers_to_later_quote.
+  CI:            Last eight check-job and Tests-step durations,
+                 newest first:
+                 631 s / 540 s, 38099053829, merge 566b4f6c, success;
+                 866 s / 753 s, 38024849991, PR head 25b44ba6, success;
+                 872 s / 763 s, 37904032506, ledger 154ee44c, success;
+                 490 s / 419 s, 37901934800, merge 8277290f, success;
+                 880 s / 771 s, 37887841352, PR head f6d19eea, success;
+                 675 s / 567 s, 37727665009, success;
+                 512 s / 424 s, 37726778253, success;
+                 474 s / 392 s, 37723489401, success.
+                 Watch rule: any check job above 960 s (80% of the
+                 1200 s cap) opens a tooling census before the next
+                 code rung. This rung's checks are 631 s and 866 s,
+                 both under 960 s.
+                 Merge run 38099053829 on 566b4f6c: success.
+                 check (ubuntu-latest) 631 s, under the 1200 s cap.
+                 Tests step 540 s. Guards that ran printed
+                 complete. Populate skipped. No cache save.
+                 reference battery (real) skipped.
