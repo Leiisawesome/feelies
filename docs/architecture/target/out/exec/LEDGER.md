@@ -33315,3 +33315,42 @@ OWNER:       campaign 15.
                  Tests step 540 s. Guards that ran printed
                  complete. Populate skipped. No cache save.
                  reference battery (real) skipped.
+
+---
+
+## P-29
+
+  PR:            draft against arch/exec. Not merged. Nothing on main.
+  BASE:          93fe56ee884cd9e6edf411a7dda2de5411879642
+  PRE-CAPTURE:   baseline_pre-P-29.json, captured on the clean base
+                 and committed in 9d263886, before this heading.
+                 Full suite 5333 passed, 0 failed, 44 skipped, exit 0.
+                 Determinism 148 passed, exit 0. Parity constants 64.
+                 BASELINE GREEN.
+  POST-CAPTURE:  baseline_post-P-29.json, captured on clean 7381e472
+                 and committed in bbc392e7, before this heading.
+                 Full suite 5333 passed, 0 failed, 44 skipped, exit 0.
+                 Determinism 148 passed, exit 0. compare parity-only:
+                 64 -> 64, changed 0. BASELINE GREEN.
+  CHANGE:        Docs only. Plan status rows, battery.md member 2
+                 and members 7-10, decisions.md D-189. No src/ or
+                 tests/ change.
+  P4:            R3 does not hold. S-1 said ACKNOWLEDGED is published
+                 at clock C and stamped C plus fill latency (F-R3).
+                 The published stamp is the clock.
+                 backtest_router.py:240 sets timestamp_ns=published_ts.
+                 Line 236 sets published_ts = self._clock.now_ns().
+                 The same commit sets passive_limit_router.py:429
+                 and :601. git log -S "timestamp_ns=published_ts"
+                 on those two files returns only f643416b ("Publish
+                 acknowledgements at the clock and keep eligibility
+                 unchanged."), an ancestor of the P-23a merge
+                 02d4719f (PR #269).
+  D-91:          decisions.md:100, verbatim:
+                 | D-91 | 2026-09-27 | P-22s | In what order do the reference-engine rungs land, and which members wait? | P-22s, then P-62a, then P-22a, then P-22b. Members 7-10 are deferred. Each deferred member's B is still covered by another catcher: B7 by member 6 (member 8 deferred), B9 by member 5 (member 10 deferred). Members 7 and 9 have no B row. | The reference cannot emit a POSITION requirement the execution path drops, so P-62a precedes P-22a. Members 7-10 need production behaviour this reference rung does not close, and their defects stay caught. | phase14 ladder |
+  PINS:          Unchanged. src/ and tests/ match 93fe56ee. This
+                 rung did not replay and did not fetch. Parity
+                 constants 64, changed 0. Carried from the P-23a2
+                 merge record on 566b4f6c: oracle 10 / 26.61 /
+                 ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e.
+  DECISIONS:     D-189.
