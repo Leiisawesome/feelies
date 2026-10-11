@@ -96,8 +96,8 @@ ASSERTS:           for sampled events k, a run on the tape truncated after k pro
                    (quote sequence 401). The decision at that quote is outcome fire, and
                    its reason is not DWELL_NOT_CLEAN (J5, D-131). It catches B11.
                    At P-40 the D source becomes PlatformConfig and this test switches.
-                   green_from C, the stage at which P-40 lands:
-                   | P-40 | C | rail complete (ages, absences, window, warm-up, worst-side, forced, dwelled); PlatformConfig position_rail_slippage_ticks and position_rail_dwell_ns (D-40). rail side usability per D-62: classify once in the orchestrator mark path, pass the result to store and rail; no second classify call site |
+                   green_from B, the stage at which P-30 lands (P-29). The stage table
+                   row B and the P-30 gate both say members 1, 2 green.
 FAILURE LOOKS LIKE:the first event where truncated and full runs differ
 BLOCKS THE BUILD:  yes — green from stage B onward
 ```
@@ -248,6 +248,8 @@ four runs; A2 on each copy, including risk-verdict equality (D-75). `green_from`
 
 ```
 MEMBER:            7 Monotonicity
+                   deferred (D-91); authored in P-59 (P-29).
+                   green_from E at P-61 (phase14 row: "+ 6, 8 (favorable half), 7").
 ASSERTS:           one knob swept at a time, at least four settings: more S gives weakly
                    worse mean result and S = 0 is never beaten; longer D gives weakly fewer
                    favorable exits; wider give-back gives weakly fewer favorable exits, the
@@ -258,6 +260,9 @@ BLOCKS THE BUILD:  no
 
 ```
 MEMBER:            8 Decision record completeness
+                   deferred (D-91); authored in P-59 (P-29).
+                   green_from E: adverse half at P-60 ("+ 6, 8 (adverse half)");
+                   favorable half at P-61 ("+ 6, 8 (favorable half), 7").
 ASSERTS:           every rail event of every open cell has an adverse decision (fire or
                    hold); every blocked favorable comparison carries one of the six declared
                    block reasons; both counts non-zero on every injected tape
@@ -266,6 +271,7 @@ BLOCKS THE BUILD:  no — makes member 6 auditable rather than hopeful
 
 ```
 MEMBER:            9 Held-price integrity
+                   deferred (D-91); authored in P-39 (P-29).
 ASSERTS:           no age decreases without the underlying price changing; while a side is
                    absent its published price is bit-identical to the last one published
                    while present; absent-for spans increase monotonically through an
@@ -275,6 +281,7 @@ BLOCKS THE BUILD:  no
 
 ```
 MEMBER:            10 Lifecycle
+                   deferred (D-91); authored in P-49 (P-29).
 ASSERTS:           entry refusal with the correct reason for no paying price, crossed at
                    birth, cutoff passed, scale-in; the horizon fires on the first rail event
                    at or past the deadline, by sequence, including when a gap swallowed the
