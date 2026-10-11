@@ -95,9 +95,9 @@ ASSERTS:           for sampled events k, a run on the tape truncated after k pro
                    a crossed quote at t−D−100 ms; the favorable condition met at t
                    (quote sequence 401). The decision at that quote is outcome fire, and
                    its reason is not DWELL_NOT_CLEAN (J5, D-131). It catches B11.
-                   At P-40 the D source becomes PlatformConfig and this test switches.
-                   green_from B, the stage at which P-30 lands (P-29). The stage table
-                   row B and the P-30 gate both say members 1, 2 green.
+                   Member 2 is green_from B (the stage-B gate, P-30). Its dwell clause
+                   is green_from C (D-87): the D source switches at P-40; clause marker
+                   test_battery_m2_no_lookahead.py:28.
 FAILURE LOOKS LIKE:the first event where truncated and full runs differ
 BLOCKS THE BUILD:  yes — green from stage B onward
 ```

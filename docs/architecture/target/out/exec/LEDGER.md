@@ -33354,3 +33354,10 @@ OWNER:       campaign 15.
                  merge record on 566b4f6c: oracle 10 / 26.61 /
                  ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e.
   DECISIONS:     D-189.
+  F-P29-1:       The gatekeeper misread the member-level and
+                 dwell-clause green_from as a contradiction. The
+                 first edit blurred the two. Amendment A states
+                 both: member 2 is green_from B (the stage-B gate,
+                 P-30); the dwell clause is green_from C (D-87;
+                 test_battery_m2_no_lookahead.py:28). Bugbot medium
+                 finding: disposition "fixed in Amendment A".
