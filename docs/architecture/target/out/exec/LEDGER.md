@@ -33481,3 +33481,19 @@ OWNER:       campaign 15.
                  with any earlier ack.
   F-P24-16:      The gatekeeper suspected the stop-exit seed of
                  colliding. R0 showed it emits one order per quote.
+  F-P24-17:      The R-SYN economic test depended on process-cache
+                 state. On 8e3ecc41, test_m1_fresh_syn then
+                 test_rsyn_economic_trade_hash in one process
+                 raised KeyError: 'orch' at
+                 test_economic_trade_hash_pins.py:43.
+                 Amendment A builds that tape through
+                 _execute_synthetic, which does not touch
+                 _cached_synthetic.
+  F-P24-18:      The R-FIX pin set FEELIES_ENGINE and FEELIES_RAIL
+                 with os.environ (test_economic_trade_hash_pins.py
+                 on 8e3ecc41, saved and restored in a finally).
+                 Amendment A scopes both with monkeypatch.
+  STANDING:      A new test that touches a process cache,
+                 environment variable, or module state must
+                 pass after its cache-populating neighbours in
+                 one process and under -n 4 before merge.

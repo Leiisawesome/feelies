@@ -7,7 +7,6 @@ functional so the check job, which restores APP only, does not run it.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
@@ -44,31 +43,29 @@ def _capture(run: Any) -> Any:
 
 
 def test_rsyn_economic_trade_hash() -> None:
-    from tests.position_engine.scenarios import T0, run_synthetic
+    """Build the tape through ``_execute_synthetic``, which does not touch the cache.
+
+    ``run_synthetic`` returns ``_cached_synthetic`` without calling
+    ``build_platform`` when this seed-11 tape is already cached in-process.
+    ``run_real`` avoids that via ``_instrumented_run``; the synthetic entry
+    point does not.
+    """
+    from tests.position_engine.scenarios import T0, _execute_synthetic
     from tests.position_engine.tapes import make_tape
 
     tape = make_tape(seed=11, n=36000, symbol="SYN", start_ns=T0, size=1000)
-    orchestrator = _capture(lambda: run_synthetic(tape, symbols=("SYN",)))
+    orchestrator = _capture(lambda: _execute_synthetic(tape, ("SYN",), None, None, True, None))
     records = list(orchestrator.trade_journal.query())
     assert len(records) == 29
     assert compute_economic_trade_hash(orchestrator) == ECONOMIC_TRADE_HASH_RSYN
 
 
-def test_rfix_economic_trade_hash() -> None:
+def test_rfix_economic_trade_hash(monkeypatch: pytest.MonkeyPatch) -> None:
     from tests.position_engine.scenarios import run_real
 
-    keys = ("FEELIES_ENGINE", "FEELIES_RAIL")
-    saved = {key: os.environ.get(key) for key in keys}
-    os.environ["FEELIES_ENGINE"] = "tests.position_engine.reference.engine.PositionEngine"
-    os.environ["FEELIES_RAIL"] = "tests.position_engine.reference.rail.ReferenceRail"
-    try:
-        orchestrator = _capture(run_real)
-    finally:
-        for key, value in saved.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
+    monkeypatch.setenv("FEELIES_ENGINE", "tests.position_engine.reference.engine.PositionEngine")
+    monkeypatch.setenv("FEELIES_RAIL", "tests.position_engine.reference.rail.ReferenceRail")
+    orchestrator = _capture(run_real)
     records = list(orchestrator.trade_journal.query())
     assert len(records) == 98
     assert compute_economic_trade_hash(orchestrator) == ECONOMIC_TRADE_HASH_RFIX
