@@ -33497,3 +33497,9 @@ OWNER:       campaign 15.
                  environment variable, or module state must
                  pass after its cache-populating neighbours in
                  one process and under -n 4 before merge.
+
+## RECORD P-24 merged
+  PR:            #283 (head 63f93d26b0cab71d41ca851852bbef0fa1c5ee10,
+                 merge 6f186503db9132fd31ed580d5b808856156c19b1).
+  DIFF:          sha256 of git diff eb96bf56..63f93d26 is
+                 d494059b573cf6def3a7684e32b6ddd27cd90ea3cfed58808562cbd946e5a569.
