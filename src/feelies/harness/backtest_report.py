@@ -835,6 +835,35 @@ def compute_parity_hash(orchestrator: Orchestrator) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def compute_economic_trade_hash(orchestrator: Orchestrator) -> str:
+    """SHA-256 of the trade sequence with ``order_id`` removed.
+
+    Same records and economic fields as :func:`compute_parity_hash`. The
+    parity hash stays the identity pin. This one stays put when only order
+    ids are rewritten.
+    """
+    from feelies.storage.trade_journal import TradeRecord
+
+    journal = orchestrator.trade_journal
+    assert journal is not None, "backtest orchestrator must attach trade_journal"
+    records: list[TradeRecord] = list(journal.query())
+    trade_seq = [
+        {
+            "symbol": str(r.symbol),
+            "strategy_id": str(r.strategy_id),
+            "side": str(r.side).split(".")[-1],
+            "quantity": int(r.filled_quantity),
+            "fill_price": str(r.fill_price),
+            "realized_pnl": str(r.realized_pnl),
+            "fees": str(r.fees),
+            "cost_bps": str(r.cost_bps),
+        }
+        for r in records
+    ]
+    payload = json.dumps(trade_seq, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def compute_config_hash(config: PlatformConfig) -> str:
     """SHA-256 of the resolved PlatformConfig snapshot.
 

@@ -33367,3 +33367,133 @@ OWNER:       campaign 15.
                  merge 469d1bc62e0b41adb41bb9cbf2f0d328efbfcf7e).
   DIFF:          sha256 of git diff 93fe56ee..baa8b4ec is
                  818808cd6992e059e498768f6d4423a19a2051072201f9401644dbd6af8f7b5b.
+
+## P-24
+
+  PR:            draft against arch/exec. Not merged. Nothing on main.
+  BASE:          eb96bf56fe4aee9a5aaca6846c0b1718e889a0d3
+  PRE-CAPTURE:   baseline_pre-P-24.json, captured on the clean base
+                 and committed in f13c9ee4, before this heading.
+                 Full suite 5333 passed, 0 failed, 44 skipped, exit 0.
+                 Determinism 148 passed, exit 0. Parity constants 64.
+                 BASELINE GREEN.
+  POST-CAPTURE:  baseline_post-P-24.json, captured on clean a58c285f
+                 and committed in 6e6109d5, before this heading.
+                 Full suite 5338 passed, 0 failed, 44 skipped, exit 0.
+                 Determinism 148 passed, exit 0. compare parity-only:
+                 64 -> 64, changed 0. BASELINE GREEN.
+  E0:            a58c285f. Economic trade hash on the exempt route.
+                 The four constants are scanner exemptions, so the
+                 fingerprint and the parity-constant count stay.
+                 The cap-neutral universe check is committed and
+                 stays outside the check gate. D-190.
+  PINS:          Unchanged. Oracle 10 / 26.61 /
+                 ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e,
+                 config 7c5f1e8d7cdaea16770a2c35c2f7632796f0247737dd120d984afdcb4e55aef5.
+                 R-FIX 98 / -1317.04 /
+                 0ec66a9a48190680e564d519505ff9ed87e063ac4343c40040a590b85b38e9c2,
+                 config 7d04fad61db4e3d2a85a68bb388185fd88c3bce58559ad3f262b888064d0a55d.
+                 R-SYN 29 / -131.01 /
+                 ffc9161eb542967c93012064371dbff819e2b8c4d7485fcedfb175eb7fcfd575,
+                 config 1a6372533bf92f86dfcccc19409d16e1d2de4b85771c839d02473b685ff5c783.
+                 Eight-name 12 / +19.43 /
+                 6219609611306a8871aeb1cc11d2f3128f43ebe40c6931dc912d44d0d504542d,
+                 config 84a57c87ac3ddb4269fa452f42db636cebb6ae8c1708bc2ab8b6a6618dabee1e.
+                 Fingerprint
+                 fdf270da3b4384f5af5c29bd2fb3bb3b6f38690944104709384b085d0bbe8e05.
+                 Schema-drift
+                 b8f2c819b344da5db7de08169530a1fc33cf41541fce8c31ec4e03b2f25c316f.
+                 Parity-constant count 64. Ratchet is the five rows:
+                 IB _fill_to_ack, sized_intent_legs._mint,
+                 sized_intent_orders._mint,
+                 registry._emit_reading_metrics,
+                 registry._emit_nonfinite_metric.
+  NEW PINS:      ECONOMIC_TRADE_HASH
+                 b6bc1db5c7c48465d186d30f8c19003e011a6b75e88f22bee239ea47a63fc839.
+                 ECONOMIC_TRADE_HASH_RFIX
+                 bb5f94cf0f29f29f1d7b6918d3fd9ea53b9a7ec764a5971f07293fd29f9cb648.
+                 ECONOMIC_TRADE_HASH_RSYN
+                 3b795e551574d0f56e5c2319acaef921137396f80baba52868434bb07201060c.
+                 ECONOMIC_TRADE_HASH_EIGHT
+                 aae3847abdb29b4524b7a285d13784058fbcce0f3c5cd0682f8877c6a3e84484.
+  UNIVERSE:      joint 18 / +41.49 /
+                 f98a588d1f79f639308439da7437a2b5b66fa343d71d35a3632db12e3ffb0da8,
+                 economic
+                 498bed5c756bb430c9df1041ee481d259f7b05fa7002bbab808f59abe6d6cc03.
+                 Per-symbol joint versus solo equal. Rejects empty.
+                 Inline hash equals compute_economic_trade_hash on
+                 the joint run and every solo run.
+  STANDING:      every rung runs
+                 PYTHONHASHSEED=0 uv run pytest
+                 tests/conformance/test_cap_neutral_universe.py -q
+                 -m universe_check
+                 locally (not in CI; needs the eight-name cache).
+  DECISIONS:     D-190.
+  F-P24-1:       F-P23d citations are stale at eb96bf56. Regime dedupe
+                 is regime_engine.py:418. The orchestrator generator
+                 is orchestrator.py:3150. Hazard mint is
+                 hazard_exit.py:250. Exit composer is :416 and :486.
+                 D-180's mint line orchestrator.py:2196 is now :2229.
+  F-P24-2:       Order ids are labels on these runs. Fraction 1.0
+                 under p1-p3c and under cap-neutral universe width,
+                 on every symbol that has a fill, with economics equal.
+  F-P24-3:       The drain seed is vendor content and excludes
+                 order_id (passive_limit_router.py:874). The old seed
+                 remains the negative control in the numbering test.
+  F-P24-4:       The only production sequence on the rail is
+                 quote.sequence (mark_rail.py:70). contracts.md:197
+                 says birth_fill_sequence is derived from the tape
+                 and does not name the field.
+  F-P24-5:       All 36000 R-SYN quotes have vendor sequence_number 0.
+  F-P24-6:       The locked-hash scanner matches any module-level
+                 64-hex literal. The four economic constants are
+                 exempted. The fingerprint does not include that
+                 exemption dict.
+  F-P24-7:       A symbol with zero fills exits 2 from the runner
+                 verification. The replay has finished. The universe
+                 test accepts exit 0 and 2.
+  F-P24-8:       test_g45_keep fails after any src edit until
+                 tools/arch/perfmeasure.py --mode profile refreshes
+                 the gitignored profile. The profile is not committed.
+  F-P24-9:       A duplicate order_id can drop a fill
+                 (passive_limit_router.py:328, backtest_router.py:190,
+                 orchestrator.py:5751). No measured perturbation
+                 collided.
+  F-P24-10:      The hazard seed omits strategy_id. The symbol guard
+                 hides the collision until a partial fill changes
+                 the net; the second exit is then dropped at
+                 orchestrator.py:5751. No shipped config loads two
+                 hazard-enabled alphas.
+  F-P24-11:      sized_intent_legs._mint and sized_intent_orders._mint
+                 share a seed. Production calls the latter only.
+  F-P24-12:      First-class registration moves the fingerprint to
+                 5c007a6f and the scanner count to 72. This rung
+                 took the exempt route, so the fingerprint and the
+                 count stay.
+  F-P24-13:      The eight-name replay, once registered without a
+                 marker, is selected by the check job. CI has no
+                 eight-name cache. The pin is marked functional.
+  F-P24-14:      universe_check is in neither prepush nor any CI job.
+  F-P24-15:      The spec names birth_fill_sequence and names no
+                 source field. The reference engine uses the last
+                 rail quote_sequence, else fill_ack_sequence. The
+                 first moves with universe width; the second moves
+                 with any earlier ack.
+  F-P24-16:      The gatekeeper suspected the stop-exit seed of
+                 colliding. R0 showed it emits one order per quote.
+  F-P24-17:      The R-SYN economic test depended on process-cache
+                 state. On 8e3ecc41, test_m1_fresh_syn then
+                 test_rsyn_economic_trade_hash in one process
+                 raised KeyError: 'orch' at
+                 test_economic_trade_hash_pins.py:43.
+                 Amendment A builds that tape through
+                 _execute_synthetic, which does not touch
+                 _cached_synthetic.
+  F-P24-18:      The R-FIX pin set FEELIES_ENGINE and FEELIES_RAIL
+                 with os.environ (test_economic_trade_hash_pins.py
+                 on 8e3ecc41, saved and restored in a finally).
+                 Amendment A scopes both with monkeypatch.
+  STANDING:      A new test that touches a process cache,
+                 environment variable, or module state must
+                 pass after its cache-populating neighbours in
+                 one process and under -n 4 before merge.

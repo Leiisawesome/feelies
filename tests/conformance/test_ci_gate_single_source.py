@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
-_EXPR = "not functional and not paper_rth and not battery_real"
+_EXPR = "not functional and not paper_rth and not battery_real and not universe_check"
 
 
 def test_ci_gate_is_single_source() -> None:
