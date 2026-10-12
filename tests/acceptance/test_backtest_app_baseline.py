@@ -25,6 +25,7 @@ from feelies.bootstrap import build_platform
 from feelies.core.platform_config import PlatformConfig
 from feelies.harness import (
     compute_config_hash,
+    compute_economic_trade_hash,
     compute_parity_hash,
     prepare_backtest_event_log,
 )
@@ -205,6 +206,9 @@ _BASELINE_CONFIG_HASH = "bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929
 # P-23f: the grid anchors at the exchange open. Fill count and net stay
 # 10 / 26.61. This hash replaces c95f4e5c; order_id differs on fills 1-9.
 _BASELINE_TRADE_PARITY_HASH = "ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e"
+# Same journal as the parity hash, with order_id removed. Not a _BASELINE_
+# name: the parity-constant scanner must not count it as a moved pin.
+ECONOMIC_TRADE_HASH = "b6bc1db5c7c48465d186d30f8c19003e011a6b75e88f22bee239ea47a63fc839"
 # Content-bound identifier for the input tape (per-day event counts + ingestion
 # health). Distinct from the parity hashes: this pins what went *in*.
 _BASELINE_DATA_VERSION = "cache:2364ef7fe41c27d9"
@@ -389,6 +393,7 @@ def test_app_20260326_backtest_baseline_from_disk_cache(runner) -> None:
     records = list(journal.query())
     fills = len(records)
     parity = compute_parity_hash(outcome.orchestrator)
+    economic = compute_economic_trade_hash(outcome.orchestrator)
     assert outcome.recorder is not None
     net = _net_pnl_from_orchestrator(outcome.orchestrator, outcome.recorder)
     calibrated, source, n_cal = _calibration_view(outcome.orchestrator)
@@ -399,6 +404,8 @@ def test_app_20260326_backtest_baseline_from_disk_cache(runner) -> None:
         problems.append(f"net {net} != {_BASELINE_NET_PNL}")
     if parity != _BASELINE_TRADE_PARITY_HASH:
         problems.append(f"hash {parity} != {_BASELINE_TRADE_PARITY_HASH}")
+    if economic != ECONOMIC_TRADE_HASH:
+        problems.append(f"economic {economic} != {ECONOMIC_TRADE_HASH}")
     if not (calibrated is True and source == "2026-03-25" and n_cal == 50636):
         problems.append(f"calibrated={calibrated} source={source} n={n_cal}")
     assert not problems, "; ".join(problems)

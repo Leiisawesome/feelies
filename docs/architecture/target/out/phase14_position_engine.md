@@ -34,6 +34,7 @@ STANDING INVARIANTS:
            Tests land before the code they test and are not edited by build rungs.
            Commit to exec/<id> only; merge --no-ff; draft PR per cycle; Bugbot Autofix off.
            Every break is pre-registered (evaluation.md §2). An improved result is never a reason to accept one.
+           Every rung runs PYTHONHASHSEED=0 uv run pytest tests/conformance/test_cap_neutral_universe.py -q -m universe_check locally (not in CI; needs the eight-name cache).
 
 NON-CUTS:  No new exit authors outside engine 13. No change to engine 8 safety exits.
            No change to production alpha YAMLs. No sizing or allocator work.
@@ -102,7 +103,7 @@ Each rung opens with a report-only census; the block is written from that eviden
 | T-2 | — | DONE (merged 2c753a75, PR #279). Check-job Tests is pytest -n 4; event-cache steps are restore-only (LEDGER.md:32782). | CI guard | hold |
 | P-24 | — | Identity-model census: order ids independent of event numbering and universe; an economic trade hash that excludes order_id; commit the cap-neutral harness and its recipe (F-P23a2-16). Covers F-P23d-f, F-P23d-g, F-D1-3. Before P-30. | census | hold |
 | P-29 | docs | DONE (merged 469d1bc62e0b41adb41bb9cbf2f0d328efbfcf7e, PR #282). Plan reconciled with the ledger; P-23 and P-23c closed with deferrals; member 2 levels stated (B; dwell clause C per D-87); rows P-24, P-39, P-49, P-59 and the off-ladder table added (D-189) | docs tests; R4 none | hold |
-| P-30 | B | skeleton behaviour on the P-10 surface: stub cell born and closed from slice fills, stub gates, the two-phase step, snapshots to the sink; implements the contracts §8 seam PositionEngine(gate_order=...) (member 1 depends on it). Conformance: the production engine's subscriptions are exactly contracts §0's list (MarkRailUpdate, SlicePositionUpdate, Signal) (D-135). PositionClosed has no constructor in src (D-145); the production constructor is in scope here | members 1, 2 green | hold |
+| P-30 | B | skeleton behaviour on the P-10 surface: stub cell born and closed from slice fills, stub gates, the two-phase step, snapshots to the sink; implements the contracts §8 seam PositionEngine(gate_order=...) (member 1 depends on it). Conformance: the production engine's subscriptions are exactly contracts §0's list (MarkRailUpdate, SlicePositionUpdate, Signal) (D-135). PositionClosed has no constructor in src (D-145); the production constructor is in scope here. The P-30 census closes contracts.md:197 by naming the field behind birth_fill_sequence (F-P24-15); candidates and stability per P-24 Part 2 R4 | members 1, 2 green | hold |
 | P-39 | — | Member 9 authoring under the stage-A rule (D-189): spec closure; reference engine extended; at least one broken engine per member; killed with a named member; reference control clean. Before P-40. Deferred (D-91); authored here. | member 9 | hold |
 | P-40 | C | rail complete (ages, absences, window, warm-up, worst-side, forced, dwelled); PlatformConfig position_rail_slippage_ticks and position_rail_dwell_ns (D-40). rail side usability per D-62: classify once in the orchestrator mark path, pass the result to store and rail; no second classify call site | + 4 (rail half), 9 | hold |
 | P-49 | — | Member 10 authoring under the stage-A rule (D-189): spec closure; reference engine extended; at least one broken engine per member; killed with a named member; reference control clean. Before P-50. Deferred (D-91); authored here. | member 10 | hold |
@@ -148,6 +149,8 @@ Not a stage gate (D-189).
 | live calibration | F-P23e-7 | paper campaign |
 | IB stamp row | D-144; LEDGER.md:33142 (`IB _fill_to_ack`) | paper campaign |
 | seeding main | F-T2-7, F-T2-10 | paper campaign |
+| content-keyed order ids | Q2 (ii) design: five rungs; the salt mover set is the expected movers; legacy-oracle exemption required (F-P24-11) | before P-60's band draw hashes cell_id; before any PORTFOLIO alpha; before a second hazard-enabled alpha on one symbol (F-P24-10) |
+| baseline capture covers exempt locked literals | F-P23b-d, F-P24-6 | next tooling rung |
 
 ## Round trip (what comes back for review)
 

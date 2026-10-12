@@ -182,6 +182,17 @@ _UNREGISTERED_HASH_EXEMPTIONS: dict[str, str] = {
     # cache is absent. Locked locally in the cache-gated acceptance test.
     "_BASELINE_TRADE_PARITY_HASH": "data-gated APP trade baseline "
     "(tests/acceptance/test_backtest_app_baseline.py)",
+    # Companion of the trade parity hash with order_id removed. Not a replay
+    # stream, so it has no (hash, count) manifest row. The parity hash stays
+    # the identity pin; these constants are the economic pin.
+    "ECONOMIC_TRADE_HASH": "order_id-excluded APP trade hash "
+    "(tests/acceptance/test_backtest_app_baseline.py)",
+    "ECONOMIC_TRADE_HASH_RFIX": "order_id-excluded R-FIX trade hash "
+    "(tests/harness/test_economic_trade_hash_pins.py)",
+    "ECONOMIC_TRADE_HASH_RSYN": "order_id-excluded R-SYN trade hash "
+    "(tests/harness/test_economic_trade_hash_pins.py)",
+    "ECONOMIC_TRADE_HASH_EIGHT": "order_id-excluded eight-name trade hash "
+    "(tests/harness/test_economic_trade_hash_pins.py)",
     # CPCV fold-PnL-curve hashes over committed JSON fixtures — they pin fixture
     # *data* against silent regeneration, not an event stream produced by a
     # replay, so there is nothing for _REPLAY_BY_NAME to call.
