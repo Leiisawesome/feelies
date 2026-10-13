@@ -133,8 +133,8 @@ def test_m2_dwell_favorable_ignores_stale_cross(monkeypatch: pytest.MonkeyPatch)
     ]
     assert matched, f"no favorable decision at {current.sequence}"
     assert any(body.get("outcome") == "fire" for body in matched), (
-        f"M2: favorable outcome at {current.sequence} is not fire"
+        f"CAP:favorable_fire: favorable outcome at {current.sequence} is not fire"
     )
     assert not any(body.get("reason") == "DWELL_NOT_CLEAN" for body in matched), (
-        f"M2: DWELL_NOT_CLEAN at {current.sequence}"
+        f"CAP:dwell_window: DWELL_NOT_CLEAN at {current.sequence}"
     )

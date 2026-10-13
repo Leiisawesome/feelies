@@ -11,6 +11,31 @@ import pytest
 _STAGE_ORDER = "ABCDE"
 _DEFAULT_STAGE = Path("docs/architecture/target/position_engine/stage.txt")
 _MARKER = "battery_member"
+# Delivering stage of each CAP:<name>. battery.md is the quoted table.
+CAPABILITIES: dict[str, str] = {
+    "dwell_window": "C",
+    "birth_move": "D",
+    "birth_touch": "D",
+    "favorable_fire": "E",
+    "conservation": "E",
+    "exit_accounting": "E",
+    "gate_fire": "E",
+    "audit": "E",
+}
+_CAP = re.compile(r"^CAP:([A-Za-z0-9_]+)")
+
+
+def _accepted_before(message: str, stage: str) -> bool:
+    """D-192. True when a pre-green_from failure is an accepted red."""
+    if message.startswith("NONVACUOUS") or message.startswith("UNUSABLE_SIDE"):
+        return True
+    match = _CAP.match(message)
+    if match is None:
+        return False
+    delivering = CAPABILITIES.get(match.group(1))
+    if delivering is None:
+        return False
+    return _STAGE_ORDER.index(delivering) > _STAGE_ORDER.index(stage)
 
 
 def _stage_path() -> Path:
@@ -81,13 +106,13 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]):
     stage = item.config._feelies_stage  # type: ignore[attr-defined]
     member = mark.kwargs["member"]
     green_from = mark.kwargs["green_from"]
-    red_reason = mark.kwargs["red_reason"]
     if _STAGE_ORDER.index(stage) >= _STAGE_ORDER.index(green_from):
         return report
     if report.passed:
         report.outcome = "failed"
         report.longrepr = (
-            f"battery member {member} passed before its stage {green_from} (current stage {stage})"
+            f"hook error: battery member {member} passed before its stage {green_from} "
+            f"(current stage {stage})"
         )
         return report
     if report.failed:
@@ -96,10 +121,12 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]):
             message = str(excinfo.value)
             if message.startswith("PRECONDITION:"):
                 return report
-            if re.search(red_reason, message):
+            if _accepted_before(message, stage):
                 report.outcome = "passed"
                 report.longrepr = None
                 report.user_properties.append(("battery_red", f"{member}:{message}"))
                 return report
-        report.longrepr = f"battery member {member} red for the wrong reason: {report.longrepr}"
+        report.longrepr = (
+            f"hook error: battery member {member} red for the wrong reason: {report.longrepr}"
+        )
     return report

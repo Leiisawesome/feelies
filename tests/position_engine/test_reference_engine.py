@@ -186,8 +186,8 @@ def test_band_draw_and_cell_id() -> None:
     bus.publish(_rail(9, 2_000))
     snap = _of(log, PositionSnapshot)[0]
     assert isinstance(snap, PositionSnapshot)
-    assert snap.cell_id == "SYN|sig|7|LONG"
-    digest = hashlib.sha256(b"SYN|sig|7|LONG").digest()[:8]
+    assert snap.cell_id == "SYN|sig|1000|LONG"
+    digest = hashlib.sha256(b"SYN|sig|1000|LONG").digest()[:8]
     level = (11 - 4 // 2) + (int.from_bytes(digest, "big") % 5)
     adverse = [row for row in _of(log, GateDecision) if isinstance(row, GateDecision)]
     assert adverse[0].drawn_level_ticks == level
@@ -454,7 +454,7 @@ def test_requirement_order_id_and_reducing_side() -> None:
     )
     requirement = _of(log, DeRiskRequirement)[0]
     assert isinstance(requirement, DeRiskRequirement)
-    assert requirement.order_id == "SYN|sig|1|LONG|EXIT|1"
+    assert requirement.order_id == "SYN|sig|1000|LONG|EXIT|1"
     assert requirement.side is Side.SELL
     assert requirement.source_layer == "POSITION"
     assert requirement.quantity == 2
@@ -523,7 +523,7 @@ def test_one_snapshot_per_rail_event() -> None:
         for row in _of(log, PositionSnapshot)
         if isinstance(row, PositionSnapshot)
     ]
-    assert keys == [("SYN|sig|1|LONG", 3), ("SYN|sig|1|LONG", 4)]
+    assert keys == [("SYN|sig|1000|LONG", 3), ("SYN|sig|1000|LONG", 4)]
 
 
 def _reject(bus: EventBus, sequence: int, timestamp_ns: int, order_id: str) -> None:
@@ -601,9 +601,9 @@ def test_g11_attempt_numbering() -> None:
         row.order_id for row in _of(log, DeRiskRequirement) if isinstance(row, DeRiskRequirement)
     ]
     assert ids == [
-        "SYN|sig|1|LONG|EXIT|1",
-        "SYN|sig|1|LONG|EXIT|2",
-        "SYN|sig|1|LONG|EXIT|3",
+        "SYN|sig|1000|LONG|EXIT|1",
+        "SYN|sig|1000|LONG|EXIT|2",
+        "SYN|sig|1000|LONG|EXIT|3",
     ]
     reasons = [
         row.reason for row in _of(log, DeRiskRequirement) if isinstance(row, DeRiskRequirement)
@@ -620,7 +620,7 @@ def test_n3_attempt_suffix() -> None:
     bus.publish(_rail(3, 2_000, cheap))
     requirement = _of(log, DeRiskRequirement)[0]
     assert isinstance(requirement, DeRiskRequirement)
-    assert requirement.order_id == "SYN|sig|1|SHORT|EXIT|1"
+    assert requirement.order_id == "SYN|sig|1000|SHORT|EXIT|1"
     assert requirement.side is Side.BUY
 
 
@@ -635,7 +635,7 @@ def test_precondition_entry_fill_births_the_cell() -> None:
     snaps = _of(log, PositionSnapshot)
     assert len(snaps) == 1
     assert isinstance(snaps[0], PositionSnapshot)
-    assert snaps[0].cell_id == "SYN|sig|2|LONG"
+    assert snaps[0].cell_id == "SYN|sig|2000|LONG"
     assert snaps[0].size == 1
 
 
@@ -681,7 +681,7 @@ def test_precondition_later_entry_births_a_new_cell() -> None:
     bus.publish(_slice(6, 3_000, order_id="next", price="100.01", fill_quantity=1, quantity=1))
     bus.publish(_rail(7, 4_000))
     snaps = [row for row in _of(log, PositionSnapshot) if isinstance(row, PositionSnapshot)]
-    assert snaps[-1].cell_id == "SYN|sig|5|LONG"
+    assert snaps[-1].cell_id == "SYN|sig|3000|LONG"
     assert snaps[-1].size == 1
 
 

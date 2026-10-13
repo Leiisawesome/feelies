@@ -18,6 +18,7 @@ from feelies.core.events import PositionClosed, PositionSnapshot
 from tests.position_engine.scenarios import (
     T0,
     Records,
+    canonical,
     engine_class,
     format_line,
     nonvacuous,
@@ -53,6 +54,75 @@ def _one_snapshot_per_rail(records: Records) -> None:
         if key in seen:
             raise AssertionError(f"duplicate PositionSnapshot for {key}")
         seen.add(key)
+
+
+def _gate_count(records: Records) -> None:
+    """contracts.md two-phase step: both gates publish for every snapshot."""
+    snaps = [row for row in records if row.type_name == "PositionSnapshot"]
+    gates = [row for row in records if row.type_name == "GateDecision"]
+    if len(snaps) < 1:
+        raise AssertionError("NONVACUOUS: no PositionSnapshot for the gate count")
+    if len(gates) != 2 * len(snaps):
+        raise AssertionError(f"gate count {len(gates)} != 2 per snapshot ({len(snaps)})")
+
+
+def _sink_matches_bus(records: Records) -> None:
+    """The attached sink equals the bus, field by field, and neither side is empty."""
+    pairs = (
+        ("PositionSnapshot", records.sink_snapshots),
+        ("GateDecision", records.sink_gates),
+        ("PositionClosed", records.sink_closed),
+    )
+    bus_count = 0
+    sink_count = 0
+    for type_name, events in pairs:
+        rows = [row for row in records if row.type_name == type_name]
+        bus_count += len(rows)
+        sink_count += len(events)
+        if len(rows) != len(events):
+            raise AssertionError(f"sink {type_name} count {len(events)} != bus {len(rows)}")
+        for row, event in zip(rows, events, strict=True):
+            if canonical(event) != row.canonical:
+                raise AssertionError(f"sink {type_name} fields differ from the bus record")
+    if bus_count == 0 or sink_count == 0:
+        raise AssertionError("NONVACUOUS: sink and bus position records are empty")
+
+
+def _two_symbols_open(records: Records) -> None:
+    """One strategy holds open cells on two symbols, and each id keeps its symbol."""
+    open_cells: dict[tuple[str, str], str] = {}
+    waiting: set[tuple[str, str]] = set()
+    confirmed = False
+    for row in records:
+        if row.type_name not in {"PositionSnapshot", "PositionClosed"}:
+            continue
+        body = json.loads(row.canonical[row.canonical.index("{") :])
+        strategy = body.get("strategy_id")
+        symbol = body.get("symbol")
+        cell = body.get("cell_id")
+        if (
+            not isinstance(strategy, str)
+            or not isinstance(symbol, str)
+            or not isinstance(cell, str)
+        ):
+            raise AssertionError("projection dropped symbol or cell_id")
+        if not cell.startswith(f"{symbol}|"):
+            raise AssertionError(f"cell_id {cell} does not keep symbol {symbol}")
+        key = (strategy, symbol)
+        if row.type_name == "PositionClosed":
+            if open_cells.get(key) == cell:
+                del open_cells[key]
+            waiting.discard(key)
+            continue
+        if key in waiting:
+            confirmed = True
+        open_cells[key] = cell
+        if any(other[0] == strategy and other != key for other in open_cells):
+            for other in open_cells:
+                if other[0] == strategy and other != key:
+                    waiting.add(other)
+    if not confirmed:
+        raise AssertionError("one strategy does not hold open cells on two symbols at once")
 
 
 def _clock():
@@ -130,11 +200,13 @@ def test_m1_gates_syn() -> None:
     require_entry_fills(baseline)
     nonvacuous(baseline, PositionSnapshot, PositionClosed, scenario="m1_gates_syn")
     _one_snapshot_per_rail(baseline)
+    _gate_count(baseline)
     records = run_synthetic(
         tape,
         symbols=("SYN",),
         engine_factory=partial(engine_class(), gate_order=("FAVORABLE", "ADVERSE")),
     )
+    _gate_count(records)
     assert records == baseline
 
 
@@ -145,7 +217,9 @@ def test_m1_gates_real() -> None:
     require_entry_fills(baseline)
     nonvacuous(baseline, PositionSnapshot, PositionClosed, scenario="m1_gates_real")
     _one_snapshot_per_rail(baseline)
+    _gate_count(baseline)
     records = run_real(engine_factory=partial(engine_class(), gate_order=("FAVORABLE", "ADVERSE")))
+    _gate_count(records)
     assert records == baseline
 
 
@@ -175,6 +249,7 @@ def test_m1_sinks_syn() -> None:
     require_entry_fills(baseline)
     nonvacuous(baseline, PositionSnapshot, PositionClosed, scenario="m1_sinks_syn")
     _one_snapshot_per_rail(baseline)
+    _sink_matches_bus(baseline)
     records = run_synthetic(tape, symbols=("SYN",), attach_sink=False)
     assert records == baseline
 
@@ -186,6 +261,7 @@ def test_m1_sinks_real() -> None:
     require_entry_fills(baseline)
     nonvacuous(baseline, PositionSnapshot, PositionClosed, scenario="m1_sinks_real")
     _one_snapshot_per_rail(baseline)
+    _sink_matches_bus(baseline)
     records = run_real(attach_sink=False)
     assert records == baseline
 
@@ -268,6 +344,7 @@ def test_m1_multiname() -> None:
     require_entry_fills(pair)
     nonvacuous(pair, PositionSnapshot, PositionClosed, scenario="m1_multiname")
     _one_snapshot_per_rail(pair)
+    _two_symbols_open(pair)
     traded = {order.symbol for order in pair.order_requests}
     assert traded == {"SYN", "ZZZ"}, sorted(traded)
     assert sized.get("SYN", 0) >= 1, sized
