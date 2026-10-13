@@ -198,6 +198,63 @@ edit to the spec file in a later docs rung, citing the entry.
 | D-189 | 2026-10-11 | P-29 | What is decided for the P-23 close, the battery green_from correction, and the pre-registered hold rows? | Operator decision, 2026-10-11. D2: P-23 is DONE. R1 by P-23b2 (merged a2f1fa32, PR #278). R2 by P-23b (merged 3eae11bd, PR #270). R3 by P-23a (merged 02d4719f, PR #269; f643416b): ACKNOWLEDGED stamps the publication clock (backtest_router.py:240). P-23c is DONE by P-23c1 (merged e1e636a4, PR #272) and P-23c2 (merged 1c6d9263, PR #273). Remainder deferred, not done: timer closure and immediate actuation (D-174), global closure kept (D-173; horizon_scheduler.py:289), session-close flush (F-P23g-2). Re-open when research evidence shows actuation delay matters. D3: member 2 green_from B at member level; the dwell clause stays C per D-87. Members 7 and 8 state green_from as the P-60 and P-61 rows: 8 adverse half at P-60, favorable half and 7 at P-61. Members 7-10 stay deferred (D-91) and are authored in P-59, P-59, P-39, and P-49. D4: P-24, P-39, P-49, and P-59 are hold rows. D-91 does not author members 7-10 inside P-40, P-50, or P-60. The off-ladder table is not a stage gate. | A plan row that still says pending merge after the ledger records the merge is not a status. Member 2's green_from C contradicted the stage table and the P-30 gate. | phase14_position_engine.md; battery.md |
 | D-190 | 2026-10-12 | P-24 | Where does the economic trade hash live, and when do content-keyed order ids land? | The economic trade hash is on the exempt route. It drops order_id and leaves the parity hash as the identity pin. The four constants are scanner exemptions, so the manifest fingerprint and the parity-constant count stay. Content-keyed order ids are deferred. The design is Q2 (ii): five rungs, the salt mover set as the expected movers, and a legacy-oracle exemption required. Triggers: before P-60's band draw hashes cell_id; before any PORTFOLIO alpha; before a second hazard-enabled alpha on one symbol (F-P24-10). The sized-intent minters share a seed (F-P24-11). The cap-neutral universe check is committed and stays outside the check gate. | An id rewrite moves the parity hash while the fills stay put (D-180). The check job does not restore the eight-name cache. | phase14_position_engine.md |
 
+D-191 — Cell identity key (closes contracts.md:197, the P-24 note and
+F-P30-11).
+- birth_fill_sequence := fill_timestamp_ns of the slice fill that
+  births the cell: report_received_ns when nonzero, else the fill's
+  publication clock (orchestrator.py:439-444, :475). It derives from
+  the symbol's own tape and the latency model, not from event
+  numbering or the symbol universe.
+- birth_ordinal := the number of cells of the same (symbol,
+  strategy_id) already born at the same birth_fill_sequence in this
+  run. It is 0 unless fills for one (symbol, strategy_id) that share
+  one report stamp close a cell and birth another. A rebirth must
+  follow the close it depends on, so the ordinal adds no ordering
+  dependence beyond the position path itself.
+- cell_id := symbol|strategy_id|birth_fill_sequence|side, with
+  |birth_ordinal appended only when birth_ordinal >= 1. Unique within
+  a run by construction.
+- cell_id is opaque: no consumer parses it; derived ids compose it
+  (DeRiskRequirement order_id = cell_id|EXIT|attempt).
+- Rejected: vendor sequence_number (2 colliding keys over 15 R-SYN
+  births); quote.sequence and fill_ack_sequence (change with universe
+  width on 9/9 and 8/9 births); any global ordinal (event numbering);
+  an impossibility argument (fills on both sides of one quote can
+  close and rebirth within one stamp).
+- Evidence: P-30 census, 444 ensemble births, 0 collisions; 0/5
+  changes under p3a-c; 0/9 joint vs solo.
+
+D-192 — Stage-hook acceptance (P-29b). Before a node's green_from the
+node must fail, and the failure must be NONVACUOUS, UNUSABLE_SIDE, or
+an AssertionError whose message starts with CAP:<name>, where <name>
+is in the battery.md capability table and that capability's stage is
+later than the current stage letter. A pass, any exception that is not
+an AssertionError, an untagged assertion, or a tag whose stage is at
+or before the current letter is a hook error. At or after green_from
+the node must pass. PRECONDITION stays a real failure at every stage.
+The marker still carries red_reason; the hook does not match it.
+green_from is at least the latest stage among the node's tags. A
+violation is reported; this decision does not change a green_from.
+
+D-193 — R-FIX economic trade hash re-pin (operator decision
+2026-10-13, conditional).
+- Cause: D-191 changes the reference engine's cell_id. R-FIX runs the
+  reference engine with band_ticks 4; its band_level draw and its
+  composed EXIT order ids read cell_id.
+- Evidence (P-29b census Part 2): 98 fills on both trees; the only
+  differences are 63 EXIT order ids and 4 band fills on two cells.
+  The new economic hash is identical under p3a, p3b and p3c. The old
+  one moved under p3a (61a12456…) and p3c (92 fills, 2ff41b4d…): the
+  old reference's economics depended on event numbering (F-P29b-10).
+- ECONOMIC_TRADE_HASH_RFIX: bb5f94cf…b648 → 61a12456…1b36. The
+  fill-count assert stays 98.
+- Unpinned, recorded: net −1317.04 → −1321.15; parity 0ec66a9a… →
+  46a7f843…. The parity hash still moves under p3a–c through 35 entry
+  order ids that follow platform sequence (F-P29b-9; tracked under
+  the content-keyed order ids item).
+- Condition: the EXEC reproduces 61a12456… with 98 fills; no other
+  pin moves.
+
 ### D-66 pre-registered prediction
 
 ```

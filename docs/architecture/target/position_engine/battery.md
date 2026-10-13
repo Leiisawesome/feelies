@@ -70,7 +70,13 @@ ASSERTS:           byte-identical rail updates, snapshots, gate decisions, requi
                    alone versus inside a multi-name universe in which both names trade,
                    each sized from its own quote, and each name's result is reproducible
                    (synthetic tapes; D-172); a fresh process; sinks
-                   detached (non-sink outputs only). Published records are immutable:
+                   detached (non-sink outputs only). The attached sink's snapshot, gate and
+                   close records equal the bus records of those types field by field, and
+                   both sides are non-empty. Reversed gate order publishes two GateDecision
+                   records per PositionSnapshot (contracts.md §2 step), then the two orders
+                   are byte-identical. The multi-name projection keeps symbol and cell_id,
+                   and one strategy holds open cells on two symbols at once.
+                   Published records are immutable:
                    at most one PositionSnapshot per (cell_id, rail_sequence). It catches B10.
                    Engine events are frozen, slotted and tuple-only, so an in-place rewrite
                    is impossible and the digest-at-end half is dropped (D-103). Conformance:
@@ -331,10 +337,28 @@ The current stage is one letter in `docs/architecture/target/position_engine/sta
 created at P-21. Each blocking member declares `GREEN_FROM` (a stage letter) and
 `RED_REASON` (a regex). A conftest hook in `tests/position_engine/` enforces the rule:
 
-- stage < `GREEN_FROM`: the member must fail with an `AssertionError` whose message matches
-  `RED_REASON`. Any other outcome fails the run: a pass, or any other exception (including
-  ImportError).
+- stage < `GREEN_FROM`: the node must fail. The failure is accepted only when it is
+  `NONVACUOUS`, `UNUSABLE_SIDE`, or an `AssertionError` whose message starts with
+  `CAP:<name>` and `<name>` is in the capability table at a stage later than the current
+  letter (D-192). Any other outcome is a hook error: a pass, any exception that is not an
+  `AssertionError`, an untagged assertion, or a tag whose stage is at or before the current
+  letter. `PRECONDITION:` stays a real failure at every stage. The marker still carries
+  `RED_REASON`; the hook does not match it.
 - stage ≥ `GREEN_FROM`: the member must pass.
+
+`green_from` is at least the latest delivering stage among the node's `CAP:` tags. A
+violation is reported and is not repaired by editing `green_from`.
+
+| Capability | Delivering stage | Contract or plan line |
+|---|---|---|
+| dwell_window | C | battery.md member 2: "with D > 0, a dirty (crossed) quote older than t−D never blocks a favorable decision at t"; plan row P-40 |
+| birth_move | D | contracts.md: "move_now_cents = sign × (valuation_mark_cents × size − entry_cost_cents)"; plan stage D, member 4 birth |
+| birth_touch | D | battery.md member 4: "the first move_now_cents … = −entry_spread_ticks × size exactly for a MARKET entry filled at the touch" |
+| favorable_fire | E | battery.md member 2 dwell clause: "The decision at that quote is outcome fire"; plan row P-61 |
+| conservation | E | battery.md member 3: "share exiting favorable first = d / (u + d)"; plan stage E |
+| exit_accounting | E | battery.md member 6: exit legs pair with the fill acks; plan rows P-60 and P-61 |
+| gate_fire | E | battery.md member 6 placement rule P: a cell life ends at a GateDecision whose outcome is fire; plan stage E, rows P-60 and P-61 |
+| audit | E | battery.md member 11: "the proposed price and the gross figure rebuild exactly"; plan stage D names member 11, the node is green_from E |
 
 Only a stage-gate rung edits `stage.txt`. No build rung edits a test. `xfail` is not used for
 battery members.
@@ -366,6 +390,9 @@ and by the named member. A broken engine nothing catches is a hole in the suite.
 | B9 | second requirement emitted while EXITING | 5 or 10 |
 | B10 | the resolve phase publishes a second PositionSnapshot for the same (cell_id, rail_sequence) | 1 (immutability clause) |
 | B11 | window trimmed lazily (on read, not in the step) | 2 (D > 0 clause) |
+| B12 | sink write dropped | 1 (`test_m1_sinks_syn`) |
+| B13 | cell state keyed without symbol | 1 (`test_m1_multiname`) |
+| B14 | no GateDecision published | 1 (`test_m1_gates_syn`) |
 
 ## Kill runner
 
@@ -390,13 +417,15 @@ walls plus 11 s, and each is at most 300 s (D-71).
 
 | Shard | Mutants | Walls (s) | Estimate (s) |
 |---|---|---:|---:|
-| A | B1, B4, B10 | 8.7 + 17.6 + 8.3 = 34.6 | 45.6 |
+| A | B1, B4, B10, B12 | 8.7 + 17.6 + 8.3 = 34.6 | 45.6 |
 
 B4's selection is `test_m1_fresh_syn`. The in-process clock test freezes
 `time.monotonic` for its second run; with this mutant that run does not finish
 inside the 240 s limit, and a TIMEOUT is not a kill. The fresh process compares
 two real clocks and fails `fresh records differ`.
-| B | B2, B3, B5, B6, B7, B8, B9, B11 | 2.1 + 1.3 + 1.6 + 1.7 + 2.1 + 2.2 + 2.1 + 1.2 = 14.3 | 25.3 |
+| B | B2, B3, B5, B6, B7, B8, B9, B11, B13, B14 | 2.1 + 1.3 + 1.6 + 1.7 + 2.1 + 2.2 + 2.1 + 1.2 = 14.3 | 25.3 |
+
+B12–B14 are on these shards. Their walls were not remeasured; the P-22b sums above do not include them.
 
 **Reference rail (P-22a1) and reference engine (P-22a2).** Built only from the contracts
 text (§§0–9), not from §9 alone, with a spec-trace table (D-92). Rail rows land in P-22a1;
