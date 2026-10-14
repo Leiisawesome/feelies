@@ -14,7 +14,7 @@ _MARKER = "battery_member"
 # Delivering stage of each CAP:<name>. battery.md is the quoted table.
 CAPABILITIES: dict[str, str] = {
     "dwell_window": "C",
-    "birth_move": "D",
+    "birth_move": "B",
     "birth_touch": "D",
     "favorable_fire": "E",
     "conservation": "E",
