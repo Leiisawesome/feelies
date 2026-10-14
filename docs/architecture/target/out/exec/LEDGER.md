@@ -33506,7 +33506,18 @@ OWNER:       campaign 15.
 
 ## P-29b
 
-  PR:            draft against arch/exec. Not merged. Nothing on main.
+  PR:            #284, merge 86c625aa7c011116bc8c7ca5e6f50efe3012fc01.
+                 Nothing on main.
+  CI:            38493565460
+  POST-MERGE PINS: oracle 10 / 26.61 / ab3a2b3f… / b6bc1db5…;
+                 R-FIX 98 / -1321.15 / 46a7f843… / 61a12456…;
+                 R-SYN 29 / -131.01 / ffc9161e… / 3b795e55…;
+                 eight-name 12 / +19.43 / 62196096… / aae3847a…;
+                 universe joint 18 / +41.49 / f98a588d… / 498bed5c…,
+                 joint = solo; level-3 f8824e5a…; fingerprint
+                 fdf270da…; schema-drift b8f2c819…; wiring
+                 60af84b2…; parity constants 64; KNOWN_NONCLOCK 5.
+                 Equal.
   BASE:          fe0bc3d318538221cece1bb8a0572878a6de4d40
   PRE-CAPTURE:   baseline_pre-P-29b.json, captured on the clean base
                  and committed in a8a33777, before this heading.
