@@ -1,4 +1,4 @@
-"""Broken engines B1–B11. Selected by FEELIES_ENGINE or FEELIES_RAIL (P-22b).
+"""Broken engines B1–B14. Selected by FEELIES_ENGINE or FEELIES_RAIL (P-22b).
 
 Each class subclasses the reference and overrides the smallest method that
 contains the defect. No process-global monkeypatch.
@@ -6,6 +6,7 @@ contains the defect. No process-global monkeypatch.
 
 from __future__ import annotations
 
+import sys
 import time
 from dataclasses import replace
 from typing import NamedTuple
@@ -461,6 +462,34 @@ class LazyTrimRail(ReferenceRail):
         )
 
 
+class DropSinkWrites(PositionEngine):
+    """B12. The sink's type handlers record nothing."""
+
+    def attach(self) -> None:
+        module = sys.modules.get("feelies.position.engine")
+        sink = getattr(module, "PositionRecordSink", None)
+        if sink is not None:
+            sink._on_snapshot = lambda self, event: None  # type: ignore[method-assign]
+            sink._on_gate_decision = lambda self, event: None  # type: ignore[method-assign]
+            sink._on_closed = lambda self, event: None  # type: ignore[method-assign]
+        super().attach()
+
+
+class NoSymbolKey(PositionEngine):
+    """B13. Open cells are keyed by strategy alone."""
+
+    def _open_key(self, strategy_id: str, symbol: str) -> tuple[str, ...]:
+        del symbol
+        return (strategy_id,)
+
+
+class NoGateDecision(PositionEngine):
+    """B14. The two-phase step publishes no GateDecision."""
+
+    def _publish_gate(self, cell: Cell, rail: MarkRailUpdate, decision: Decision) -> None:
+        del cell, rail, decision
+
+
 REGISTRY: dict[str, Mutant] = {
     "B1": Mutant("B1", "rail", f"{__name__}.MidRail", (_M4,), "assert", "A"),
     "B2": Mutant("B2", "engine", f"{__name__}.FavorableWins", _M5, "exit reason", "B"),
@@ -518,6 +547,30 @@ REGISTRY: dict[str, Mutant] = {
             "::test_m2_dwell_favorable_ignores_stale_cross",
         ),
         "M2:",
+        "B",
+    ),
+    "B12": Mutant(
+        "B12",
+        "engine",
+        f"{__name__}.DropSinkWrites",
+        ("tests/position_engine/test_battery_m1_reproducibility.py::test_m1_sinks_syn",),
+        "sink",
+        "A",
+    ),
+    "B13": Mutant(
+        "B13",
+        "engine",
+        f"{__name__}.NoSymbolKey",
+        ("tests/position_engine/test_battery_m1_reproducibility.py::test_m1_multiname",),
+        "two symbols",
+        "B",
+    ),
+    "B14": Mutant(
+        "B14",
+        "engine",
+        f"{__name__}.NoGateDecision",
+        ("tests/position_engine/test_battery_m1_reproducibility.py::test_m1_gates_syn",),
+        "gate count",
         "B",
     ),
 }

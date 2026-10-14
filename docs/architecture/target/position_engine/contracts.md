@@ -194,10 +194,12 @@ session close fact for the birth date [A-11]. Both gate decisions (resolve phase
 Run config.
 
 **Frozen at birth** (never changes):
-`cell_id` = `symbol|strategy_id|birth_fill_sequence|side` — derived from the tape, never
-random or clock-based. `side`. `declared_archetype`. `entry_spread_ticks` =
+`cell_id` = `symbol|strategy_id|birth_fill_sequence|side`, with `|birth_ordinal` appended
+only when that ordinal is at least 1. The formula is D-191: `birth_fill_sequence` is the
+birth fill's `fill_timestamp_ns`. `side`. `declared_archetype`. `entry_spread_ticks` =
 `paying_mark − valuation_mark` from the last rail update at or before the birth fill.
 `horizon_deadline_ns = min(birth_fill_ts + T, session_close_ns − cutoff_before_close_ns)`.
+D-191 does not change this deadline: `birth_fill_ts` is that same fill timestamp, and the ordinal is only an id suffix.
 *Reason:* a deadline you can nudge becomes a dial tuned until the backtest looks nice.
 
 **Entry cost** [A-05, A-16]. `entry_cost_cents = Σ price_cents × qty` over the episode's entry

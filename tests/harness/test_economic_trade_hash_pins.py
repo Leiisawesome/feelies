@@ -18,7 +18,7 @@ from feelies.harness.backtest_report import compute_economic_trade_hash
 _ROOT = Path(__file__).resolve().parents[2]
 _EIGHT = ("APP", "CROX", "DIOD", "ENSG", "MLI", "OLN", "PCTY", "RMBS")
 
-ECONOMIC_TRADE_HASH_RFIX = "bb5f94cf0f29f29f1d7b6918d3fd9ea53b9a7ec764a5971f07293fd29f9cb648"
+ECONOMIC_TRADE_HASH_RFIX = "61a12456fcd669c48512f4d5e76ea29119387d2aea917aa89252e89bdbc81b36"
 ECONOMIC_TRADE_HASH_RSYN = "3b795e551574d0f56e5c2319acaef921137396f80baba52868434bb07201060c"
 ECONOMIC_TRADE_HASH_EIGHT = "aae3847abdb29b4524b7a285d13784058fbcce0f3c5cd0682f8877c6a3e84484"
 

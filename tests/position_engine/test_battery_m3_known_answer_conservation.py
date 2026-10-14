@@ -79,7 +79,7 @@ def test_m3_barriers_only() -> None:
     nonvacuous(records, PositionClosed, scenario="m3_barriers")
     assert_no_risk_rejects(records)
     cells = _closed(records)
-    assert len(cells) >= 200, f"m3_barriers closed cells {len(cells)} < 200"
+    assert len(cells) >= 200, f"CAP:conservation: m3_barriers closed cells {len(cells)} < 200"
     mean_within_se(_displacements(records), 0.0, label="displacement")
     flags = [
         1.0 if '"exit_reason":"FAVORABLE"' in row.canonical else 0.0 for row in _priced(records)
@@ -96,7 +96,9 @@ def test_m3_barriers_swapped() -> None:
     nonvacuous(records, PositionClosed, scenario="m3_barriers_swapped")
     assert_no_risk_rejects(records)
     cells = _closed(records)
-    assert len(cells) >= 200, f"m3_barriers_swapped closed cells {len(cells)} < 200"
+    assert len(cells) >= 200, (
+        f"CAP:conservation: m3_barriers_swapped closed cells {len(cells)} < 200"
+    )
     mean_within_se(_displacements(records), 0.0, label="displacement")
     flags = [
         1.0 if '"exit_reason":"FAVORABLE"' in row.canonical else 0.0 for row in _priced(records)
@@ -143,7 +145,7 @@ def test_m3_band_draw() -> None:
     nonvacuous(records, PositionClosed, scenario="m3_band")
     assert_no_risk_rejects(records)
     cells = _closed(records)
-    assert len(cells) >= 200, f"m3_band closed cells {len(cells)} < 200"
+    assert len(cells) >= 200, f"CAP:conservation: m3_band closed cells {len(cells)} < 200"
     mean_within_se(_displacements(records), 0.0, label="displacement")
     residuals: list[float] = []
     for row in _priced(records):

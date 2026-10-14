@@ -19,7 +19,7 @@ under `tests/position_engine`. Rail rows are P-22a1. Engine rows are P-22a2.
 | D and S are read in the constructor from FEELIES_RAIL_DWELL_NS and FEELIES_RAIL_SLIPPAGE_TICKS until P-40 PlatformConfig (D-40) | §9:428–430 | rail.py:ReferenceRail.__init__ | test_env_read_in_a_fresh_child |
 | Whole-cent prices; a sub-cent price raises (D-78) | §9:487–489 | rail.py:_cents | test_rail_subcent_price_raises |
 | A later clean dwell window is not blocked by an earlier cross (D-87) | §1:103–106; §9:431–433 | rail.py:ReferenceRail.on_quote | test_dwell_window_drops_quote_older_than_t_minus_d |
-| cell_id is symbol, strategy, birth quote, side (D-44) | §2:197 | engine.py:cell_id_for | test_band_draw_and_cell_id |
+| cell_id is symbol, strategy, fill_timestamp_ns, side, plus ordinal (D-191) | §2:197 | engine.py:cell_id_for | test_band_draw_and_cell_id |
 | Band draw L is recomputed from cell_id; never stored (D-44, D-83) | §9:440–444 | engine.py:band_level | test_band_draw_and_cell_id |
 | BLIND fires only when an absence or quiet is strictly greater than A (D-42) | §9:434–436 | engine.py:evaluate_adverse | test_blind_is_strictly_greater_than_a |
 | Favorable tokens stay in order; reason is the first and suppressions keeps all (D-43, D-80) | §9:437–439 | engine.py:suppression_tokens | test_favorable_tokens_in_order |

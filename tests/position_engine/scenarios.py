@@ -123,6 +123,9 @@ class Records(list[Record]):
         self.slice_ordinals = tuple(slice_ordinals)
         self.ack_pricing = tuple(ack_pricing)
         self.widened = ()
+        self.sink_snapshots: tuple[object, ...] = ()
+        self.sink_gates: tuple[object, ...] = ()
+        self.sink_closed: tuple[object, ...] = ()
 
 
 def canonical(event: Event) -> str:
@@ -140,7 +143,7 @@ def _drop_keys(value: object) -> object:
         return {
             key: _drop_keys(item)
             for key, item in value.items()
-            if key != "sequence" and not str(key).endswith("_sequence") and key != "cell_id"
+            if key != "sequence" and not str(key).endswith("_sequence")
         }
     if isinstance(value, list):
         return [_drop_keys(item) for item in value]
@@ -501,7 +504,7 @@ def check_m11_proposed(
         expected = _last_usable_snapshot_mark(snapshots)
         got = closed.get("proposed_price_cents")
         if got != expected:
-            raise AssertionError(f"M11: proposed {got} != last usable executable {expected}")
+            raise AssertionError(f"CAP:audit: proposed {got} != last usable executable {expected}")
         return
     sequence = _path_rail_sequence(closed)
     if sequence is None:
@@ -521,7 +524,9 @@ def check_m11_proposed(
         executable = _cents(quote.bid if side == "LONG" else quote.ask)
     got = closed.get("proposed_price_cents")
     if got != executable:
-        raise AssertionError(f"M11: proposed {got} != executable {executable} of quote {sequence}")
+        raise AssertionError(
+            f"CAP:audit: proposed {got} != executable {executable} of quote {sequence}"
+        )
 
 
 def rebuild_gross(body: Mapping[str, object]) -> int:
@@ -595,12 +600,14 @@ def displacement_identity(records: Records) -> None:
 def mean_within_se(samples: Sequence[float], expected: float, *, label: str) -> None:
     n = len(samples)
     if n < 2:
-        raise AssertionError(f"mean {label}: need at least 2 samples, got {n}")
+        raise AssertionError(f"CAP:conservation: mean {label}: need at least 2 samples, got {n}")
     mean = sum(samples) / n
     var = sum((sample - mean) ** 2 for sample in samples) / (n - 1)
     bound = 4 * math.sqrt(var / n)
     if abs(mean - expected) > bound:
-        raise AssertionError(f"mean {label} {mean} outside 4 SE of {expected} (bound {bound})")
+        raise AssertionError(
+            f"CAP:conservation: mean {label} {mean} outside 4 SE of {expected} (bound {bound})"
+        )
 
 
 _EXIT_ORDER = re.compile(r"\|EXIT\|\d+$")
@@ -892,6 +899,8 @@ def exit_reason_at_collision(records: Records) -> None:
         assert isinstance(paths, list)
         names = [str(path["path"]) for path in paths if isinstance(path, dict)]
         ranked = [name for name in _EXIT_RANK if name in names]
+        if not ranked:
+            raise AssertionError(f"NONVACUOUS: no triggered path on cell {cell}")
         expected = ranked[0]
         got = str(body["exit_reason"])
         if got != expected:
@@ -1414,7 +1423,7 @@ def check_a3(records: Records) -> None:
         paired = _pair_exit_legs(legs, acks)
         if paired is None:
             raise AssertionError(
-                f"A3a: cell {cell} exit legs {len(legs)} != fill acks {len(acks)}"
+                f"CAP:exit_accounting: cell {cell} exit legs {len(legs)} != fill acks {len(acks)}"
             )
         for leg, ack in paired:
             got = int(leg["price_cents"])
@@ -2301,6 +2310,26 @@ def _records_from_live(recorder: _Attribution, *, digest_only: bool = False) -> 
     return records
 
 
+def _bind_sink(records: Records, bus: object | None) -> None:
+    """Copy the attached sink's lists. Missing sink stays empty."""
+    records.sink_snapshots = ()
+    records.sink_gates = ()
+    records.sink_closed = ()
+    if bus is None:
+        return
+    from feelies.core.events import PositionSnapshot
+    from feelies.position.engine import PositionRecordSink
+
+    handlers = getattr(bus, "_handlers", {})
+    for handler in handlers.get(PositionSnapshot, ()):
+        owner = getattr(handler, "__self__", None)
+        if isinstance(owner, PositionRecordSink):
+            records.sink_snapshots = tuple(owner.snapshots)
+            records.sink_gates = tuple(owner.gate_decisions)
+            records.sink_closed = tuple(owner.closed)
+            return
+
+
 @contextmanager
 def _seams(
     engine_factory: Callable[..., object] | None,
@@ -2477,6 +2506,7 @@ def _execute_synthetic(
                 gc.enable()
             recorder.finalize(len(tape))
             result = _records_from_live(recorder)
+            _bind_sink(result, recorder._bus)
     finally:
         AlphaLoader.load = original_load  # type: ignore[method-assign]
     return result
@@ -2725,6 +2755,7 @@ def _execute_real(
             raise RuntimeError(f"real session exit {outcome.exit_code}")
         recorder.finalize(len(events))
         result = _records_from_live(recorder, digest_only=digest_only)
+        _bind_sink(result, recorder._bus)
     return result
 
 

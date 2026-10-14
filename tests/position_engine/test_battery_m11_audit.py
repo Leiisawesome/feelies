@@ -144,7 +144,7 @@ def test_m11_zero_seed_fails() -> None:
 def test_m11_level_priced_proposal_fails() -> None:
     snap = _snapshot(move_now=100, move_worst=50, move_forced=50, best=100)
     closed = _closed(proposed=9_900)
-    with pytest.raises(AssertionError, match=r"^M11:"):
+    with pytest.raises(AssertionError, match=r"^CAP:audit:"):
         check_m11_proposed(closed, [snap], _quotes())
 
 

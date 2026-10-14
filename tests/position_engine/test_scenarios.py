@@ -75,17 +75,17 @@ def test_t1_canonical_is_deterministic_and_key_sorted() -> None:
     assert keys == sorted(keys)
 
 
-def test_t2_project_drops_nested_sequence_and_cell_id() -> None:
+def test_t2_project_drops_nested_sequence_and_keeps_cell_id() -> None:
     text = (
         'Demo{"cell_id":"c","keep":1,"nested":{"cell_id":"d","quote_sequence":3,"z":1},'
         '"sequence":9}'
     )
     projected = project_for_multiname(text)
     payload = json.loads(projected[projected.index("{") :])
-    assert "cell_id" not in payload
+    assert payload["cell_id"] == "c"
     assert "sequence" not in payload
     nested = payload["nested"]
-    assert "cell_id" not in nested
+    assert nested["cell_id"] == "d"
     assert "quote_sequence" not in nested
     assert nested["z"] == 1
     assert payload["keep"] == 1
@@ -397,7 +397,7 @@ def test_t8_mean_within_se_balanced_passes() -> None:
 def test_t8_mean_within_se_rejects_a_shift() -> None:
     with pytest.raises(
         AssertionError,
-        match=r"^mean displacement 10\.0 outside 4 SE of 0\.0 \(bound 0\.0\)$",
+        match=r"^CAP:conservation: mean displacement 10\.0 outside 4 SE of 0\.0 \(bound 0\.0\)$",
     ):
         mean_within_se([10.0, 10.0, 10.0, 10.0], 0.0, label="displacement")
 

@@ -33503,3 +33503,51 @@ OWNER:       campaign 15.
                  merge 6f186503db9132fd31ed580d5b808856156c19b1).
   DIFF:          sha256 of git diff eb96bf56..63f93d26 is
                  d494059b573cf6def3a7684e32b6ddd27cd90ea3cfed58808562cbd946e5a569.
+
+## P-29b
+
+  PR:            draft against arch/exec. Not merged. Nothing on main.
+  BASE:          fe0bc3d318538221cece1bb8a0572878a6de4d40
+  PRE-CAPTURE:   baseline_pre-P-29b.json, captured on the clean base
+                 and committed in a8a33777, before this heading.
+                 Full suite 5338 passed, 0 failed, 44 skipped, exit 0.
+                 Determinism 148 passed, exit 0. Parity constants 64.
+                 BASELINE GREEN. git.dirty false.
+  POST-CAPTURE:  baseline_post-P-29b.json, captured on 0aa900bd with
+                 the line-21 re-pin still uncommitted, and committed
+                 in a8a33777, before this heading.
+                 Full suite 5345 passed, 0 failed, 44 skipped, exit 0.
+                 Determinism 148 passed, exit 0. compare parity-only:
+                 64 -> 64, changed 0. BASELINE GREEN. git.dirty true
+                 (the re-pin and the untracked pre capture).
+  SPEC:          50e33f00. D-192 capability tags, D-191 cell identity,
+                 D-193 conditional R-FIX re-pin, plan rows.
+  E0:            bdf26f5c. Corrected pattern, F-P29b-14: H1-H5 fail
+                 with assertion failures; H6 and H7 pass. H6 and H7
+                 are regression guards on unchanged behaviour:
+                 NONVACUOUS is still accepted before green_from, and
+                 a failure at green_from stays a failure.
+  IMPL:          0aa900bd. For the diff's 18 files, HEAD equals
+                 fe0bc3d3 plus the proto diff, apart from D-193.
+                 Method: detached worktree at fe0bc3d3, git apply of
+                 P-29b-proto-2.diff, byte compare. The only unequal
+                 file was decisions.md, and the only added text was
+                 D-193. Plan rows are outside those 18 files.
+  PINS:          Condition before a8a33777: test_rfix_economic_trade_hash
+                 failed on the old constant with
+                 61a12456fcd669c48512f4d5e76ea29119387d2aea917aa89252e89bdbc81b36
+                 and 98 records. Net -1321.15. pnl_hash
+                 46a7f843c08e2de9e35085f6665f680881241116c6578f5a6f7b5c44ac4e4ea2.
+                 ECONOMIC_TRADE_HASH_RFIX
+                 bb5f94cf0f29f29f1d7b6918d3fd9ea53b9a7ec764a5971f07293fd29f9cb648
+                 -> 61a12456fcd669c48512f4d5e76ea29119387d2aea917aa89252e89bdbc81b36.
+                 Fill-count assert stays 98. Parity constants 64,
+                 changed 0.
+  DECISIONS:     D-191, D-192, D-193.
+  F-P29b-14:     Prompt error, not a code defect. The EXEC predicted
+                 H1 passes on the E0 commit. That reading used the
+                 census child return codes, which are 1 under both
+                 hooks. H1 also asserts the words hook error, which
+                 the old hook does not print. Corrected expectation
+                 on bdf26f5c: H1-H5 fail with assertion failures;
+                 H6 and H7 pass.

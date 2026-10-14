@@ -139,7 +139,7 @@ def test_m6_real() -> None:
     spans, decisions = _spans(clean, events)
     chosen = placement_rule(spans, decisions)
     if not chosen:
-        raise AssertionError("A2: placement rule P found no eligible cell")
+        raise AssertionError("CAP:gate_fire: A2: placement rule P found no eligible cell")
     blocked = set(decisions)
     sides = _sides(clean)
     crossed: dict[int, NBBOQuote] = {}

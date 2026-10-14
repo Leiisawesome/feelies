@@ -52,8 +52,12 @@ class PositionEngine:
         self._clock = None
         self.policies: dict[str, ExitPolicy] = dict(policies or {})
         self.gate_order = gate_order
-        self._open: dict[tuple[str, str], Cell] = {}
+        self._open: dict[tuple[str, ...], Cell] = {}
+        self._born_at: dict[tuple[str, str, int], int] = {}
         self._last_rail: dict[str, MarkRailUpdate] = {}
+
+    def _open_key(self, strategy_id: str, symbol: str) -> tuple[str, ...]:
+        return (strategy_id, symbol)
 
     def _publication_ns(self, fallback: int) -> int:
         """Action-time stamp: the clock at publication, else the caller's fallback."""
@@ -76,7 +80,7 @@ class PositionEngine:
 
     def _on_signal(self, event: Signal) -> None:
         """§2:241-245. FLAT or opposite latches; same-direction entry does not."""
-        cell = self._open.get((event.strategy_id, event.symbol))
+        cell = self._open.get(self._open_key(event.strategy_id, event.symbol))
         if cell is None or cell.state != "OPEN":
             return
         if event.direction is SignalDirection.FLAT:
@@ -93,7 +97,7 @@ class PositionEngine:
         cells = [cell for cell in self._open.values() if cell.symbol == event.symbol]
         cells.sort(key=lambda cell: cell.cell_id)
         for cell in cells:
-            if (cell.strategy_id, cell.symbol) not in self._open:
+            if self._open_key(cell.strategy_id, cell.symbol) not in self._open:
                 continue
             self._step(cell, event)
 
@@ -260,7 +264,7 @@ class PositionEngine:
             return
         policy = self.policies.get(event.strategy_id)
         sequence = self._tape_sequence(event)
-        cell = self._open.get((event.strategy_id, event.symbol))
+        cell = self._open.get(self._open_key(event.strategy_id, event.symbol))
         if cell is None:
             if policy is None or event.quantity == 0:
                 return
@@ -309,7 +313,7 @@ class PositionEngine:
         paying = None if orient is None else orient.paying_mark_cents
         valuation = None if orient is None else orient.valuation_mark_cents
         cell = Cell(
-            cell_id=cell_id_for(event.symbol, event.strategy_id, sequence, side),
+            cell_id=self._birth_id(event, side),
             symbol=event.symbol,
             strategy_id=event.strategy_id,
             side=side,
@@ -324,7 +328,15 @@ class PositionEngine:
         if rail is not None and orient is not None:
             if orient.valuation_mark_cents is not None and not orient.valuation_side_absent:
                 cell.last_usable = rail
-        self._open[(event.strategy_id, event.symbol)] = cell
+        self._open[self._open_key(event.strategy_id, event.symbol)] = cell
+
+    def _birth_id(self, event: SlicePositionUpdate, side: str) -> str:
+        """D-191. The stamp is the fill's fill_timestamp_ns; the ordinal counts prior births."""
+        stamp = event.fill_timestamp_ns
+        key = (event.symbol, event.strategy_id, stamp)
+        ordinal = self._born_at.get(key, 0)
+        self._born_at[key] = ordinal + 1
+        return cell_id_for(event.symbol, event.strategy_id, stamp, side, ordinal)
 
     def _reduce(
         self,
@@ -376,7 +388,7 @@ class PositionEngine:
         target = policy.favorable.target_ticks
         disarmed = policy.favorable.form == "fixed" and target is not None and target <= round_trip
         level = band_level(cell.cell_id, policy.adverse.centre_ticks, policy.adverse.band_ticks)
-        self._open.pop((cell.strategy_id, cell.symbol), None)
+        self._open.pop(self._open_key(cell.strategy_id, cell.symbol), None)
         cell.state = "CLOSED"
         self._bus.publish(
             PositionClosed(
@@ -530,9 +542,18 @@ def move_cents(sign: int, mark: int | None, size: int, entry_cost: int) -> int |
     return sign * (mark * size - entry_cost)
 
 
-def cell_id_for(symbol: str, strategy_id: str, birth_sequence: int, side: str) -> str:
-    """§2:191. ``symbol|strategy_id|birth_fill_sequence|side``."""
-    return f"{symbol}|{strategy_id}|{birth_sequence}|{side}"
+def cell_id_for(
+    symbol: str,
+    strategy_id: str,
+    birth_fill_sequence: int,
+    side: str,
+    birth_ordinal: int = 0,
+) -> str:
+    """D-191. ``|birth_ordinal`` is appended only when the ordinal is at least 1."""
+    base = f"{symbol}|{strategy_id}|{birth_fill_sequence}|{side}"
+    if birth_ordinal >= 1:
+        return f"{base}|{birth_ordinal}"
+    return base
 
 
 def entry_spread_ticks(paying: int | None, valuation: int | None) -> int:

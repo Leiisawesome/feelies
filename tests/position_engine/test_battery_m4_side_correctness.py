@@ -80,6 +80,7 @@ def _birth(records: Records, scenario: str) -> None:
         elif row.type_name == "PositionClosed":
             closes[cell] = body
     touched = 0
+    partial_cells = 0
     for cell, snap in first.items():
         rail = snap["rail"]
         assert isinstance(rail, dict)
@@ -88,7 +89,10 @@ def _birth(records: Records, scenario: str) -> None:
         expected = sign * (
             int(rail["valuation_mark_cents"]) * size - int(snap["entry_cost_cents"])
         )  # type: ignore[arg-type]
-        assert snap["move_now_cents"] == expected
+        if snap["move_now_cents"] != expected:
+            raise AssertionError(
+                f"CAP:birth_move: move_now_cents {snap['move_now_cents']} != {expected}"
+            )
         closed = closes.get(cell)
         if closed is None:
             continue
@@ -98,8 +102,16 @@ def _birth(records: Records, scenario: str) -> None:
         if fills and all(int(fill["price_cents"]) == paying for fill in fills):
             touched += 1
             spread = int(snap["entry_spread_ticks"])
-            assert snap["move_now_cents"] == -spread * size
+            if snap["move_now_cents"] != -spread * size:
+                raise AssertionError(
+                    f"CAP:birth_touch: move_now_cents {snap['move_now_cents']} "
+                    f"!= -entry_spread_ticks × size ({-spread * size})"
+                )
+        elif fills:
+            partial_cells += 1
     print(f"touch_clause_cells={touched}")
+    if scenario.endswith("partial") and partial_cells < 1:
+        raise AssertionError(f"NONVACUOUS: no partial-entry cell in {scenario}")
 
 
 @_RAIL

@@ -112,8 +112,8 @@ def test_control_reference_has_zero_failures(capsys: object) -> None:
     assert "CONTROL 0 failures" in out
 
 
-def test_registry_names_eleven_mutants() -> None:
-    assert list(REGISTRY) == [f"B{index}" for index in range(1, 12)]
+def test_registry_names_the_mutants() -> None:
+    assert list(REGISTRY) == [f"B{index}" for index in range(1, 15)]
 
 
 def test_mutants_import_only_reference_and_stdlib() -> None:
