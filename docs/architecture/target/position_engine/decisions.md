@@ -255,6 +255,29 @@ D-193 — R-FIX economic trade hash re-pin (operator decision
 - Condition: the EXEC reproduces 61a12456… with 98 fills; no other
   pin moves.
 
+D-194 — Entry spread orientation (closes contracts.md:199-200; F-P29b-12).
+entry_spread_ticks := s × (paying mark − valuation mark) at birth,
+in the contract's units, with s = +1 for LONG and −1 for SHORT:
+positive in a normal book, zero when locked, negative when crossed.
+Rejected: the unsigned difference (negative for every short); the
+absolute value (hides crossed books).
+
+D-195 — birth_move is a stage-B capability (F-P30-19, -26, -27).
+- contracts.md:258 makes "recompute moves" part of the step, which
+  P-30 delivers. Member 11's untagged move check
+  (scenarios.py:337-338) already requires correct moves wherever
+  snapshots exist.
+- Capability table: birth_move B (was D). birth_touch stays D (the
+  frozen entry spread, P-50).
+- test_m4_birth_syn_partial: green_from B. It checks birth_move only;
+  a setup assertion records that the touch clause does not apply to
+  its walked partials (touch_clause_cells == 0; battery.md:148-149).
+- test_m4_birth_syn and test_m4_birth_real stay green_from D
+  (birth_touch).
+- Rejected: placeholder moves at B (contradicts the step contract;
+  member 11 fails untagged, F-P30-26); birth_move kept at D (a broken
+  move at B would be accepted as waiting for D).
+
 ### D-66 pre-registered prediction
 
 ```
