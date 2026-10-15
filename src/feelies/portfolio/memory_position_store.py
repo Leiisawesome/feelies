@@ -1,7 +1,7 @@
 """In-memory position store for backtest and testing.
 
 Satisfies the ``PositionStore`` protocol.  Positions are tracked
-per-symbol with FIFO cost-basis for PnL calculation.
+per-symbol with average-cost basis for PnL calculation.
 """
 
 from __future__ import annotations
