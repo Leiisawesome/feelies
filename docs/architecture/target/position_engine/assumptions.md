@@ -76,3 +76,13 @@ honest choice until the passive fill-eligibility audit passes. TOLERABLE BECAUSE
 aggressive exit pays the spread it really pays; a passive one here inherits an optimistic
 bias. EXPIRES WHEN: the passive router audit passes. BLAST RADIUS: favorable-exit cost is
 overstated relative to a correct passive exit.
+
+**AS-17 (NEW) Stage-B formula placeholders.** ASSUMES: until P-50, `entry_spread_ticks`,
+`horizon_deadline_ns`, drawn level, and the gate reference fields that are not a
+`MarkRailUpdate` copy are the integer 0. The skeleton closes a cell only from an
+opposite slice fill (`EXTERNAL:SIGN_FLIP`); `END_OF_TAPE` is the P-50 end-of-replay
+hook. TOLERABLE BECAUSE: D2 withholds the birth formula (contracts.md:196-200); 0 is
+a typed int, not NaN. The step still recomputes moves and extremes from copied marks
+(D-99, D-79). FALSIFIED BY: a stage-B record whose spread or deadline is consumed as
+a measured birth. EXPIRES WHEN: P-50. BLAST RADIUS: member 4 birth, and any reader
+of those fields before D.

@@ -201,10 +201,13 @@ _RAIL_NS = 3_000
 
 def _stamped_at_publication(kind: str) -> None:
     """One producer: the published stamp is the clock, and the rail time is not."""
+    from feelies.bus.event_bus import EventBus
     from feelies.core.clock import SimulatedClock
     from feelies.core.events import DeRiskRequirement, GateDecision, PositionSnapshot
+    from feelies.core.identifiers import SequenceGenerator
+    from tests.position_engine.reference.engine import PositionEngine
     from tests.position_engine.test_reference_engine import (
-        _engine,
+        _Log,
         _of,
         _orient,
         _policy,
@@ -218,8 +221,15 @@ def _stamped_at_publication(kind: str) -> None:
         "PositionSnapshot": PositionSnapshot,
     }
     clock = SimulatedClock(_PUBLICATION_NS)
-    bus, engine, log = _engine(_policy(t_ns=1))
-    engine._clock = clock
+    bus = EventBus()
+    engine = PositionEngine(
+        bus,
+        SequenceGenerator(stream="position", thread_safe=False),
+        policies={"sig": _policy(t_ns=1)},
+        clock=clock,
+    )
+    engine.attach()
+    log = _Log(bus)
     bus.publish(_rail(1, 1_000))
     bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=1, quantity=1))
     bus.publish(

@@ -745,10 +745,8 @@ def build_platform(
             bus,
             SequenceGenerator(stream="position", thread_safe=_seq_thread_safe),
             policies=exit_policies,
+            clock=clock,
         )
-        _position_target = getattr(position_engine, "_impl", position_engine)
-        if hasattr(_position_target, "_clock"):
-            _position_target._clock = clock
         position_sink = PositionRecordSink(bus)
         position_engine.attach()
         position_sink.attach()

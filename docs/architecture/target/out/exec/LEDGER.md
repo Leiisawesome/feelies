@@ -33562,3 +33562,147 @@ OWNER:       campaign 15.
                  the old hook does not print. Corrected expectation
                  on bdf26f5c: H1-H5 fail with assertion failures;
                  H6 and H7 pass.
+
+## P-30
+
+  DECISIONS:     D-194. Entry spread is named and not evaluated at B.
+                 The contract orientation is paying minus valuation
+                 (AS-17). The skeleton stores the integer placeholder.
+                 D-195. D-99 moves are real at B. birth_move delivers
+                 at B; birth_touch stays D (P-50). The partial node is
+                 green_from B.
+  INDEPENDENCE:  H1 2ebad98a1a308138f5d2fcc5c8b26faa59e8891adfafa3a8371c5cb722e2cec9
+                 (15817 bytes, Part 3 phase-1 engine). One post-H1 hunk:
+                 frozen _Cell via dataclasses.replace, required by
+                 test_reset_path_totality and S17. Part 5 POST-H1: none.
+                 The landed engine matches that prototype plus the D-195
+                 move. The Part 3 S17 method form hashed e3ffb189…
+                 (16481 bytes) and was replaced by the frozen cell.
+                 Shared lines recomputed on the committed engines: 23
+                 identical stripped lines of 30 or more characters, the
+                 Part 4 Q4 f list. D-195 added no shared move line.
+                 Contract-dictated: valuation_age_ns=orient.valuation_age_ns;
+                 feed_gap_before=rail.feed_gap_before;
+                 timestamp_ns=event.fill_timestamp_ns;
+                 self._bus.subscribe(MarkRailUpdate, self._on_mark_rail);
+                 self._bus.subscribe(Signal, self._on_signal);
+                 stamp = event.fill_timestamp_ns;
+                 key = (event.symbol, event.strategy_id, stamp);
+                 strategy_id=event.strategy_id;
+                 uncalibrated=policy.curve_ref == "ARBITRARY_NOT_CALIBRATED".
+                 Not contract-dictated: from __future__ import annotations;
+                 from collections.abc import Mapping;
+                 from feelies.bus.event_bus import EventBus;
+                 from feelies.core.events import (;
+                 from feelies.core.exit_policy import ExitPolicy;
+                 from feelies.core.identifiers import SequenceGenerator;
+                 sequence_generator: SequenceGenerator;
+                 policies: Mapping[str, ExitPolicy] | None = None;
+                 self._seq = sequence_generator;
+                 self.policies: dict[str, ExitPolicy] = dict(policies or {});
+                 def _on_signal(self, event: Signal) -> None:;
+                 policy = self.policies.get(event.strategy_id);
+                 def _on_mark_rail(self, event: MarkRailUpdate) -> None:;
+                 cells = [cell for cell in self._open.values() if cell.symbol == event.symbol].
+  E0:            113d211a, measured. src was still the stub and stage.txt
+                 was A. T1 failed at test_p30_stage_b.py:209 (subscriptions
+                 lack Signal). T2, T3 and T5 failed at line 78 (TypeError,
+                 unexpected keyword clock). T4 failed at line 310 (clock
+                 not in the production signature). Synthetic battery
+                 46 passed, 9 deselected, hook-clean; m4_birth_syn_partial
+                 accepted red NONVACUOUS: no PositionSnapshot records.
+                 Real battery 12 passed, 5384 deselected, hook-clean.
+  TREE:          Detached worktree at e42a9403, git apply of
+                 P-30-proto-5.diff, byte-compare of the 14 files with
+                 HEAD after 2e26a971. Equal. Diff non-ASCII 41, of which
+                 multiplication sign is 11 and minus is 13; both are
+                 present in the applied files.
+  SPEC:          ee198d0f. D-194, D-195, AS-17, battery.md birth_move,
+                 and the plan rows (P-30 in review; publish-cost
+                 off-ladder row).
+  IMPL:          2e26a971. Production skeleton, constructor clock,
+                 Signal on the manifest, stage.txt B.
+  BASE:          pre baseline_pre-P-30.json on e42a9403, git.dirty false.
+                 Full suite 5345 passed, 0 failed, 44 skipped, exit 0.
+                 Determinism 148 passed, exit 0. Parity constants 64.
+                 BASELINE GREEN. The first capture was red: stale
+                 hot-path profile, test_g45_keep (F-P30-30). That file
+                 was deleted. Profile refreshed on the clean tree.
+                 Recapture is the committed file.
+                 post baseline_post-P-30.json on 2e26a971, git.dirty
+                 false. Full suite 5350 passed, 0 failed, 44 skipped,
+                 exit 0. Determinism 148 passed, exit 0. compare
+                 parity-only: 64 -> 64, changed 0. BASELINE GREEN.
+                 Committed together in 1900f506. No pin constant edits.
+  GATES:         a. Hot-path profile refreshed (gitignored). Prepush
+                 green: ruff, format, mypy, lint-imports. Serial pytest
+                 5333 passed, 5 skipped, 57 deselected, 1 xfailed,
+                 913.96s; wall 961.15s. pytest -n 4: 5333 passed,
+                 5 skipped, 1 xfailed, 487.62s; wall 489.31s.
+                 b. Pins equal. Oracle 10 / 26.61 / ab3a2b3f… / b6bc1db5….
+                 R-FIX 98 / -1321.15 / 46a7f843… / 61a12456….
+                 R-SYN 29 / -131.01 / ffc9161e… / 3b795e55…
+                 (headline net is the position-store net).
+                 Eight-name 12 / +19.43 / 62196096… / aae3847a….
+                 Universe joint 18 / +41.49 / f98a588d… / 498bed5c…,
+                 joint = solo on all eight names.
+                 Level-3 f8824e5a…. Fingerprint fdf270da….
+                 Schema-drift b8f2c819…. Parity constants 64.
+                 KNOWN_NONCLOCK 5. P-24 numbering tests passed.
+                 Wiring 60af84b2… -> 5b68a4a248798094c9e2d2a1b9bbb3ab78df488b5471545deebc35a4e938819f.
+                 Only mover.
+                 c. Production stage B, both orders, hook-clean.
+                 Synthetic 46 passed, 9 deselected; the seven synthetic
+                 stage-B nodes green. Real 12 passed, 5384 deselected;
+                 the five real stage-B nodes green. Reference stage E,
+                 both orders: 76/76 and 12/12, hook-clean.
+                 kill.py --control: CONTROL 0 failures.
+                 d. Control rc 0 on every killer node, then each mutant
+                 restored. M1 m1_sinks_syn (0 != 34798). M2
+                 test_synthetic_seed11_i1_i2_i3. M3 m1_multiname.
+                 M4 m1_gates_syn. M6 R-SYN trade pin (41 == 29).
+                 M7 T2. M8 T1. M9 T3. M10 T5. M11 m4_birth_syn hook
+                 error, passed before D. M12 m4_birth_syn_partial
+                 CAP:birth_move move_now_cents 0 != -150. The same M12
+                 on test_m11_synthetic is a hook error whose text is
+                 M11: move_now_cents 0 != recomputed -250. Engine bytes
+                 restored.
+                 e. T1-T5: 5 passed in one process and under pytest -n 4.
+  CI:            pending the draft PR. Run ids do not exist before push.
+  F-P30-1:       closed by D-191.
+  F-P30-2:       Signal is subscribed.
+  F-P30-3:       closed by T1.
+  F-P30-4:       PositionClosed is constructed.
+  F-P30-5:       gate_order is accepted.
+  F-P30-6:       manifest rows and the bootstrap stamp are removed.
+  F-P30-7:       the docstring does not claim the birth formula.
+  F-P30-8:       stub gates are hold/none; placeholders are AS-17.
+  F-P30-9:       quote.sequence rejected by D-191.
+  F-P30-10:      R-SYN sequence numbers rejected by D-191.
+  F-P30-11:      named inside D-191.
+  F-P30-12:      closed by D-195. The partial node is a real green at B.
+  F-P30-13:      M1 killed.
+  F-P30-14:      M2 killed by I2.
+  F-P30-15:      M3 killed.
+  F-P30-16:      M4 killed.
+  F-P30-17:      closed by T5; M10 killed.
+  F-P30-18:      bootstrap setattr retired; the reference constructor takes the clock.
+  F-P30-19:      closed by D-195. birth_move delivers at B.
+  F-P30-20:      the causality test no longer assigns _clock after construction; kill.py has no positional B1-B14.
+  F-P30-21:      the S17 method move was the post-H1 hunk.
+  F-P30-22:      frozen _Cell fixes test_reset_path_totality.
+  F-P30-23:      the reference dropped the shared clock import; structural _Clock protocol.
+  F-P30-24:      ProbeEngine accepts the constructor clock.
+  F-P30-25:      standing rule. Diffs are written by git diff --binary --output= and verified by worktree byte-compare.
+  F-P30-26:      placeholder moves are not adopted. Member 11 raises untagged M11:.
+  F-P30-27:      same partial node as F-P30-19; closed by D-195.
+  F-P30-28:      publish cost and -n 4 worker imbalance. Off-ladder row. A check job over 960s is reported, not a stop.
+  F-P30-29:      accepted as intended. The setup check is a property of the scenario's fills, not of the engine.
+  F-P29b-1:      same as F-P30-18. Closed.
+  F-P29b-2:      closed by T2; M7 killed.
+  F-P29b-4:      remeasured as F-P30-19, then closed by D-195.
+  F-P29b-11:     the partial node. Closed by D-195.
+  F-P29b-12:     closed by D-194. 289 observed births unchanged.
+  F-P29b-13:     closed by T5.
+  F-P29b-14:     standing rule. E0 expectations are measured, not inferred.
+  F-P30-30:      the first pre capture was red because the gitignored hot-path profile still fingerprinted the census prototype. Not a code defect.

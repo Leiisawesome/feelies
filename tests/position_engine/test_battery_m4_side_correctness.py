@@ -1,4 +1,7 @@
-"""Member 4: side correctness. Rail half green from A (D-37); birth from D."""
+"""Member 4: side correctness.
+
+Rail half green from A (D-37); birth touch from D; partial birth_move from B (D-195).
+"""
 
 from __future__ import annotations
 
@@ -23,6 +26,7 @@ from tests.position_engine.tapes import force_class, make_tape
 
 _RAIL = pytest.mark.battery_member(member=4, green_from="A", red_reason="^NONVACUOUS: ")
 _BIRTH = pytest.mark.battery_member(member=4, green_from="D", red_reason="^NONVACUOUS: ")
+_BIRTH_MOVE = pytest.mark.battery_member(member=4, green_from="B", red_reason="^NONVACUOUS: ")
 _UNUSABLE = pytest.mark.battery_member(member=4, green_from="C", red_reason="UNUSABLE_SIDE")
 _REAL = pytest.mark.battery_real
 _UNUSABLE_CLASSES = (
@@ -65,7 +69,7 @@ def _rail(records: Records, scenario: str) -> None:
         assert short["forced_exit_mark_cents"] >= short["valuation_mark_cents"]
 
 
-def _birth(records: Records, scenario: str) -> None:
+def _birth(records: Records, scenario: str, *, touch: bool = True) -> None:
     require_entry_fills(records)
     nonvacuous(records, PositionSnapshot, scenario=scenario)
     first: dict[str, dict[str, object]] = {}
@@ -101,17 +105,20 @@ def _birth(records: Records, scenario: str) -> None:
         paying = int(rail["paying_mark_cents"])
         if fills and all(int(fill["price_cents"]) == paying for fill in fills):
             touched += 1
-            spread = int(snap["entry_spread_ticks"])
-            if snap["move_now_cents"] != -spread * size:
-                raise AssertionError(
-                    f"CAP:birth_touch: move_now_cents {snap['move_now_cents']} "
-                    f"!= -entry_spread_ticks × size ({-spread * size})"
-                )
+            if touch:
+                spread = int(snap["entry_spread_ticks"])
+                if snap["move_now_cents"] != -spread * size:
+                    raise AssertionError(
+                        f"CAP:birth_touch: move_now_cents {snap['move_now_cents']} "
+                        f"!= -entry_spread_ticks × size ({-spread * size})"
+                    )
         elif fills:
             partial_cells += 1
     print(f"touch_clause_cells={touched}")
-    if scenario.endswith("partial") and partial_cells < 1:
-        raise AssertionError(f"NONVACUOUS: no partial-entry cell in {scenario}")
+    if scenario.endswith("partial"):
+        assert touched == 0, f"setup: touch_clause_cells {touched} != 0 in {scenario}"
+        if partial_cells < 1:
+            raise AssertionError(f"NONVACUOUS: no partial-entry cell in {scenario}")
 
 
 @_RAIL
@@ -138,10 +145,10 @@ def test_m4_birth_syn() -> None:
     _birth(run_synthetic(tape, symbols=("SYN",)), "m4_birth_syn")
 
 
-@_BIRTH
+@_BIRTH_MOVE
 def test_m4_birth_syn_partial() -> None:
     tape = make_tape(seed=11, n=36000, symbol="SYN", start_ns=T0, size=100)
-    _birth(run_synthetic(tape, symbols=("SYN",)), "m4_birth_syn_partial")
+    _birth(run_synthetic(tape, symbols=("SYN",)), "m4_birth_syn_partial", touch=False)
 
 
 @_BIRTH

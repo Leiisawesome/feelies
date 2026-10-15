@@ -148,12 +148,15 @@ ASSERTS:           every rail update: paying and valuation on opposite sides, di
 The touch clause applies only to cells whose every entry fill printed at the birth paying mark;
 the number of such cells is reported, and a count of zero is recorded as untested, not passed.
 The general identity holds for every cell. (D-34)
+`test_m4_birth_syn_partial` is green_from B and checks birth_move only. A setup assertion
+records `touch_clause_cells == 0` for its walked partials (D-195). `test_m4_birth_syn` and
+`test_m4_birth_real` stay green_from D for birth_touch.
                    On every non-VALID quote the rail marks absent exactly the sides the store
                    refuses; absence clocks run; symbol_quiet_ns resets. green_from C, the stage
                    letter at which P-40 lands:
                    | P-40 | C | rail complete (ages, absences, window, warm-up, worst-side, forced, dwelled); PlatformConfig position_rail_slippage_ticks and position_rail_dwell_ns (D-40) |
 FAILURE LOOKS LIKE:one event and which assertion
-BLOCKS THE BUILD:  yes — red until stage C (rail) / D (birth)
+BLOCKS THE BUILD:  yes — red until stage C (rail) / D (birth touch). The partial birth node is green from B (D-195)
 ```
 
 Implementation (P-21f): unusable-side clause in
@@ -320,9 +323,9 @@ field exists (contracts §2). (D-104)
 | Stage | Lands | Gate |
 |---|---|---|
 | A | tape generator + its test; the six blocking members, red; the broken engines | every broken engine caught, each by a named member |
-| B | walking skeleton on the P-10 surface (event types, wiring, streams and sinks landed in P-10): stub cell with birth/close from slice fills, stub gates, the two-phase step | members 1, 2 green |
+| B | walking skeleton on the P-10 surface (event types, wiring, streams and sinks landed in P-10): stub cell with birth/close from slice fills, stub gates, the two-phase step | members 1, 2 green; member 4 partial checks birth_move only (D-195) |
 | C | mark rail | members 1, 2, 9 green; 4 (rail half) green since A (D-37) |
-| D | position cell | + 4 (birth), 10, 11 green |
+| D | position cell | + 4 (birth touch), 10, 11 green |
 | E | both gates, precedence | all eleven green |
 
 Engine-on regression after P-99 is guarded by the position oracle, not by this battery
@@ -352,8 +355,8 @@ violation is reported and is not repaired by editing `green_from`.
 | Capability | Delivering stage | Contract or plan line |
 |---|---|---|
 | dwell_window | C | battery.md member 2: "with D > 0, a dirty (crossed) quote older than t−D never blocks a favorable decision at t"; plan row P-40 |
-| birth_move | D | contracts.md: "move_now_cents = sign × (valuation_mark_cents × size − entry_cost_cents)"; plan stage D, member 4 birth |
-| birth_touch | D | battery.md member 4: "the first move_now_cents … = −entry_spread_ticks × size exactly for a MARKET entry filled at the touch" |
+| birth_move | B | contracts.md:258 recompute moves, delivered by the P-30 step (D-195); "move_now_cents = sign × (valuation_mark_cents × size − entry_cost_cents)" |
+| birth_touch | D | battery.md member 4: "the first move_now_cents … = −entry_spread_ticks × size exactly for a MARKET entry filled at the touch"; the frozen entry spread, P-50 (D-195) |
 | favorable_fire | E | battery.md member 2 dwell clause: "The decision at that quote is outcome fire"; plan row P-61 |
 | conservation | E | battery.md member 3: "share exiting favorable first = d / (u + d)"; plan stage E |
 | exit_accounting | E | battery.md member 6: exit legs pair with the fill acks; plan rows P-60 and P-61 |
@@ -364,8 +367,8 @@ Only a stage-gate rung edits `stage.txt`. No build rung edits a test. `xfail` is
 battery members.
 
 Marker: `@pytest.mark.battery_member(member=N, green_from="<A–E>", red_reason=r"...")`.
-A member split by stage (member 4's rail and birth halves) is two test functions with their
-own `green_from`. Assertion order is baseline, then PRECONDITION, then NONVACUOUS, then the
+A member split by stage (member 4's rail half, birth-touch half, and partial birth_move node)
+is one test function per `green_from`. Assertion order is baseline, then PRECONDITION, then NONVACUOUS, then the
 property (D-107). PRECONDITION asserts engine-independent facts (the run contains at least
 one entry fill; the tape reaches a boundary the fixture enters on; an injected quote is
 present). A message beginning `PRECONDITION:` is a real failure at every stage. The stage

@@ -1303,12 +1303,14 @@ class ProbeEngine:
         sequence_generator: object,
         policies: object = None,
         gate_order: object = None,
+        clock: object = None,
     ) -> None:
         _probe_write(f"engine {gate_order!r}")
         self._inner = _ProductionEngine(
             bus,  # type: ignore[arg-type]
             sequence_generator,  # type: ignore[arg-type]
             policies=policies,  # type: ignore[arg-type]
+            clock=clock,  # type: ignore[arg-type]
         )
 
     def attach(self) -> None:

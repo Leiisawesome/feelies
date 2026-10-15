@@ -6,7 +6,7 @@ import hashlib
 from collections.abc import Mapping
 from decimal import Decimal
 from fractions import Fraction
-from typing import NamedTuple
+from typing import NamedTuple, Protocol
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
@@ -29,6 +29,13 @@ from feelies.core.events import (
 from feelies.core.exit_policy import ExitPolicy
 from feelies.core.identifiers import SequenceGenerator
 
+
+class _Clock(Protocol):
+    """Structural clock. now_ns is the only operation the reference uses."""
+
+    def now_ns(self) -> int: ...
+
+
 _REQUIREMENT = {
     "ADVERSE": "ADVERSE_EXCURSION",
     "HORIZON": "HORIZON",
@@ -46,10 +53,12 @@ class PositionEngine:
         sequence_generator: SequenceGenerator,
         policies: Mapping[str, ExitPolicy] | None = None,
         gate_order: tuple[str, ...] = ("ADVERSE", "FAVORABLE"),
+        *,
+        clock: _Clock | None = None,
     ) -> None:
         self._bus = bus
         self._seq = sequence_generator
-        self._clock = None
+        self._clock = clock
         self.policies: dict[str, ExitPolicy] = dict(policies or {})
         self.gate_order = gate_order
         self._open: dict[tuple[str, ...], Cell] = {}
@@ -319,7 +328,7 @@ class PositionEngine:
             side=side,
             policy=policy,
             entry_order_id=event.order_id,
-            spread=entry_spread_ticks(paying, valuation),
+            spread=entry_spread_ticks(paying, valuation, side=side),
             deadline_ns=event.fill_timestamp_ns + policy.horizon.T_ns,
             price_cents=price,
             quantity=quantity,
@@ -556,13 +565,12 @@ def cell_id_for(
     return base
 
 
-def entry_spread_ticks(paying: int | None, valuation: int | None) -> int:
-    """§2:192-193. Positive ticks between the two sides; 0 when a side is missing."""
+def entry_spread_ticks(paying: int | None, valuation: int | None, *, side: str) -> int:
+    """D-194. s × (paying − valuation); s is +1 LONG and −1 SHORT. 0 if a side is missing."""
     if paying is None or valuation is None:
         return 0
-    if paying >= valuation:
-        return paying - valuation
-    return valuation - paying
+    sign = 1 if side == "LONG" else -1
+    return sign * (paying - valuation)
 
 
 class Cell:
