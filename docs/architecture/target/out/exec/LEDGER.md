@@ -33668,7 +33668,7 @@ OWNER:       campaign 15.
                  M11: move_now_cents 0 != recomputed -250. Engine bytes
                  restored.
                  e. T1-T5: 5 passed in one process and under pytest -n 4.
-  CI:            pending the draft PR. Run ids do not exist before push.
+  CI:            38574781863 on bb5ea527; merge 38662738743.
   F-P30-1:       closed by D-191.
   F-P30-2:       Signal is subscribed.
   F-P30-3:       closed by T1.
@@ -33706,3 +33706,5 @@ OWNER:       campaign 15.
   F-P29b-13:     closed by T5.
   F-P29b-14:     standing rule. E0 expectations are measured, not inferred.
   F-P30-30:      the first pre capture was red because the gitignored hot-path profile still fingerprinted the census prototype. Not a code defect.
+  F-P30-31:      deferred to P-31. Partial exit leaves entry cost stale.
+  F-P30-32:      deferred to P-31. Close keeps entry correlation id.
