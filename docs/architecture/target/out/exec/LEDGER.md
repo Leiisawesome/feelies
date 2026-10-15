@@ -33708,3 +33708,113 @@ OWNER:       campaign 15.
   F-P30-30:      the first pre capture was red because the gitignored hot-path profile still fingerprinted the census prototype. Not a code defect.
   F-P30-31:      deferred to P-31. Partial exit leaves entry cost stale.
   F-P30-32:      deferred to P-31. Close keeps entry correlation id.
+
+## P-31
+
+  DECISIONS:     D-196. Operator decision 2026-10-15: FIFO lot rule,
+                 oldest lots first. A partial opposite fill consumes
+                 entry lots by entry-fill sequence, splitting a lot
+                 when needed. entry_cost_cents and size after it are
+                 the exact sums over the lots that remain. The D-99
+                 move identity is unchanged and uses those sums.
+                 D-197. Operator decision 2026-10-15:
+                 PositionClosed.correlation_id is the closing event.
+                 A fill that closes the cell, including a sign flip,
+                 stamps that fill. A rail close with no fill
+                 (END_OF_TAPE) stamps the last usable rail.
+                 D-84 stands. Production finalize lands at P-50.
+  E0:            ab4a123f, measured on production before the engine
+                 change. T6 a-d fail (cost 202000; worst
+                 (-101000, 103) on the long case). T7a and T7b fail
+                 (id entry-fill). T7c XFAIL strict. Reference: 7
+                 passed, including T7c. Final production: 6 passed,
+                 1 xfailed.
+  TREE:          Detached worktree at 90e32a31, git apply of
+                 P-31-proto-2.diff, byte-compare of the 5 files with
+                 HEAD after 08960beb. Equal.
+  SPEC:          1cae5f2b. D-196, D-197, and the plan rows (P-31 in
+                 review; P-50 note that finalize lands there and
+                 T7c's production strict xfail becomes a plain pass).
+  IMPL:          08960beb. FIFO lots in the position engine. Close id
+                 is the closing event. Position-store docstring says
+                 average-cost.
+  BASE:          pre baseline_pre-P-31.json on 90e32a31, git.dirty
+                 false. Full suite 5350 passed, 0 failed, 44 skipped,
+                 exit 0. Determinism 148 passed, exit 0. Parity
+                 constants 64. BASELINE GREEN.
+                 The first post capture was red: stale hot-path
+                 profile, test_g45_keep (F-P31-7). That file was
+                 deleted. Profile refreshed on 08960beb. Recapture
+                 is the committed file.
+                 post baseline_post-P-31.json on 08960beb, git.dirty
+                 false. Full suite 5356 passed, 0 failed, 44 skipped,
+                 exit 0. Determinism 148 passed, exit 0. compare
+                 parity-only: 64 -> 64, changed 0. BASELINE GREEN.
+                 Committed together in 66cb0957. No pin constant edits.
+  GATES:         a. Hot-path profile refreshed (gitignored). Prepush
+                 green: ruff, format, mypy, lint-imports. Serial
+                 pytest 5339 passed, 5 skipped, 57 deselected,
+                 2 xfailed, 48 warnings in 1500.06s. Profile plus
+                 prepush wall 1610.0s. pytest -n 4: 5339 passed,
+                 5 skipped, 2 xfailed, 48 warnings in 693.39s;
+                 wall 695.9s.
+                 b. Pins equal. Oracle 10 / 26.61 / ab3a2b3f… /
+                 b6bc1db5…. R-FIX 98 / -1321.15 / 46a7f843… /
+                 61a12456…. R-SYN 29 / -131.01 / ffc9161e… /
+                 3b795e55…. Eight-name 12 / +19.43 / 62196096… /
+                 aae3847a…. Universe joint 18 / +41.49 / f98a588d… /
+                 498bed5c…, rejects 0, joint = solo.
+                 Level-3 f8824e5a…. Fingerprint fdf270da….
+                 Schema-drift b8f2c819…. Wiring 5b68a4a2….
+                 Parity constants 64. KNOWN_NONCLOCK 5.
+                 c. Production stage B, both orders, hook-clean.
+                 Synthetic 247 passed forward (632.29s) and reversed
+                 (552.31s). The 12 stage-B nodes are in that set
+                 plus the real run. Real 11 passed forward (355.63s)
+                 and reversed (320.21s). Reference stage E, both
+                 orders: 76/76 forward (298.78s) and reversed
+                 (300.06s); real 11/11 forward (385.81s) and
+                 reversed (356.92s); test_reference_app_i2_only_pending
+                 passed (44.36s). 12/12. kill.py --control:
+                 CONTROL 0 failures.
+                 d. M13 T6 a-d fail, costs 202000, worst
+                 (-101000, 103). M14 T6a fail, cost 101000.
+                 M16 T6a cost 100000 and T6c cost 50000.
+                 M15 T7a and T7b fail, id entry-fill.
+                 M17 T7c strict XPASS; 11 member-6 nodes hook-error
+                 (six passed before stage E; a4, a6_long, and the
+                 top parameter of each A5 family failed A4/A5/A6).
+                 Control after restore: 11 passed, 1 xfailed.
+                 Engine bytes restored after each.
+                 e. T6/T7 after test_p30_stage_b.py: 11 passed,
+                 1 xfailed in one process (0.49s) and under -n 4
+                 (1.90s).
+                 f. Battery canonical hashes, recorded, not pinned.
+                 syn1000 eed1e641e145cf2137c09591407f1339f6f915fbeb0e7a278d9b7b6ea2f9b867.
+                 syn100 67f46f71315289dd98769a16860ca37c5b7b5bc3ed2bd3b2d78a125ec1c75662.
+                 real e607fca7221fab97ef2afcd2fd5bb99cc0b357749cd4c3f7950d8d1baa587fca.
+                 Same values as the Part 3 prototype.
+  CI:            pending the draft PR. Run ids do not exist before push.
+  EVIDENCE:      The real APP cell, entry cost 2468530 -> 1871305
+                 across 259 snapshots. Single-price lots, so FIFO
+                 and average cost agree there.
+  MOVE_NOW_BPS:  reporting only (contracts.md:224). Delivered with
+                 P-95/P-99. Not implemented here.
+  F-P30-31:      closed by D-196.
+  F-P30-32:      closed by D-197.
+  F-P31-1:       closed by D-196. The contract now names FIFO.
+  F-P31-2:       closed by D-197. The close id is the closing event.
+  F-P31-3:       closed by the position-store docstring. The store
+                 was already average-cost.
+  F-P31-4:       recorded. No battery tape leaves a multi-price
+                 remainder open. T6 is the constructed case where
+                 FIFO and average cost differ.
+  F-P31-5:       held. finalize stays at P-50 (D-84). T7c is a
+                 strict production xfail. Lesson: before a test
+                 requires a behaviour of production, check the rung
+                 the plan assigns it to.
+  F-P31-6:       recorded. The APP remainder is single-price. The
+                 move change is the unreduced entry cost.
+  F-P31-7:       the first post capture was red on test_g45_keep.
+                 The profile still fingerprinted 90e32a31. Recaptured
+                 after refresh on 08960beb. Not a code defect.
