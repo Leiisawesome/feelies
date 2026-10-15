@@ -278,6 +278,27 @@ D-195 — birth_move is a stage-B capability (F-P30-19, -26, -27).
   member 11 fails untagged, F-P30-26); birth_move kept at D (a broken
   move at B would be accepted as waiting for D).
 
+D-196 — Partial opposite fill: FIFO lot rule (F-P30-31, F-P31-1).
+- A fill opposite to an open cell that does not close it consumes the
+  cell's entry lots oldest first, by entry-fill sequence, splitting a
+  lot when needed.
+- entry_cost_cents and size after the fill are the sums over the
+  remaining lots: exact integers.
+- The D-99 move identity is unchanged and uses those remaining sums.
+- Episode P&L at close is the same under any lot rule, so cells still
+  reconcile with the average-cost position store.
+- Rejected: average cost (the remaining cost can be fractional;
+  contracts.md:206 requires exact integers); whole-episode move
+  (changes what stage-E gates read).
+
+D-197 — PositionClosed.correlation_id is the closing event's id
+(F-P30-32, F-P31-2):
+- the fill that closes the cell, including a sign flip;
+- for a close decided on a rail without a fill (END_OF_TAPE,
+  contracts.md:178-182), the last usable rail event.
+- Rejected: the birth fill (the entry legs are already on the
+  record).
+
 ### D-66 pre-registered prediction
 
 ```

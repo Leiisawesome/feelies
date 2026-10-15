@@ -208,7 +208,9 @@ fills, an exact integer; `size = Σ qty`. (D-77) Later fills of the same entry o
 cell (`size` and `entry_cost_cents` accumulate). A fill of a different same-direction order
 while a cell is open is a scale-in and is refused. Entry fills after birth come only from
 partial fills of the same entry order; a same-side increase from a new signal is refused at
-admission (§6). Every entry fill is in the closing record.
+admission (§6). Every entry fill is in the closing record. A partial opposite
+fill consumes those lots oldest first, and `entry_cost_cents` and `size` after it
+are the sums over the lots that remain (D-196).
 
 **Excursion accounting** (pure functions, recomputed from the entry cost every event, never
 accumulated) [A-16]. Moves are exact integer cents over the **whole position**, not ticks per
@@ -292,7 +294,8 @@ mix the levels are judged by.
   quantity = full slice, order type MARKET [A-12]. (D-98, D-106)
   `order_id = cell_id + "|EXIT|" + attempt`, attempt counting from 1. Side is the side that
   reduces the cell (`LONG` → `SELL`, `SHORT` → `BUY`).
-- `PositionClosed`, once, write-once: `cell_id`, symbol, strategy, side; every entry fill
+- `PositionClosed`, once, write-once: `correlation_id` (the closing event's id, D-197);
+  `cell_id`, symbol, strategy, side; every entry fill
   (price, qty, ts, seq); `entry_spread_ticks`; `horizon_deadline_ns`; drawn stop level;
   exit reason; `triggered_paths` (each path triggered on the deciding event, its proposed
   price and trigger); proposed price; every exit fill (price, qty, ts, seq); the three
