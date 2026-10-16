@@ -33824,3 +33824,61 @@ OWNER:       campaign 15.
   F-P31-7:       the first post capture was red on test_g45_keep.
                  The profile still fingerprinted 90e32a31. Recaptured
                  after refresh on 08960beb. Not a code defect.
+
+## T-3
+
+  VERDICT:       passed
+  DECISIONS:     D-198. Operator decision 2026-10-16: the phase-14
+                 standing contract is .cursor/rules/exec-guardrail.mdc,
+                 rewritten in place and always applied. Spec commits
+                 are the first commit on exec/<id> (playbook v1.2,
+                 rule 8).
+                 D-199. Operator decision 2026-10-16: HC-1016 state
+                 values stand. Any other HC-1016 fact a step relies on
+                 is re-proven in that step's census.
+  E0:            none. Docs only; no code or test changed.
+  TREE:          none. No prototype applied.
+  SPEC:          de7b0274. D-198, D-199; plan rows T-3 (new),
+                 S-1 (DONE, report only), T-2 (save after an
+                 operator-authorised fetch).
+  IMPL:          daa66952. exec-guardrail.mdc rewritten (blob
+                 518a53b0). AGENTS.md: canonical-reference row,
+                 stale suite count removed, cache-miss lines, CI lines.
+  BASE:          pre baseline_pre-T-3.json on de7b0274, git.dirty
+                 false. Full suite 5356 passed, 0 failed, 44 skipped,
+                 exit 0. Determinism 148 passed, exit 0. Parity
+                 constants 64. BASELINE GREEN.
+                 post baseline_post-T-3.json on daa66952, git.dirty
+                 false. Full suite 5356 passed, 0 failed, 44 skipped,
+                 exit 0. Determinism 148 passed, exit 0. compare
+                 parity-only: 64 -> 64, changed 0. BASELINE GREEN.
+                 Predicted: equal counts, 64 -> 64, changed 0.
+                 MATCH.
+  GATES:         a. Hot-path profile refreshed before each capture.
+                 Prepush: prepush: ok (ruff check, ruff format, mypy,
+                 lint-imports, pytest). Serial pytest: 5339 passed,
+                 5 skipped, 57 deselected, 2 xfailed, 49 warnings in
+                 907.76s (0:15:07). pytest -n 4: 5339 passed, 5 skipped,
+                 2 xfailed, 53 warnings in 488.87s (0:08:08).
+                 b. APP oracle file: 2 passed, 1 warning in 21.13s.
+                 c. Universe check: 1 passed in 113.72s (0:01:53).
+                 d. Battery and mutant runs not run: no code changed.
+  CI:            pending.
+  MERGE:         pending.
+  BUGBOT:        pending; read after CI completes.
+  DEVIATIONS:    none.
+  STANDING:      .cursor/rules/exec-guardrail.mdc is the standing
+                 contract from T-3 on (D-198).
+  EVIDENCE:      Read-only censuses HC-1016, HC-1016b, HC-1016c,
+                 HC-1016e and T-3 censuses 1-3, all at 85b419d1.
+  F-T3-1:        prose D-entries from D-191 on are outside the
+                 uniqueness check (test_doc_integrity.py:24, 73-74;
+                 table rows end at decisions.md:199). Recorded.
+  F-T3-2:        the plan's "tooling" row (line 86) is the ledger's
+                 T-1. Naming gap. Recorded.
+  F-T3-3:        tools/arch/setup.ps1:96 and tools/arch/setup.sh:26
+                 still add the retired arch-guardrail.mdc. Recorded.
+  F-T3-4:        INFERRED from ci.yml:52, 233-235 and 428: on a
+                 dispatch only reference-battery-real and mutant-kill
+                 run, so the populate and save steps in check and
+                 parity-oracle cannot execute. Recorded.
