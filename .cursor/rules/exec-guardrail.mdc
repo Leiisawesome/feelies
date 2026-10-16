@@ -1,23 +1,130 @@
 ---
-description: Migration execution guardrails. Enable only while executing the locked plan; delete afterwards. Replaces arch-guardrail.mdc.
+description: Phase-14 standing contract (position engine, backtest only). Binds every Cursor session in this repo until P-99. Version 1 (T-3, D-198).
 alwaysApply: true
 ---
 
-Migration execution is in progress against a locked plan. These override normal behavior.
+# Phase-14 standing contract
 
-- Edit ONLY the files listed in the current step's FILES field. Anything else is
-  a plan defect: stop and report, do not edit it.
-- NEVER run scripts/rebaseline_parity_hashes.py. Parity re-baselining is a human
-  action. An agent running it converts a caught regression into a committed one.
-- Any parity hash change the step did not declare is a STOP. Revert; do not
-  reconcile, explain, or update the constant.
-- Write the conformance test first and prove it FAILS before implementing. A test
-  that passes beforehand protects nothing.
-- Never fix forward. A failed step is reverted and the plan is amended.
-- Found a bug outside the step? Record it as a finding. Do not fix it.
-- No opportunistic renaming, reformatting, import reordering, or annotation tidying.
-- boundary blast radius: present the diff and wait for approval.
-  platform-wide: present the diff and rollback, wait for explicit go/no-go.
-  Silence is not approval.
-- Environment is uv: `uv run pytest`, `uv run python`. Windows: `python`, not `python3`.
+The operator (Lei) decides. Claude designs and gates. Cursor executes and reports.
+Each prompt carries only what is new; this file holds what is fixed. It changes
+only through its own rung, and is retired or replaced at P-99.
+docs/architecture/target/prompts/exec/X0_CORE_EXEC.md and
+docs/architecture/target/EXEC-RUNBOOK.md are phase 7 and do not bind phase 14.
+The Claude chat rollover limit is 8 merged steps (playbook v1.1).
+
+## Where things are
+- Plan: docs/architecture/target/out/phase14_position_engine.md
+  (ladder columns: Rung | Stage | Lands | Gate | Parity)
+- Ledger: docs/architecture/target/out/exec/LEDGER.md
+- Decisions: docs/architecture/target/position_engine/decisions.md. New entries
+  are prose, "D-<n> — <title>", after the last prose entry.
+- Spec: contracts.md, battery.md, assumptions.md in
+  docs/architecture/target/position_engine/. The stage letter is stage.txt.
+- Captures: docs/architecture/target/out/exec/baseline_pre-<id>.json and
+  baseline_post-<id>.json
+
+## Never
+- Push to main, use --admin, or bypass a required check (check (ubuntu-latest),
+  parity oracle).
+- Commit anywhere but exec/<id>, except the ledger commit on arch/exec after a
+  merge the operator approved. PRs are drafts against arch/exec.
+- Squash or rebase a merge. Merges are merge commits, on the operator's go.
+- Change the remote configuration.
+- Run broker or network tests (FEELIES_BROKER_TESTS, FEELIES_NETWORK_TESTS);
+  start, stop or configure TWS/IB Gateway; place, cancel or query orders.
+- Print MASSIVE_API_KEY, or write it to a file, log, command line, commit or PR.
+- Fetch data. Caches are local and fail closed
+  (FEELIES_REQUIRE_BASELINE_CACHE=1); a miss is a STOP. Do not touch
+  ~/.feelies/cache or GitHub caches.
+- Dispatch CI unless the prompt says "OPERATOR: real-data CI dispatch —
+  AUTHORISED". The default is NOT AUTHORISED. The nightly dispatcher on main
+  passes no allow_fetch and is the only standing dispatch.
+- Run scripts/rebaseline_parity_hashes.py.
+- Move a pinned value without an operator D-entry giving the exact old and new
+  values. That change is its own commit touching only that constant, and must
+  reproduce the approved value exactly. Any other pin move is a STOP.
+
+## Commands (PowerShell, repo root)
+- Hot-path profile, after any src edit and before every capture (gitignored):
+  uv run python tools/arch/perfmeasure.py --mode profile
+- Capture: uv run python tools/exec/baseline.py capture --label pre-<id>
+  (and post-<id>). It runs uv run pytest -q and uv run pytest tests/determinism -q
+  and must print BASELINE: GREEN.
+- Compare: uv run python tools/exec/baseline.py compare
+  --before docs/architecture/target/out/exec/baseline_pre-<id>.json
+  --after docs/architecture/target/out/exec/baseline_post-<id>.json --parity-only
+- Final-patch gate: uv run python scripts/prepush.py (ruff check, ruff format
+  --check, mypy, lint-imports, pytest on scripts/ci_gate_expr.txt), then
+  uv run pytest -m "$(Get-Content scripts/ci_gate_expr.txt)" -q -n 4
+- Universe check, every rung, local only (needs the eight-name cache):
+  $env:PYTHONHASHSEED='0'; uv run pytest tests/conformance/test_cap_neutral_universe.py -q -m universe_check; Remove-Item Env:PYTHONHASHSEED
+- Battery on the reference:
+  FEELIES_ENGINE=tests.position_engine.reference.engine.PositionEngine and
+  FEELIES_RAIL=tests.position_engine.reference.rail.ReferenceRail; stage
+  override FEELIES_STAGE_FILE; real members with
+  FEELIES_REQUIRE_BASELINE_CACHE=1 and -m battery_real. Mutant control:
+  kill.py --control (B1–B14).
+
+## Every step
+- One step per session. The first prompt of a rung and every merge open a new
+  session. A read-only session never becomes an execute session.
+- Before acting, restate FILES, blast radius and prediction from the prompt.
+  If they differ from the plan, STOP.
+- Commit order on exec/<id>: spec (plan row, D-entries, prediction) →
+  fail-first test → change → baselines → ledger.
+- The prediction is committed in the spec commit (the plan row's Parity cell;
+  a pre-registered prediction section in decisions.md when the rung moves
+  anything), before the pre capture, and is never edited. An unpredicted
+  change is a STOP.
+- Fail first: the validating test fails before the change, quoted verbatim.
+  E0 is measured, not inferred.
+- Edit only the declared FILES. The count includes the ledger and baseline
+  files. Needing another file is a STOP.
+- Out-of-scope bugs are findings, not fixes. No opportunistic renaming,
+  reformatting or import tidying. Never fix forward: a failed step is reverted
+  and the plan amended.
+- Before a test requires a behaviour of production, check the rung the plan
+  assigns it to. The contract outranks a battery tag. Trace a field's
+  provenance before calling it content-keyed.
+- A new test that touches a process cache, environment variable or module
+  state passes after its cache-populating neighbours in one process and under
+  -n 4.
+- Prototype diffs: git diff --binary --output=<file>, stored in
+  %USERPROFILE%\feelies-probes\, applied byte-identically, verified by
+  byte-compare in a clean worktree.
+- Captures are clean (git.dirty false) and committed before the ## <id> ledger
+  heading. Every rung heading needs both, docs-only rungs included (D-94).
+- A ledger block carries: VERDICT, DECISIONS, E0, TREE, SPEC, IMPL, BASE
+  (pre and post, predicted against actual), GATES, CI (pending until the
+  merge), MERGE (filled at the merge), BUGBOT, DEVIATIONS, STANDING, EVIDENCE,
+  then one line per finding.
+- Blast radius sets the gate. local: commit after checks. boundary: stop, show
+  the full diff and checks, wait for approval. platform-wide: stop, show the
+  diff and the rollback, wait for an explicit go; silence is no-go. A pinned
+  value, order submission, ExecutionBackend or a safety control is
+  platform-wide whatever the plan says.
+- Automated review (Bugbot) is read only after CI completes. Each finding is
+  fixed in the rung or recorded with a destination rung. The merge stops on
+  any finding without one.
 - Stop at the step boundary. Do not begin the next step.
+
+## Engine independence
+- src/ never imports tests/. The reference imports only the D-92 allowlist.
+- Production engine code is written from contracts.md and battery.md in a
+  session that has not opened tests/position_engine/reference/, mutants.py or
+  kill.py. engine.py is hash-frozen before the reference is opened; each later
+  hunk names the test that forced it; the reference is observed only through
+  its outputs.
+- A battery change follows the stage-A rule (plan row P-39): spec closure;
+  reference extended; at least one broken engine per member, killed by a named
+  member; reference control clean.
+
+## Reports
+- Values come from command output in this tree, copied, never transcribed or
+  estimated. Requested blocks are printed verbatim.
+- A file:line holds only at the commit it was read at.
+- Keep a report to one message. If it will not fit, stop at a block boundary
+  and say where.
+- PowerShell: set [Console]::OutputEncoding to UTF-8 before reading non-ASCII
+  output; use git --no-pager; write "${ref}:path", never "$ref:path"; check
+  that marker expressions reach pytest intact.

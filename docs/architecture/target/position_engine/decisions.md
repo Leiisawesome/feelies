@@ -299,6 +299,28 @@ D-197 — PositionClosed.correlation_id is the closing event's id
 - Rejected: the birth fill (the entry legs are already on the
   record).
 
+D-198 — Phase-14 standing contract (T-3).
+- The standing contract is .cursor/rules/exec-guardrail.mdc, rewritten in
+  place and always applied. Prompts carry only what is new.
+- X0_CORE_EXEC.md and EXEC-RUNBOOK.md are phase 7 and do not bind phase 14.
+- AGENTS.md's CI lines are corrected in the same rung.
+- The contract changes only through its own rung.
+- Spec commits (plan rows, D-entries) are the first commit on exec/<id>,
+  as P-31 did (playbook v1.2, rule 8).
+- Rejected: a doc named by every prompt (loaded only when named, and the
+  phase-7 guardrail stays loaded); the status quo (rules restated in every
+  prompt beside a stale guardrail).
+
+D-199 — Evidence from the handoff census HC-1016 (2026-10-16).
+- Its state values stand: each matched an independently recorded SHA or
+  64-character hash.
+- Its rule-file table named two paths that do not exist
+  (out/EXEC-RUNBOOK.md, out/RUNBOOK.md; both files are in
+  docs/architecture/target/).
+- Any other HC-1016 fact a step relies on is re-proven verbatim in that
+  step's census.
+- Rejected: a full re-run (the state values were already corroborated).
+
 ### D-66 pre-registered prediction
 
 ```
