@@ -10,6 +10,7 @@ live in `.cursor/rules/`.
 |-------|------------------|
 | Platform invariants + glossary | `.cursor/rules/platform-invariants.mdc` |
 | Coding behavior (simplicity, surgical diffs) | `.cursor/rules/karpathy-guidelines.mdc` |
+| Phase-14 execution standing contract | `.cursor/rules/exec-guardrail.mdc` |
 | Skill routing + layer map | `.cursor/skills/README.md` |
 | Alpha YAML gates (G1–G17; G13 no-op) | `alphas/SCHEMA.md` |
 | Architecture spec | `docs/three_layer_architecture.md` |
@@ -35,7 +36,7 @@ which is mocked/stubbed in the standard test suite.
 # Fast local test run (skips network and benchmarks)
 uv run pytest -m "not functional and not slow"
 
-# Full suite (~4300 tests)
+# Full suite
 uv run pytest
 
 # Determinism parity hashes
@@ -86,8 +87,8 @@ Two things to know about that job:
 
 - it is **skipped on fork PRs**, which get no secrets and so can neither restore
   a keyed cache nor refetch — the skip is explicit, not a silent pass;
-- on a cache miss it refetches using the `MASSIVE_API_KEY` secret, and **fails
-  with a stated reason** if that secret is absent.
+- on a cache miss it **fails with a stated reason** and does not fetch. Only an
+  operator-authorised `workflow_dispatch` with `allow_fetch=true` fetches (T-2).
 
 Still run the command above by hand when you want the answer before pushing —
 `-m ""` selects the functional test, and without the env var "2 passed" and
@@ -105,11 +106,11 @@ uv run python scripts/run_paper.py --config configs/paper_smoke_rth.yaml --max-r
 The full suite is green on `main` (skips are gated `functional` / `paper_rth` /
 per-host perf tests). Re-verify with `uv run pytest` before claiming otherwise.
 
-`.github/workflows/ci.yml` runs lint, format, `mypy src/feelies`, and
-`pytest -m "not functional and not paper_rth"` on every push and PR. It does not
-replace the local full run: `functional` and `paper_rth` never execute in CI, so
-anything touching the live Massive feed or IB Gateway is still only ever verified
-by hand.
+`.github/workflows/ci.yml` runs `scripts/prepush.py --fast` (ruff check, ruff
+format, mypy, lint-imports) and `pytest -m "$(cat scripts/ci_gate_expr.txt)" -q -n 4`
+on every push to `main` and every PR. It does not replace the local full run:
+`paper_rth` never executes in CI, so anything touching the live Massive feed or
+IB Gateway is still only ever verified by hand.
 
 ## Adding a test for a safety branch
 
