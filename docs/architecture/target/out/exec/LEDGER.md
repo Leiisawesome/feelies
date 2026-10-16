@@ -33794,7 +33794,13 @@ OWNER:       campaign 15.
                  syn100 67f46f71315289dd98769a16860ca37c5b7b5bc3ed2bd3b2d78a125ec1c75662.
                  real e607fca7221fab97ef2afcd2fd5bb99cc0b357749cd4c3f7950d8d1baa587fca.
                  Same values as the Part 3 prototype.
-  CI:            pending the draft PR. Run ids do not exist before push.
+  CI:            38729072042 on c17b5261; merge 38833423294.
+  BUGBOT:        none.
+  DEVIATIONS:    proto-2 diff rebuilt from the census edit log
+                 (sha256 matched); push over SSH (same remote).
+  STANDING:      probe diffs live in %USERPROFILE%\feelies-probes\
+                 (outside the repo and OneDrive). Refresh the hot-path
+                 profile before every baseline capture (F-P31-7).
   EVIDENCE:      The real APP cell, entry cost 2468530 -> 1871305
                  across 259 snapshots. Single-price lots, so FIFO
                  and average cost agree there.
