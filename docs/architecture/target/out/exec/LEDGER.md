@@ -33863,9 +33863,9 @@ OWNER:       campaign 15.
                  b. APP oracle file: 2 passed, 1 warning in 21.13s.
                  c. Universe check: 1 passed in 113.72s (0:01:53).
                  d. Battery and mutant runs not run: no code changed.
-  CI:            pending.
-  MERGE:         pending.
-  BUGBOT:        pending; read after CI completes.
+  CI:            38882477168 on 77774ea8; merge 38889681488.
+  MERGE:         e5ec2c808a669c9c345b16d02a57193a344234b5, PR #287.
+  BUGBOT:        none.
   DEVIATIONS:    none.
   STANDING:      .cursor/rules/exec-guardrail.mdc is the standing
                  contract from T-3 on (D-198).
