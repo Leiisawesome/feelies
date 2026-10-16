@@ -44,6 +44,7 @@ class _Cell:
     size: int = 0
     entry_cost_cents: int = 0
     entry_fills: tuple[PositionFillLeg, ...] = ()
+    lots: tuple[PositionFillLeg, ...] = ()
     exit_fills: tuple[PositionFillLeg, ...] = ()
     best: PositionExtreme | None = None
     worst: PositionExtreme | None = None
@@ -99,6 +100,32 @@ def _leg(event: SlicePositionUpdate, quantity: int) -> PositionFillLeg:
         timestamp_ns=event.fill_timestamp_ns,
         sequence=event.fill_ack_sequence,
     )
+
+
+def _lot_sums(lots: tuple[PositionFillLeg, ...]) -> tuple[int, int]:
+    """D-196. Size and entry cost are exact sums over the lots that remain."""
+    size = 0
+    cost = 0
+    for lot in lots:
+        size += lot.quantity
+        cost += lot.price_cents * lot.quantity
+    return size, cost
+
+
+def _consume(lots: tuple[PositionFillLeg, ...], shares: int) -> tuple[PositionFillLeg, ...]:
+    """D-196. Oldest entry-fill sequence first. Split the lot that is only partly filled."""
+    left = shares
+    kept: list[PositionFillLeg] = []
+    for lot in sorted(lots, key=lambda item: item.sequence):
+        if left <= 0:
+            kept.append(lot)
+            continue
+        if lot.quantity <= left:
+            left -= lot.quantity
+            continue
+        kept.append(replace(lot, quantity=lot.quantity - left))
+        left = 0
+    return tuple(kept)
 
 
 class PositionEngine:
@@ -160,14 +187,18 @@ class PositionEngine:
         overlap = shares if shares < cell.size else cell.size
         excess = shares - overlap
         if overlap > 0:
+            lots = _consume(cell.lots, overlap)
+            size, cost = _lot_sums(lots)
             cell = replace(
                 cell,
                 exit_fills=(*cell.exit_fills, _leg(event, overlap)),
-                size=cell.size - overlap,
+                lots=lots,
+                size=size,
+                entry_cost_cents=cost,
             )
         if cell.size == 0:
             self._open.pop(key, None)
-            self._publish_closed(cell, "EXTERNAL:SIGN_FLIP")
+            self._publish_closed(cell, "EXTERNAL:SIGN_FLIP", event.correlation_id)
         elif overlap > 0:
             self._put(cell)
         if excess > 0:
@@ -218,11 +249,13 @@ class PositionEngine:
         self._open[(cell.strategy_id, cell.symbol)] = cell
 
     def _extend(self, cell: _Cell, event: SlicePositionUpdate, shares: int) -> _Cell:
+        leg = _leg(event, shares)
         return replace(
             cell,
-            entry_fills=(*cell.entry_fills, _leg(event, shares)),
+            entry_fills=(*cell.entry_fills, leg),
+            lots=(*cell.lots, leg),
             size=cell.size + shares,
-            entry_cost_cents=cell.entry_cost_cents + _cents(event.fill_price) * shares,
+            entry_cost_cents=cell.entry_cost_cents + leg.price_cents * shares,
             correlation_id=event.correlation_id,
         )
 
@@ -373,11 +406,11 @@ class PositionEngine:
     def _publish(self, event: Event) -> None:
         self._bus.publish(event)
 
-    def _publish_closed(self, cell: _Cell, reason: str) -> None:
+    def _publish_closed(self, cell: _Cell, reason: str, correlation_id: str) -> None:
         self._bus.publish(
             PositionClosed(
                 timestamp_ns=self._clock.now_ns(),
-                correlation_id=cell.correlation_id,
+                correlation_id=correlation_id,
                 sequence=self._seq.next(),
                 source_layer="position",
                 cell_id=cell.cell_id,
