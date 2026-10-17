@@ -108,6 +108,7 @@ Each rung opens with a report-only census; the block is written from that eviden
 | P-31 | B | DONE (merged 6e530e827f3f49973ee78af6228e93a9bfee0955, PR #286). FIFO lot rule after a partial opposite fill (D-196); PositionClosed.correlation_id is the closing event (D-197); T6/T7 run on both engines; T7c is a strict xfail on production until P-50. | member 4 or 1 node for the partial reduction; T-test for the close correlation id | hold |
 | T-3 | — | DONE (merged e5ec2c808a669c9c345b16d02a57193a344234b5, PR #287). Phase-14 standing contract (D-198): .cursor/rules/exec-guardrail.mdc rewritten in place, always applied; AGENTS.md CI lines corrected and a canonical-reference row added; HC-1016 evidence handling (D-199). | docs tests; full suite, determinism and universe check unchanged | hold |
 | P-39 | — | DONE (merged 4ba83ef87bd10d07b70f3622d17d48a837e96b9e, PR #288). Member 9 authoring under the stage-A rule (D-189): spec closure; reference engine extended; at least one broken engine per member; killed with a named member; reference control clean. Before P-40. Deferred (D-91); authored here. Resolve the dwell clause before P-40 (F-P29b-3): green_from C, but it asserts favorable_fire, delivered at E. | member 9 | hold (D-201 prediction) |
+| T-4 | — | Contract rung (D-202): chat rollover limit 3 (exec-guardrail.mdc:13); CI watch: the Tests/Determinism pytest-time ratio above 81, or a check job above 1080 s (90% of the 20-minute cap), opens a tooling census before the next code rung; the cost rows below use it. | docs tests; full suite, determinism and universe check unchanged | hold |
 | P-40 | C | rail complete (ages, absences, window, warm-up, worst-side, forced, dwelled); PlatformConfig position_rail_slippage_ticks and position_rail_dwell_ns (D-40). rail side usability per D-62: classify once in the orchestrator mark path, pass the result to store and rail; no second classify call site | + 4 (rail half), 9 | hold |
 | P-49 | — | Member 10 authoring under the stage-A rule (D-189): spec closure; reference engine extended; at least one broken engine per member; killed with a named member; reference control clean. Before P-50. Deferred (D-91); authored here. | member 10 | hold |
 | P-50 | D | position cell: birth from fill, entry rational, excursion, extremes, deadline, states, closing record. finalize lands here (D-84); T7c's production strict xfail becomes a plain pass. | + 4 (birth), 10, 11 | hold |
@@ -143,7 +144,7 @@ Not a stage gate (D-189).
 | sensor-registry clock | F-P23a2-15 | when the registry is touched |
 | cancel inside the latency window | F-P23a2-17 | before any alpha that cancels within order latency |
 | passive drain lookahead coverage | F-P23a2-19 | before P-40 |
-| point-state deep copy cost | F-P23g2-12; aggregator.py:391 and aggregator.py:406 | if a check job exceeds 960 s (LEDGER.md:33309) |
+| point-state deep copy cost | F-P23g2-12; aggregator.py:391 and aggregator.py:406 | the CI watch fires (D-202) |
 | exposure-cap policy and in-flight exposure | F-P23b2-17 | operator decision |
 | default fill-report latency | F-P23b2-18 | operator decision |
 | maker adverse-selection charges | execution/cost_model.py:41 (`passive_adverse_selection_bps`) | paper campaign |
@@ -154,7 +155,7 @@ Not a stage gate (D-189).
 | seeding main | F-T2-7, F-T2-10 | paper campaign |
 | content-keyed order ids | Q2 (ii) design: five rungs; the salt mover set is the expected movers; legacy-oracle exemption required (F-P24-11, F-P29b-9) | before P-60's band draw hashes cell_id; before any PORTFOLIO alpha; before a second hazard-enabled alpha on one symbol (F-P24-10) |
 | baseline capture covers exempt locked literals | F-P23b-d, F-P24-6 | next tooling rung |
-| publish cost | F-P30-28: _publish 13.3 s of 37.4 s in R-SYN; -n 4 worker imbalance on m1_multiname | check job > 960 s |
+| publish cost | F-P30-28: _publish 13.3 s of 37.4 s in R-SYN; -n 4 worker imbalance on m1_multiname | the CI watch fires (D-202) |
 
 ## Round trip (what comes back for review)
 

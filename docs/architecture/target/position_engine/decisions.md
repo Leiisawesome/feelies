@@ -357,6 +357,32 @@ now has B rows. Operator decision 2026-10-16:
   passed); kill.py reports B11 and B15-B17 KILLED by their named nodes,
   every other row as before, and CONTROL 0 failures.
 
+D-202 — Chat rollover limit 3 and the CI watch (T-4).
+  - Operator decision 2026-10-17 (AskUserQuestion). The Claude chat
+    rollover limit is 3 merged steps, down from 8: chat 2's rollover signs
+    fired at 1-2 merged steps, and the playbook's tuning rule lowers the
+    limit when signs fire before the count.
+  - Cost trigger. ratio = Tests pytest seconds / Determinism pytest
+    seconds, each from pytest's final summary line in the check job's log
+    (steps "Tests" and "Determinism under an unpinned hash seed",
+    ci.yml:192 and 199 at 8b5fff3f). Runs 38882477168, 38889681488,
+    38997439535, 38999684134 and 39000597311 gave 68.28 to 73.66 (median
+    73.36) while their check jobs took 547 to 949 s. A ratio above 81
+    fires.
+  - Timeout guard. The check job's cap is 20 minutes (ci.yml:51). A check
+    job above 1080 s (90% of the cap) fires.
+  - When either fires, the merge that measured it proceeds and the next
+    code rung waits on a tooling census. The plan rows "point-state deep
+    copy cost" and "publish cost" use this trigger.
+  - Supersedes the 960 s watch rule in the ledger records of P-23b3 and
+    P-23a2, and the trigger in F-P30-28.
+  - ASSUMES the determinism workload (tests/determinism/, 148 tests) and
+    the check runner (ubuntu-latest, Tests at -n 4) are unchanged. A rung
+    that changes either re-measures the ratio in its ledger entry.
+  - Rejected: raw seconds alone (runner speed moved the same tests 1.73x);
+    the ratio alone (a slow runner reaches the cap at a normal ratio);
+    step timestamps (whole seconds on a 7 to 13 s step).
+
 ### D-66 pre-registered prediction
 
 ```
