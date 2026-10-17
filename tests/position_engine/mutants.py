@@ -490,6 +490,327 @@ class NoGateDecision(PositionEngine):
         del cell, rail, decision
 
 
+class AgeResetRail(ReferenceRail):
+    """B15. side age restarts on every usable quote, not only when the held price changes.
+
+    Battery row: member 9, the age clause.
+    Diff against ReferenceRail.on_quote:
+        - if book.bid != bid_cents:
+        -     book.bid = bid_cents
+        -     book.bid_changed_ns = timestamp
+        - if book.ask != ask_cents:
+        -     book.ask = ask_cents
+        -     book.ask_changed_ns = timestamp
+        + book.bid = bid_cents
+        + book.bid_changed_ns = timestamp
+        + book.ask = ask_cents
+        + book.ask_changed_ns = timestamp
+    """
+
+    def on_quote(self, quote: NBBOQuote) -> MarkRailUpdate:
+        timestamp = quote.exchange_timestamp_ns
+        bid_cents = _cents(quote.symbol, quote.bid)
+        ask_cents = _cents(quote.symbol, quote.ask)
+        book = self._books.get(quote.symbol)
+        if book is None:
+            book = _Book()
+            self._books[quote.symbol] = book
+        if book.first_ns is None:
+            book.first_ns = timestamp
+        usable = (
+            classify(quote.bid, quote.ask, quote.bid_size, quote.ask_size) is QuoteQuality.VALID
+        )
+        if usable:
+            book.bid = bid_cents
+            book.bid_changed_ns = timestamp
+            book.ask = ask_cents
+            book.ask_changed_ns = timestamp
+            book.last_usable_ns = timestamp
+        quiet = 0 if book.prev_ns is None else timestamp - book.prev_ns
+        book.prev_ns = timestamp
+        if usable:
+            absent_for = 0
+        elif book.last_usable_ns is not None:
+            absent_for = timestamp - book.last_usable_ns
+        else:
+            absent_for = timestamp - book.first_ns
+        book.window.append((timestamp, book.bid, book.ask, usable))
+        cutoff = timestamp - self.dwell_ns
+        book.window = [row for row in book.window if row[0] > cutoff or row[0] == timestamp]
+        bid_age = 0 if book.bid_changed_ns is None else timestamp - book.bid_changed_ns
+        ask_age = 0 if book.ask_changed_ns is None else timestamp - book.ask_changed_ns
+        if book.bid is None or book.ask is None:
+            long_worst = None
+            short_worst = None
+        else:
+            long_worst = min(book.bid, book.ask)
+            short_worst = max(book.bid, book.ask)
+        slip = self.slippage_ticks
+        long_forced = None if long_worst is None else long_worst - slip
+        short_forced = None if short_worst is None else short_worst + slip
+        long_dwelled = _extreme(book.window, index=1, pick=min)
+        short_dwelled = _extreme(book.window, index=2, pick=max)
+        clean = all(row[3] for row in book.window)
+        warmed = self.dwell_ns == 0 or timestamp - book.first_ns >= self.dwell_ns
+        absent = not usable
+        long_side = _orientation(
+            paying=book.ask,
+            valuation=book.bid,
+            paying_size=quote.ask_size,
+            valuation_size=quote.bid_size,
+            paying_age=ask_age,
+            valuation_age=bid_age,
+            absent=absent,
+            absent_for=absent_for,
+            worst=long_worst,
+            forced=long_forced,
+            dwelled=long_dwelled,
+            clean=clean,
+        )
+        short_side = _orientation(
+            paying=book.bid,
+            valuation=book.ask,
+            paying_size=quote.bid_size,
+            valuation_size=quote.ask_size,
+            paying_age=bid_age,
+            valuation_age=ask_age,
+            absent=absent,
+            absent_for=absent_for,
+            worst=short_worst,
+            forced=short_forced,
+            dwelled=short_dwelled,
+            clean=clean,
+        )
+        return MarkRailUpdate(
+            timestamp_ns=quote.timestamp_ns,
+            correlation_id=quote.correlation_id,
+            sequence=self._seq.next(),
+            source_layer="PORTFOLIO",
+            symbol=quote.symbol,
+            quote_sequence=quote.sequence,
+            event_timestamp_ns=timestamp,
+            long=long_side,
+            short=short_side,
+            symbol_quiet_ns=quiet,
+            locked=bid_cents == ask_cents,
+            crossed=bid_cents > ask_cents,
+            feed_gap_before=False,
+            warmed_up=warmed,
+        )
+
+
+class RawAbsentRail(ReferenceRail):
+    """B16. an absent side publishes the quote's own price instead of the held price.
+
+    Battery row: member 9, the held-price clause.
+    Diff against ReferenceRail.on_quote:
+        - paying=book.ask,
+        - valuation=book.bid,
+        + paying=ask_cents if absent else book.ask,
+        + valuation=bid_cents if absent else book.bid,
+        - paying=book.bid,
+        - valuation=book.ask,
+        + paying=bid_cents if absent else book.bid,
+        + valuation=ask_cents if absent else book.ask,
+    """
+
+    def on_quote(self, quote: NBBOQuote) -> MarkRailUpdate:
+        timestamp = quote.exchange_timestamp_ns
+        bid_cents = _cents(quote.symbol, quote.bid)
+        ask_cents = _cents(quote.symbol, quote.ask)
+        book = self._books.get(quote.symbol)
+        if book is None:
+            book = _Book()
+            self._books[quote.symbol] = book
+        if book.first_ns is None:
+            book.first_ns = timestamp
+        usable = (
+            classify(quote.bid, quote.ask, quote.bid_size, quote.ask_size) is QuoteQuality.VALID
+        )
+        if usable:
+            if book.bid != bid_cents:
+                book.bid = bid_cents
+                book.bid_changed_ns = timestamp
+            if book.ask != ask_cents:
+                book.ask = ask_cents
+                book.ask_changed_ns = timestamp
+            book.last_usable_ns = timestamp
+        quiet = 0 if book.prev_ns is None else timestamp - book.prev_ns
+        book.prev_ns = timestamp
+        if usable:
+            absent_for = 0
+        elif book.last_usable_ns is not None:
+            absent_for = timestamp - book.last_usable_ns
+        else:
+            absent_for = timestamp - book.first_ns
+        book.window.append((timestamp, book.bid, book.ask, usable))
+        cutoff = timestamp - self.dwell_ns
+        book.window = [row for row in book.window if row[0] > cutoff or row[0] == timestamp]
+        bid_age = 0 if book.bid_changed_ns is None else timestamp - book.bid_changed_ns
+        ask_age = 0 if book.ask_changed_ns is None else timestamp - book.ask_changed_ns
+        if book.bid is None or book.ask is None:
+            long_worst = None
+            short_worst = None
+        else:
+            long_worst = min(book.bid, book.ask)
+            short_worst = max(book.bid, book.ask)
+        slip = self.slippage_ticks
+        long_forced = None if long_worst is None else long_worst - slip
+        short_forced = None if short_worst is None else short_worst + slip
+        long_dwelled = _extreme(book.window, index=1, pick=min)
+        short_dwelled = _extreme(book.window, index=2, pick=max)
+        clean = all(row[3] for row in book.window)
+        warmed = self.dwell_ns == 0 or timestamp - book.first_ns >= self.dwell_ns
+        absent = not usable
+        long_side = _orientation(
+            paying=ask_cents if absent else book.ask,
+            valuation=bid_cents if absent else book.bid,
+            paying_size=quote.ask_size,
+            valuation_size=quote.bid_size,
+            paying_age=ask_age,
+            valuation_age=bid_age,
+            absent=absent,
+            absent_for=absent_for,
+            worst=long_worst,
+            forced=long_forced,
+            dwelled=long_dwelled,
+            clean=clean,
+        )
+        short_side = _orientation(
+            paying=bid_cents if absent else book.bid,
+            valuation=ask_cents if absent else book.ask,
+            paying_size=quote.bid_size,
+            valuation_size=quote.ask_size,
+            paying_age=bid_age,
+            valuation_age=ask_age,
+            absent=absent,
+            absent_for=absent_for,
+            worst=short_worst,
+            forced=short_forced,
+            dwelled=short_dwelled,
+            clean=clean,
+        )
+        return MarkRailUpdate(
+            timestamp_ns=quote.timestamp_ns,
+            correlation_id=quote.correlation_id,
+            sequence=self._seq.next(),
+            source_layer="PORTFOLIO",
+            symbol=quote.symbol,
+            quote_sequence=quote.sequence,
+            event_timestamp_ns=timestamp,
+            long=long_side,
+            short=short_side,
+            symbol_quiet_ns=quiet,
+            locked=bid_cents == ask_cents,
+            crossed=bid_cents > ask_cents,
+            feed_gap_before=False,
+            warmed_up=warmed,
+        )
+
+
+class QuietAbsentRail(ReferenceRail):
+    """B17. absent-for measured from the previous quote, not from the last present one.
+
+    Battery row: member 9, the absent-for clause.
+    Diff against ReferenceRail.on_quote:
+        - absent_for = timestamp - book.last_usable_ns
+        + absent_for = quiet
+    """
+
+    def on_quote(self, quote: NBBOQuote) -> MarkRailUpdate:
+        timestamp = quote.exchange_timestamp_ns
+        bid_cents = _cents(quote.symbol, quote.bid)
+        ask_cents = _cents(quote.symbol, quote.ask)
+        book = self._books.get(quote.symbol)
+        if book is None:
+            book = _Book()
+            self._books[quote.symbol] = book
+        if book.first_ns is None:
+            book.first_ns = timestamp
+        usable = (
+            classify(quote.bid, quote.ask, quote.bid_size, quote.ask_size) is QuoteQuality.VALID
+        )
+        if usable:
+            if book.bid != bid_cents:
+                book.bid = bid_cents
+                book.bid_changed_ns = timestamp
+            if book.ask != ask_cents:
+                book.ask = ask_cents
+                book.ask_changed_ns = timestamp
+            book.last_usable_ns = timestamp
+        quiet = 0 if book.prev_ns is None else timestamp - book.prev_ns
+        book.prev_ns = timestamp
+        if usable:
+            absent_for = 0
+        elif book.last_usable_ns is not None:
+            absent_for = quiet
+        else:
+            absent_for = timestamp - book.first_ns
+        book.window.append((timestamp, book.bid, book.ask, usable))
+        cutoff = timestamp - self.dwell_ns
+        book.window = [row for row in book.window if row[0] > cutoff or row[0] == timestamp]
+        bid_age = 0 if book.bid_changed_ns is None else timestamp - book.bid_changed_ns
+        ask_age = 0 if book.ask_changed_ns is None else timestamp - book.ask_changed_ns
+        if book.bid is None or book.ask is None:
+            long_worst = None
+            short_worst = None
+        else:
+            long_worst = min(book.bid, book.ask)
+            short_worst = max(book.bid, book.ask)
+        slip = self.slippage_ticks
+        long_forced = None if long_worst is None else long_worst - slip
+        short_forced = None if short_worst is None else short_worst + slip
+        long_dwelled = _extreme(book.window, index=1, pick=min)
+        short_dwelled = _extreme(book.window, index=2, pick=max)
+        clean = all(row[3] for row in book.window)
+        warmed = self.dwell_ns == 0 or timestamp - book.first_ns >= self.dwell_ns
+        absent = not usable
+        long_side = _orientation(
+            paying=book.ask,
+            valuation=book.bid,
+            paying_size=quote.ask_size,
+            valuation_size=quote.bid_size,
+            paying_age=ask_age,
+            valuation_age=bid_age,
+            absent=absent,
+            absent_for=absent_for,
+            worst=long_worst,
+            forced=long_forced,
+            dwelled=long_dwelled,
+            clean=clean,
+        )
+        short_side = _orientation(
+            paying=book.bid,
+            valuation=book.ask,
+            paying_size=quote.bid_size,
+            valuation_size=quote.ask_size,
+            paying_age=bid_age,
+            valuation_age=ask_age,
+            absent=absent,
+            absent_for=absent_for,
+            worst=short_worst,
+            forced=short_forced,
+            dwelled=short_dwelled,
+            clean=clean,
+        )
+        return MarkRailUpdate(
+            timestamp_ns=quote.timestamp_ns,
+            correlation_id=quote.correlation_id,
+            sequence=self._seq.next(),
+            source_layer="PORTFOLIO",
+            symbol=quote.symbol,
+            quote_sequence=quote.sequence,
+            event_timestamp_ns=timestamp,
+            long=long_side,
+            short=short_side,
+            symbol_quiet_ns=quiet,
+            locked=bid_cents == ask_cents,
+            crossed=bid_cents > ask_cents,
+            feed_gap_before=False,
+            warmed_up=warmed,
+        )
+
+
 REGISTRY: dict[str, Mutant] = {
     "B1": Mutant("B1", "rail", f"{__name__}.MidRail", (_M4,), "assert", "A"),
     "B2": Mutant("B2", "engine", f"{__name__}.FavorableWins", _M5, "exit reason", "B"),
@@ -544,6 +865,8 @@ REGISTRY: dict[str, Mutant] = {
         f"{__name__}.LazyTrimRail",
         (
             "tests/position_engine/test_battery_m2_no_lookahead.py"
+            "::test_m2_dwell_window_trims_in_step",
+            "tests/position_engine/test_battery_m2_no_lookahead.py"
             "::test_m2_dwell_favorable_ignores_stale_cross",
         ),
         "M2:",
@@ -572,5 +895,35 @@ REGISTRY: dict[str, Mutant] = {
         ("tests/position_engine/test_battery_m1_reproducibility.py::test_m1_gates_syn",),
         "gate count",
         "B",
+    ),
+    "B15": Mutant(
+        "B15",
+        "rail",
+        f"{__name__}.AgeResetRail",
+        (
+            "tests/position_engine/test_battery_m9_held_price.py"
+            "::test_m9_age_grows_while_price_held",
+        ),
+        "M9:",
+        "A",
+    ),
+    "B16": Mutant(
+        "B16",
+        "rail",
+        f"{__name__}.RawAbsentRail",
+        ("tests/position_engine/test_battery_m9_held_price.py::test_m9_absent_side_holds_price",),
+        "M9:",
+        "A",
+    ),
+    "B17": Mutant(
+        "B17",
+        "rail",
+        f"{__name__}.QuietAbsentRail",
+        (
+            "tests/position_engine/test_battery_m9_held_price.py"
+            "::test_m9_absent_for_grows_through_absence",
+        ),
+        "M9:",
+        "A",
     ),
 }
