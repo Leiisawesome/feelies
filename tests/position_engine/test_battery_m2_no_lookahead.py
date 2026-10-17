@@ -25,7 +25,8 @@ from tests.position_engine.scenarios import (
 from tests.position_engine.tapes import force_class, make_tape, set_quote
 
 _MARK = pytest.mark.battery_member(member=2, green_from="B", red_reason="^NONVACUOUS: ")
-_DWELL = pytest.mark.battery_member(member=2, green_from="C", red_reason="NONVACUOUS")
+_DWELL = pytest.mark.battery_member(member=2, green_from="E", red_reason="NONVACUOUS")
+_DWELL_RAIL = pytest.mark.battery_member(member=2, green_from="C", red_reason="CAP:dwell_window")
 _REAL = pytest.mark.battery_real
 _SYN_FRACTIONS = (0.20, 0.45, 0.70, 0.90)
 _REAL_FRACTIONS = (0.15, 0.30, 0.45)
@@ -138,3 +139,56 @@ def test_m2_dwell_favorable_ignores_stale_cross(monkeypatch: pytest.MonkeyPatch)
     assert not any(body.get("reason") == "DWELL_NOT_CLEAN" for body in matched), (
         f"CAP:dwell_window: DWELL_NOT_CLEAN at {current.sequence}"
     )
+
+
+@_DWELL_RAIL
+def test_m2_dwell_window_trims_in_step(monkeypatch: pytest.MonkeyPatch) -> None:
+    dwell = 2_000_000_000
+    interval = 100_000_000
+    monkeypatch.setenv("FEELIES_RAIL_DWELL_NS", str(dwell))
+    t_index = 400
+    tape = make_tape(seed=11, n=420, symbol="SYN", start_ns=T0, interval_ns=interval, size=1000)
+    cross_index = t_index - (dwell + interval) // interval
+    birth_ask = int(tape[301].ask * 100)
+    bid = birth_ask + 8
+    shaped = set_quote(
+        force_class(tape, cross_index, "CROSSED"),
+        t_index,
+        bid_cents=bid,
+        ask_cents=bid + 1,
+    )
+    current = shaped[t_index]
+    records = run_synthetic(shaped, symbols=("SYN",), variant=_v3a())
+    nonvacuous(records, "MarkRailUpdate", scenario="m2_dwell_rail")
+    updates: dict[int, dict[str, object]] = {}
+    for row in records:
+        if row.type_name != "MarkRailUpdate":
+            continue
+        body = json.loads(row.canonical[row.canonical.index("{") :])
+        assert isinstance(body, dict)
+        long = body["long"]
+        short = body["short"]
+        assert isinstance(long, dict) and isinstance(short, dict)
+        sequence = body["quote_sequence"]
+        assert isinstance(sequence, int) and not isinstance(sequence, bool)
+        updates[sequence] = body
+    after_seq = shaped[cross_index + 1].sequence
+    t_seq = current.sequence
+    after = updates.get(after_seq)
+    at_t = updates.get(t_seq)
+    if after is None:
+        raise AssertionError(f"CAP:dwell_window: no rail update at quote {after_seq}")
+    if at_t is None:
+        raise AssertionError(f"CAP:dwell_window: no rail update at quote {t_seq}")
+    for o in ("long", "short"):
+        after_side = after[o]
+        at_side = at_t[o]
+        assert isinstance(after_side, dict) and isinstance(at_side, dict)
+        seq = after_seq
+        assert after_side["dwell_window_clean"] is False, (
+            f"CAP:dwell_window: {o} clean at quote {seq} with the crossed quote in the window"
+        )
+        seq = t_seq
+        assert at_side["dwell_window_clean"] is True, (
+            f"CAP:dwell_window: {o} not clean at t (quote {seq})"
+        )
