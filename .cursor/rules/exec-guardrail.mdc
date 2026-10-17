@@ -1,5 +1,5 @@
 ---
-description: Phase-14 standing contract (position engine, backtest only). Binds every Cursor session in this repo until P-99. Version 1 (T-3, D-198).
+description: Phase-14 standing contract (position engine, backtest only). Binds every Cursor session in this repo until P-99. Version 2 (T-4, D-202).
 alwaysApply: true
 ---
 
@@ -10,7 +10,7 @@ Each prompt carries only what is new; this file holds what is fixed. It changes
 only through its own rung, and is retired or replaced at P-99.
 docs/architecture/target/prompts/exec/X0_CORE_EXEC.md and
 docs/architecture/target/EXEC-RUNBOOK.md are phase 7 and do not bind phase 14.
-The Claude chat rollover limit is 8 merged steps (playbook v1.1).
+The Claude chat rollover limit is 3 merged steps (playbook v1.2; D-202).
 
 ## Where things are
 - Plan: docs/architecture/target/out/phase14_position_engine.md
@@ -107,6 +107,11 @@ The Claude chat rollover limit is 8 merged steps (playbook v1.1).
   fixed in the rung or recorded with a destination rung. The merge stops on
   any finding without one.
 - Stop at the step boundary. Do not begin the next step.
+- CI watch (D-202). Every merge report prints, for each CI run it reports,
+  the check job's seconds and the ratio Tests / Determinism, each from
+  pytest's final summary line in that check job's log. A ratio above 81 or
+  a check job above 1080 s fires: the merge proceeds, and the next code
+  rung waits on a tooling census.
 
 ## Engine independence
 - src/ never imports tests/. The reference imports only the D-92 allowlist.
