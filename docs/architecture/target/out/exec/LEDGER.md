@@ -33938,9 +33938,9 @@ OWNER:       campaign 15.
                  shard B 10 of 10 KILLED. B15-B17 each by its m9 node
                  (CAP:rail_carry); B11 by test_m2_dwell_window_trims_in_step
                  (CAP:dwell_window).
-  CI:            pending.
-  MERGE:         pending.
-  BUGBOT:        pending; read after CI completes.
+  CI:            38997439535 on 411cc2bc; merge 38999684134.
+  MERGE:         4ba83ef87bd10d07b70f3622d17d48a837e96b9e, PR #288.
+  BUGBOT:        none.
   DEVIATIONS:    S1b: the gate-1 c1 instruction dropped "the D source
                  switches at P-40" from member 2; restored before the
                  spec commit. The GATE-2 report omitted the REGISTRY hunk
