@@ -34006,9 +34006,14 @@ OWNER:       campaign 15.
                  c. Universe check: 1 passed in 108.62s (0:01:48).
                  d. Docs tests: 117 passed, 1 warning in 0.53s.
                  e. Battery and mutant runs not run: no code changed.
-  CI:            pending.
-  MERGE:         pending.
-  BUGBOT:        pending; read after CI completes.
+  CI:            PR head 39015700517 success, check 943.00 s,
+                 ratio 74.54. Merge 39017003931 success, check
+                 923.00 s, ratio 73.74.
+  MERGE:         27555996e005d2dc1e3a7857264b97ab21840022, parents
+                 8b5fff3f853e2d325bef5fed250513137c75a3b8
+                 135124ddd23e103ef8b80ddc5e95f1b8bf9fde2b, PR #289,
+                 2026-10-17.
+  BUGBOT:        completed, no findings.
   DEVIATIONS:    none.
   STANDING:      the contract is version 2 from T-4 (D-202), rollover
                  limit 3, CI watch.
@@ -34022,3 +34027,4 @@ OWNER:       campaign 15.
                  reference battery skipped; mutant A, mutant B and real
                  battery ran. INFERRED the standing nightly dispatcher;
                  checked at the T-4 merge. Recorded.
+                 Checked at the merge: VERIFIED nightly dispatcher run 38907005893 at 2026-10-16T13:19:47Z.
