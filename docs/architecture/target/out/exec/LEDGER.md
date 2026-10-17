@@ -33963,3 +33963,62 @@ OWNER:       campaign 15.
                  cached APP tape are unmeasured. Recorded; unscheduled.
   F-P39-3:       Mutant.prefix (mutants.py:35) is stored on every
                  registry row and never read by kill.py. Recorded.
+
+## T-4 Contract rung: rollover limit 3 and the CI watch
+
+  VERDICT:       passed
+  DECISIONS:     D-202. Operator decision 2026-10-17: the Claude chat
+                 rollover limit is 3 merged steps. CI watch: the
+                 Tests/Determinism pytest-time ratio above 81, or a
+                 check job above 1080 s, opens a tooling census before
+                 the next code rung.
+  E0:            none. Docs and agent rules only.
+  TREE:          none. No prototype applied.
+  SPEC:          6ca51e0bf662a3f54bda1e2c3927e796791f09ab. D-202; plan
+                 row T-4 (Parity hold); trigger cells of point-state
+                 deep copy cost and publish cost.
+  IMPL:          8882515a9211ffb6229d48f558cc7014ba8dc1db.
+                 .cursor/rules/exec-guardrail.mdc version 2, blob
+                 70e1e83a9c2887bc9c4371a15e556b406caa0214. Rollover
+                 limit 3; CI watch bullet.
+  BASE:          8b5fff3f. Baselines
+                 de68910aa8114e93371d33528b2cb4f15572c9c8.
+                 pre baseline_pre-T-4.json on
+                 6ca51e0bf662a3f54bda1e2c3927e796791f09ab, git.dirty
+                 false. Full suite 5360 passed, 0 failed, 44 skipped,
+                 exit 0. Determinism 148 passed, exit 0. Parity
+                 constants 64. BASELINE GREEN. Predicted 5360, 0, 44;
+                 148; 64. MATCH.
+                 post baseline_post-T-4.json on
+                 8882515a9211ffb6229d48f558cc7014ba8dc1db, git.dirty
+                 false. Full suite 5360 passed, 0 failed, 44 skipped,
+                 exit 0. Determinism 148 passed, exit 0. compare
+                 parity-only: 64 -> 64, changed 0. BASELINE GREEN.
+                 Predicted 5360, 0, 44; 148; 64 -> 64, changed 0.
+                 MATCH.
+  GATES:         a. Hot-path profile refreshed before each capture.
+                 Prepush: prepush: ok (ruff check, ruff format, mypy,
+                 lint-imports, pytest). Serial pytest: 5343 passed,
+                 5 skipped, 57 deselected, 2 xfailed, 49 warnings in
+                 928.15s (0:15:28). pytest -n 4: 5343 passed, 5 skipped,
+                 2 xfailed, 53 warnings in 458.56s (0:07:38).
+                 b. APP oracle file: 2 passed, 1 warning in 20.22s.
+                 c. Universe check: 1 passed in 108.62s (0:01:48).
+                 d. Docs tests: 117 passed, 1 warning in 0.53s.
+                 e. Battery and mutant runs not run: no code changed.
+  CI:            pending.
+  MERGE:         pending.
+  BUGBOT:        pending; read after CI completes.
+  DEVIATIONS:    none.
+  STANDING:      the contract is version 2 from T-4 (D-202), rollover
+                 limit 3, CI watch.
+  EVIDENCE:      HC-1017 and T-4 censuses 1 and 2, all at 8b5fff3f.
+  F-T4-1:        the oracle's fills and net are pinned at
+                 tests/acceptance/test_backtest_app_baseline.py:215-216
+                 and asserted at :417 and :432 (at 8b5fff3f); the
+                 2026-10-16 handoff cited 203-214. Recorded.
+  F-T4-2:        run 38907015365 is a workflow_dispatch on 0e1e7420
+                 (2026-10-16T13:19:52Z): check, parity oracle and
+                 reference battery skipped; mutant A, mutant B and real
+                 battery ran. INFERRED the standing nightly dispatcher;
+                 checked at the T-4 merge. Recorded.
