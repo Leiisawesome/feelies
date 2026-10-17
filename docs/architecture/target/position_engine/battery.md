@@ -101,9 +101,11 @@ ASSERTS:           for sampled events k, a run on the tape truncated after k pro
                    a crossed quote at t−D−100 ms; the favorable condition met at t
                    (quote sequence 401). The decision at that quote is outcome fire, and
                    its reason is not DWELL_NOT_CLEAN (J5, D-131). It catches B11.
-                   Member 2 is green_from B (the stage-B gate, P-30). Its dwell clause
-                   is green_from C (D-87): the D source switches at P-40; clause marker
-                   test_battery_m2_no_lookahead.py:28.
+                   Member 2 is green_from B (the stage-B gate, P-30).
+                   Its dwell clause is two nodes (D-200), and its D source switches at
+                   P-40: test_m2_dwell_window_trims_in_step, green_from C, reads the
+                   rail's dwell_window_clean; test_m2_dwell_favorable_ignores_stale_cross,
+                   green_from E, reads the gate. Both catch B11.
 FAILURE LOOKS LIKE:the first event where truncated and full runs differ
 BLOCKS THE BUILD:  yes — green from stage B onward
 ```
@@ -280,11 +282,15 @@ BLOCKS THE BUILD:  no — makes member 6 auditable rather than hopeful
 
 ```
 MEMBER:            9 Held-price integrity
-                   deferred (D-91); authored in P-39 (P-29).
-ASSERTS:           no age decreases without the underlying price changing; while a side is
-                   absent its published price is bit-identical to the last one published
-                   while present; absent-for spans increase monotonically through an
-                   absence and reset only on reappearance
+                   authored in P-39 (D-201; D-91 deferred it). green_from C; one node
+                   per clause in test_battery_m9_held_price.py; it catches B15, B16
+                   and B17.
+ASSERTS:           while a side's held price is unchanged its age grows by exactly
+                   the exchange time elapsed, and it is 0 at the quote where that
+                   price changes; while a side is absent its published price is
+                   bit-identical to the last one published while present; absent-for
+                   spans increase monotonically through an absence and reset only on
+                   reappearance
 BLOCKS THE BUILD:  no
 ```
 
@@ -324,7 +330,7 @@ field exists (contracts §2). (D-104)
 |---|---|---|
 | A | tape generator + its test; the six blocking members, red; the broken engines | every broken engine caught, each by a named member |
 | B | walking skeleton on the P-10 surface (event types, wiring, streams and sinks landed in P-10): stub cell with birth/close from slice fills, stub gates, the two-phase step | members 1, 2 green; member 4 partial checks birth_move only (D-195) |
-| C | mark rail | members 1, 2, 9 green; 4 (rail half) green since A (D-37) |
+| C | mark rail | members 1, 2 (its gate dwell node from E, D-200), 9 green; 4 (rail half) green since A (D-37) |
 | D | position cell | + 4 (birth touch), 10, 11 green |
 | E | both gates, precedence | all eleven green |
 
@@ -355,6 +361,7 @@ violation is reported and is not repaired by editing `green_from`.
 | Capability | Delivering stage | Contract or plan line |
 |---|---|---|
 | dwell_window | C | battery.md member 2: "with D > 0, a dirty (crossed) quote older than t−D never blocks a favorable decision at t"; plan row P-40 |
+| rail_carry | C | ages, held prices and absence spans carried between quotes (contracts.md:91-93); member 9 (D-201) |
 | birth_move | B | contracts.md:258 recompute moves, delivered by the P-30 step (D-195); "move_now_cents = sign × (valuation_mark_cents × size − entry_cost_cents)" |
 | birth_touch | D | battery.md member 4: "the first move_now_cents … = −entry_spread_ticks × size exactly for a MARKET entry filled at the touch"; the frozen entry spread, P-50 (D-195) |
 | favorable_fire | E | battery.md member 2 dwell clause: "The decision at that quote is outcome fire"; plan row P-61 |
@@ -396,6 +403,9 @@ and by the named member. A broken engine nothing catches is a hole in the suite.
 | B12 | sink write dropped | 1 (`test_m1_sinks_syn`) |
 | B13 | cell state keyed without symbol | 1 (`test_m1_multiname`) |
 | B14 | no GateDecision published | 1 (`test_m1_gates_syn`) |
+| B15 | side age restarts on every usable quote, not only when the held price changes | 9 (age clause) |
+| B16 | an absent side publishes the quote's own price instead of the held price | 9 (held-price clause) |
+| B17 | absent-for measured from the previous quote, not from the last present one | 9 (absent-for clause) |
 
 ## Kill runner
 

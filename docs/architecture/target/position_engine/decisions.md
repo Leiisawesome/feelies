@@ -321,6 +321,42 @@ D-199 — Evidence from the handoff census HC-1016 (2026-10-16).
   step's census.
 - Rejected: a full re-run (the state values were already corroborated).
 
+D-200 — Member 2's dwell clause splits at the rail (F-P29b-3).
+Operator decision 2026-10-16:
+- test_m2_dwell_window_trims_in_step reads the rail. On D-87's
+  construction, dwell_window_clean is false on both orientations at the
+  quote after the crossed quote and true at t. green_from C; its
+  failures carry CAP:dwell_window.
+- test_m2_dwell_favorable_ignores_stale_cross keeps its fire and
+  DWELL_NOT_CLEAN checks and moves to green_from E, where favorable_fire
+  is delivered. This supersedes D-87's green_from for that node only.
+- B11 is killed by both nodes.
+- Rejected: moving the clause to E (production unchecked for B11 until
+  E); a rail node only (loses the gate-side check at E).
+
+D-201 — Member 9 authored (P-39). Supersedes D-91 for member 9, which
+now has B rows. Operator decision 2026-10-16:
+- clause 1 is exact: while a side's held price is unchanged its age
+  grows by exactly the exchange time elapsed, and it is 0 at the quote
+  where that price changes (contracts.md:91). Where exchange time does
+  not step back, this implies the earlier wording.
+- clauses 2 and 3 stand as written.
+- capability rail_carry, delivered at C, tags the clause assertions. A
+  rail that publishes no absent side fails UNUSABLE_SIDE.
+- one broken engine per clause, each killed by its member-9 node: B15
+  (age restarts on every usable quote), B16 (an absent side publishes
+  the quote's own price), B17 (absent-for measured from the previous
+  quote).
+- synthetic nodes only. A real node waits for a measurement of
+  exchange-time order and absence runs on the cached tape (F-P39-2).
+- Rejected: the no-decrease wording (misses B15 unless an absence
+  precedes an unchanged price).
+- Prediction: no src change; parity constants 64 -> 64, changed 0;
+  full suite +4 passed, failed and skipped unchanged; determinism
+  unchanged; at stage B the four new nodes are accepted reds (reported
+  passed); kill.py reports B11 and B15-B17 KILLED by their named nodes,
+  every other row as before, and CONTROL 0 failures.
+
 ### D-66 pre-registered prediction
 
 ```
