@@ -33882,3 +33882,84 @@ OWNER:       campaign 15.
                  dispatch only reference-battery-real and mutant-kill
                  run, so the populate and save steps in check and
                  parity-oracle cannot execute. Recorded.
+
+## P-39
+
+  VERDICT:       passed
+  DECISIONS:     D-200. Operator decision 2026-10-16: member 2's dwell
+                 clause splits into test_m2_dwell_window_trims_in_step
+                 (rail, green_from C) and
+                 test_m2_dwell_favorable_ignores_stale_cross (gate,
+                 green_from E). Both kill B11.
+                 D-201. Operator decision 2026-10-16: member 9 authored;
+                 the age clause is exact; capability rail_carry (C);
+                 B15-B17; synthetic nodes only. Supersedes D-91 for
+                 member 9.
+  E0:            FAILFIRST d19950b5. test_kill_runner.py:116 failed:
+                 "Right contains 3 more items, first extra item: 'B15'"
+                 (1 failed, 7 passed). Under LazyTrimRail at stage E the
+                 rail node failed: "CAP:dwell_window: long not clean at
+                 t (quote 401)".
+  TREE:          none. No prototype applied.
+  SPEC:          0e9249f9. D-200, D-201; battery.md (member 2 dwell
+                 text, member 9 block, stage-C gate, rail_carry row,
+                 B15-B17 rows); plan row P-39 Parity cell.
+  IMPL:          5835fd51. mutants.py: AgeResetRail (B15),
+                 RawAbsentRail (B16), QuietAbsentRail (B17), shard A;
+                 B11's killers lead with the rail node. Tests in
+                 d19950b5: conftest.py rail_carry; the m2 rail node and
+                 the gate node's green_from E; test_battery_m9_held_price.py
+                 (three nodes); test_kill_runner.py B1-B17. Reference: no
+                 change; rail.py already implements the three clauses.
+  BASE:          pre baseline_pre-P-39.json on 0e9249f9, git.dirty
+                 false. Full suite 5356 passed, 0 failed, 44 skipped,
+                 exit 0. Determinism 148 passed, exit 0. Parity
+                 constants 64. BASELINE GREEN. Predicted 5356,
+                 0, 44; 148; 64. MATCH.
+                 post baseline_post-P-39.json on 5835fd51,
+                 git.dirty false. Full suite 5360 passed, 0 failed,
+                 44 skipped, exit 0. Determinism 148 passed, exit 0.
+                 compare parity-only: 64 -> 64, changed 0. BASELINE
+                 GREEN. Predicted 5360, 0, 44; 148; 64 -> 64,
+                 changed 0. MATCH.
+  GATES:         a. Hot-path profile refreshed before each capture.
+                 Prepush: prepush: ok (ruff check, ruff format, mypy,
+                 lint-imports, pytest). Serial pytest: 5343 passed,
+                 5 skipped, 57 deselected, 2 xfailed, 49 warnings in
+                 882.65s (0:14:42). pytest -n 4: 5343 passed, 5 skipped,
+                 2 xfailed, 53 warnings in 471.45s (0:07:51).
+                 b. APP oracle file: 2 passed, 1 warning in 20.80s.
+                 c. Universe check: 1 passed in 110.64s (0:01:50).
+                 d. Stage B, m2 and m9 files: 6 passed, 1 deselected (the
+                 four new nodes are accepted reds). Reference at stage E:
+                 6 passed, 1 deselected.
+                 e. kill.py on the staged change (identical to IMPL):
+                 --control "CONTROL 0 failures"; shard A 7 of 7 KILLED;
+                 shard B 10 of 10 KILLED. B15-B17 each by its m9 node
+                 (CAP:rail_carry); B11 by test_m2_dwell_window_trims_in_step
+                 (CAP:dwell_window).
+  CI:            pending.
+  MERGE:         pending.
+  BUGBOT:        pending; read after CI completes.
+  DEVIATIONS:    S1b: the gate-1 c1 instruction dropped "the D source
+                 switches at P-40" from member 2; restored before the
+                 spec commit. The GATE-2 report omitted the REGISTRY hunk
+                 and docstrings; S6a read REGISTRY before the commit:
+                 MATCH.
+  STANDING:      Registry B1-B17; shard A holds B1, B4, B10, B12,
+                 B15-B17. rail_carry (C) is in the capability table and
+                 in conftest.py. The member-2 gate dwell node is
+                 green_from E (D-200).
+  EVIDENCE:      Read-only P-39 censuses 1-4 at 0e1e7420; GATE-1 and
+                 GATE-2 reports in this session.
+  F-P39-1:       D-192's rule that green_from is at least the latest
+                 delivering stage among a node's CAP: tags
+                 (decisions.md:236-237, battery.md:352-353) has no code
+                 check in the hook (conftest.py:99-132). F-P29b-3 was
+                 found by reading. Recorded; unscheduled.
+  F-P39-2:       Member 9 has no real-data node. Its exact age clause and
+                 strict absent-for increase assume exchange time strictly
+                 increases; exchange-time order and absence runs on the
+                 cached APP tape are unmeasured. Recorded; unscheduled.
+  F-P39-3:       Mutant.prefix (mutants.py:35) is stored on every
+                 registry row and never read by kill.py. Recorded.
