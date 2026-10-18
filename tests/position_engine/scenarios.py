@@ -2389,8 +2389,9 @@ def _seams(
         if rail_wrapper is not None:
             original = saved_on_quote
 
-            def on_quote(self: object, quote: NBBOQuote) -> object:
-                return rail_wrapper(original.__get__(self, type(self)), quote)
+            def on_quote(self: object, quote: NBBOQuote, **kwargs: object) -> object:
+                bound = original.__get__(self, type(self))
+                return rail_wrapper(lambda inner: bound(inner, **kwargs), quote)
 
             rail_mod.MarkRail.on_quote = on_quote  # type: ignore[method-assign]
         if not attach_sink:
@@ -2459,6 +2460,22 @@ def synthetic_alpha_spec(variant: dict[str, object] | None) -> dict[str, object]
     return spec
 
 
+def _copy_rail_env(config: object) -> object:
+    """Copy rail env into a config that has the D-40 fields (D-203)."""
+    if not dataclasses.is_dataclass(config) or isinstance(config, type):
+        return config
+    names = {item.name for item in dataclasses.fields(config)}
+    if "position_rail_dwell_ns" not in names or "position_rail_slippage_ticks" not in names:
+        return config
+    dwell = os.environ.get("FEELIES_RAIL_DWELL_NS", "").strip() or "0"
+    slip = os.environ.get("FEELIES_RAIL_SLIPPAGE_TICKS", "").strip() or "0"
+    return dataclasses.replace(
+        config,
+        position_rail_dwell_ns=int(dwell),
+        position_rail_slippage_ticks=int(slip),
+    )
+
+
 def _execute_synthetic(
     tape: Sequence[NBBOQuote],
     symbols: tuple[str, ...],
@@ -2479,6 +2496,7 @@ def _execute_synthetic(
         session_open_ns=T0,
         risk_max_gross_exposure_pct=80.0,
     )
+    config = _copy_rail_env(config)
     original_load = AlphaLoader.load
     spec = synthetic_alpha_spec(variant)
 
@@ -2719,6 +2737,7 @@ def _execute_real(
     if rc != 0:
         raise RuntimeError(f"ingest event mix rejected the real session ({rc})")
     config = runner._attach_day_source_provenance(config, symbols, day_sources)
+    config = _copy_rail_env(config)
     args = argparse.Namespace(
         trace_signal_orders=False,
         emit_fills_jsonl=False,

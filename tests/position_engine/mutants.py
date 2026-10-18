@@ -56,8 +56,8 @@ class MidRail(ReferenceRail):
         paying = valuation = mid
     """
 
-    def on_quote(self, quote: NBBOQuote) -> MarkRailUpdate:
-        update = super().on_quote(quote)
+    def on_quote(self, quote: NBBOQuote, *, quality: object | None = None) -> MarkRailUpdate:
+        update = super().on_quote(quote, quality=quality)
         return replace(update, long=_mid(update.long), short=_mid(update.short))
 
 
@@ -370,7 +370,8 @@ class LazyTrimRail(ReferenceRail):
     ``dwell_ns`` still feeds the dwelled mark and ``warmed_up``.
     """
 
-    def on_quote(self, quote: NBBOQuote) -> MarkRailUpdate:
+    def on_quote(self, quote: NBBOQuote, *, quality: object | None = None) -> MarkRailUpdate:
+        del quality  # D-203
         timestamp = quote.exchange_timestamp_ns
         bid_cents = _cents(quote.symbol, quote.bid)
         ask_cents = _cents(quote.symbol, quote.ask)
@@ -507,7 +508,8 @@ class AgeResetRail(ReferenceRail):
         + book.ask_changed_ns = timestamp
     """
 
-    def on_quote(self, quote: NBBOQuote) -> MarkRailUpdate:
+    def on_quote(self, quote: NBBOQuote, *, quality: object | None = None) -> MarkRailUpdate:
+        del quality  # D-203
         timestamp = quote.exchange_timestamp_ns
         bid_cents = _cents(quote.symbol, quote.bid)
         ask_cents = _cents(quote.symbol, quote.ask)
@@ -614,7 +616,8 @@ class RawAbsentRail(ReferenceRail):
         + valuation=ask_cents if absent else book.ask,
     """
 
-    def on_quote(self, quote: NBBOQuote) -> MarkRailUpdate:
+    def on_quote(self, quote: NBBOQuote, *, quality: object | None = None) -> MarkRailUpdate:
+        del quality  # D-203
         timestamp = quote.exchange_timestamp_ns
         bid_cents = _cents(quote.symbol, quote.bid)
         ask_cents = _cents(quote.symbol, quote.ask)
@@ -717,7 +720,8 @@ class QuietAbsentRail(ReferenceRail):
         + absent_for = quiet
     """
 
-    def on_quote(self, quote: NBBOQuote) -> MarkRailUpdate:
+    def on_quote(self, quote: NBBOQuote, *, quality: object | None = None) -> MarkRailUpdate:
+        del quality  # D-203
         timestamp = quote.exchange_timestamp_ns
         bid_cents = _cents(quote.symbol, quote.bid)
         ask_cents = _cents(quote.symbol, quote.ask)
