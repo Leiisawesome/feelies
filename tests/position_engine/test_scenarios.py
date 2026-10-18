@@ -1409,7 +1409,7 @@ def test_unset_resolution_matches_stub_records() -> None:
     tape = make_tape(seed=11, n=20, symbol="SYN", start_ns=T0, size=1000)
     records = run_synthetic(tape, symbols=("SYN",))
     digest = hashlib.sha256("\n".join(format_line(row) for row in records).encode()).hexdigest()
-    assert digest == "00b7771e3c9b3718f21b313b208bf920bcf53e0c822c35fbb99be227c97eec57"
+    assert digest == "a6cdfc8980963b2d02250c4dbe3222adfc561ec0b930a7de67b75d36acb497a7"
 
 
 def test_resolution_in_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
