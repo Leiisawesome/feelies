@@ -383,6 +383,38 @@ D-202 — Chat rollover limit 3 and the CI watch (T-4).
     the ratio alone (a slow runner reaches the cap at a normal ratio);
     step timestamps (whole seconds on a 7 to 13 s step).
 
+D-203 — Rail interface prep for P-40 (P-39b).
+  - Operator decisions 2026-10-17 (AskUserQuestion): P-39b, tests only,
+    lands before P-40, which is src only; F-P39-1 is scheduled after P-40;
+    battery.md "No build rung edits a test" covers the battery apparatus
+    (members, the harness, the reference and the broken engines), so P-40
+    may update non-battery tests that pin the P-10 stub's signature or
+    outputs, each hunk naming the clause or decision that supersedes the
+    stub. P-40's spec closure, decided the same day, is recorded as D-204
+    in P-40's spec commit.
+  - Why. P-40 changes two calls the platform makes on whichever rail class
+    is injected: bootstrap constructs the rail with S and D (D-40), and the
+    orchestrator passes the quote class from its mark path (D-62).
+    ReferenceRail, the B1, B11, B15, B16 and B17 rails and the harness's
+    rail wrapper accept neither, and the harness does not feed S and D to
+    the platform config.
+  - ReferenceRail.__init__ accepts keyword-only slippage_ticks and dwell_ns
+    and ignores them; FEELIES_RAIL_DWELL_NS and FEELIES_RAIL_SLIPPAGE_TICKS
+    stay its source, so a wrong harness mapping shows up as production
+    diverging from the reference.
+  - ReferenceRail.on_quote and the on_quote of B1, B11, B15, B16 and B17
+    accept keyword-only quality and ignore it; B1 passes it to super().
+  - The harness's rail wrapper forwards keyword arguments to the wrapped
+    on_quote. The harness copies the two environment values (unset = 0)
+    into the platform config when the config has position_rail_dwell_ns and
+    position_rail_slippage_ticks; before P-40 it has neither and the config
+    is unchanged.
+  - Not a battery change: no member, node, broken-engine behaviour or stage
+    changes. Battery and kill runs are repeated to show it.
+  - Rejected: the rail classifying for itself (reverses D-62); the
+    reference reading S and D from the platform config (it would trust the
+    harness mapping it should check).
+
 ### D-66 pre-registered prediction
 
 ```
