@@ -456,6 +456,18 @@ D-204 — Mark rail spec closure (P-40, stage C).
     full suite +14; the ten C nodes pass on production at C; battery
     summaries and kill rows unchanged.
 
+D-205 — The unset-resolution digest moves with the rail (P-40).
+  - Operator decision 2026-10-18 (AskUserQuestion), at P-40 gate G.
+  - test_unset_resolution_matches_stub_records
+    (tests/position_engine/test_scenarios.py) pins the digest of the
+    records a run with FEELIES_ENGINE and FEELIES_RAIL unset produces.
+    Until P-40 that run used the P-10 stub rail; the complete rail (D-204)
+    changes its records, so the digest moves:
+    00b7771e3c9b3718f21b313b208bf920bcf53e0c822c35fbb99be227c97eec57 ->
+    a6cdfc8980963b2d02250c4dbe3222adfc561ec0b930a7de67b75d36acb497a7.
+  - P-40's prediction did not list this pin. The move is its own commit,
+    touching only that constant; the ledger records the deviation.
+
 ### D-66 pre-registered prediction
 
 ```
