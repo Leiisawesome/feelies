@@ -34110,3 +34110,107 @@ OWNER:       campaign 15.
                  config has the D-40 fields.
   EVIDENCE:      P-40 censuses 1-5c and P-39b censuses 1-2, all at
                  08a8a8bf.
+
+## P-40 Mark rail complete, stage C
+
+  VERDICT:       passed
+  DECISIONS:     D-204, D-205. Operator decisions 2026-10-17 and
+                 2026-10-18: mark rail spec closure, stage C. D-205
+                 (2026-10-18, AskUserQuestion, gate G) moves the
+                 unset-resolution digest with the complete rail.
+  E0:            FAILFIRST ce0e2e27e712a1ffe5f09514bf7e5df4835bc35a.
+                 a. 13 failed, 1 passed, 1 warning in 1.01s. The pass
+                 is T4. b. Stage file C, bytes 67,10. 10 failed,
+                 6 passed, 3 deselected in 55.04s:
+                 test_m2_dwell_window_trims_in_step;
+                 test_m4_unusable_side NONPOS_BID, NONPOS_ASK, CROSSED,
+                 LOCKED, ZERO_SZ_BID, ZERO_SZ_ASK;
+                 test_m9_age_grows_while_price_held;
+                 test_m9_absent_side_holds_price;
+                 test_m9_absent_for_grows_through_absence.
+  TREE:          none. No prototype applied.
+  SPEC:          a6428203b5bae26099b84883073adee0c5e59893. D-204;
+                 plan row P-40 (Parity hold).
+  IMPL:          30dc08d2d9ec1c025b107030b03b442b72ffb68c.
+  D-205:         91a3140cef9f757de55a2ac8a5a74ec0ea7fcb95.
+                 decisions.md only.
+  PIN:           68535130c8270fade74e9ba89de7e292b0145c3f.
+                 test_scenarios.py digest line only. Post capture is
+                 on this commit.
+  BASE:          953a2cf2214e43c1b54e75b711bdd1d798b64ee6. Baselines
+                 a5033d30bd7d03211b7d40af4d03a5d2f4cb703c.
+                 pre baseline_pre-P-40.json on
+                 a6428203b5bae26099b84883073adee0c5e59893, git.dirty
+                 false. Full suite 5371 passed, 0 failed, 44 skipped,
+                 exit 0. Determinism 148 passed, exit 0. Parity
+                 constants 64. BASELINE GREEN. Predicted 5371, 0, 44;
+                 148; 64. MATCH.
+                 post baseline_post-P-40.json on
+                 68535130c8270fade74e9ba89de7e292b0145c3f, git.dirty
+                 false. The untracked pre JSON and the red post JSON
+                 were moved aside for that snapshot; this capture
+                 overwrote the red file. Full suite 5385 passed,
+                 0 failed, 44 skipped, exit 0. Determinism 148 passed,
+                 exit 0. compare parity-only: 64 -> 64, changed 0.
+                 BASELINE GREEN. Predicted 5385, 0, 44; 148;
+                 64 -> 64, changed 0. MATCH.
+  GATES:         a. Hot-path profile refreshed before the post capture.
+                 Prepush: prepush: ok (ruff check, ruff format, mypy,
+                 lint-imports, pytest). Serial pytest: 5368 passed,
+                 5 skipped, 57 deselected, 2 xfailed, 49 warnings in
+                 908.93s (0:15:08). pytest -n 4: 5368 passed,
+                 5 skipped, 2 xfailed, 53 warnings in 499.57s
+                 (0:08:19).
+                 b. APP oracle file: 2 passed, 1 warning in 20.97s.
+                 c. Universe check: 1 passed in 112.90s (0:01:52).
+                 d. Docs tests (tests/docs and
+                 tests/conformance/test_doc_integrity.py): 117 passed,
+                 1 warning in 0.55s.
+                 e. Battery. Count clauses equal; durations differ.
+                 Production stage B synthetic: pre "80 passed, 9
+                 deselected in 368.80s (0:06:08)"; production stage C
+                 synthetic: post "80 passed, 9 deselected in 404.89s
+                 (0:06:44)".
+                 Production stage B real: pre "12 passed, 82
+                 deselected in 294.65s (0:04:54)"; production stage C
+                 real: post "12 passed, 82 deselected in 314.92s
+                 (0:05:14)".
+                 Reference stage E synthetic: pre "80 passed, 9
+                 deselected in 233.85s (0:03:53)"; post "80 passed,
+                 9 deselected in 224.19s (0:03:44)".
+                 Reference stage E real: pre "12 passed, 82
+                 deselected in 314.58s (0:05:14)"; post "12 passed,
+                 82 deselected in 306.49s (0:05:06)".
+                 f. kill.py. Shard A exit 0, 7 of 7 KILLED: B1, B4,
+                 B10, B12, B15, B16, B17. Shard B exit 0, 10 of 10
+                 KILLED: B2, B3, B5, B6, B7, B8, B9, B11, B13, B14.
+                 CONTROL 0 failures, exit 0.
+  CI:            pending
+  MERGE:         pending
+  BUGBOT:        pending
+  DEVIATIONS:    Unpredicted pin move found at gate G: the
+                 unset-resolution digest in test_scenarios.py;
+                 operator decision D-205 (2026-10-18); own commit
+                 68535130.
+                 The first post capture, on be95744e, was RED:
+                 test_s17_external_assignment_only_on_composition_root_allowlist
+                 (three _Book attribute assignments in
+                 portfolio/mark_rail.py). The change was reverted to
+                 ce0e2e27 (unpushed) and redone with the assignments
+                 inside _Book; failed diff P-40-failed-impl.diff,
+                 SHA256
+                 37e57f6d7f742054f23aec93949e863a8b2771c4a27d422da434cd219235435b.
+                 _Book.reset restores the initial book and is not
+                 called from on_quote. S16 required it once those
+                 assignments lived on _Book.
+  STANDING:      stage C.
+  EVIDENCE:      P-40 censuses 1-5c at 08a8a8bf and 6-8 at 953a2cf2,
+                 P-39b censuses 1-2.
+  F-P40-1:       battery.md stage row C omitted member 4's six
+                 unusable-side nodes (green_from C); the row now
+                 names them.
+  F-P40-2:       contracts.md §1 reads a feed-interruption fact from
+                 ingestion, but NBBOQuote carries none. The rail
+                 publishes feed_gap_before false until a source
+                 exists, outside P-40's row; the battery injects gaps
+                 through the harness wrapper.
