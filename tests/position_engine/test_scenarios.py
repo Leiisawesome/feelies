@@ -1266,6 +1266,7 @@ def test_feed_gap_seam_sets_chosen_sequences_only() -> None:
     from dataclasses import replace
 
     from feelies.core.identifiers import SequenceGenerator
+    from feelies.core.quote_quality import classify
     from feelies.portfolio.mark_rail import MarkRail
     from tests.position_engine.scenarios import _seams
 
@@ -1278,7 +1279,13 @@ def test_feed_gap_seam_sets_chosen_sequences_only() -> None:
     tape = make_tape(seed=1, n=6, symbol="SYN", start_ns=T0)
     rail = MarkRail(SequenceGenerator(thread_safe=False))
     with _seams(None, wrapper, True):
-        flags = [rail.on_quote(quote).feed_gap_before for quote in tape]
+        flags = [
+            rail.on_quote(
+                quote,
+                quality=classify(quote.bid, quote.ask, quote.bid_size, quote.ask_size),
+            ).feed_gap_before
+            for quote in tape
+        ]
     assert flags == [False, False, False, True, False, False]
 
 
@@ -1318,14 +1325,14 @@ class ProbeEngine:
 
 
 class ProbeRail:
-    """Resolution probe. Delegates to the production stub rail."""
+    """Resolution probe. Forwards keyword arguments to the production rail (D-203)."""
 
-    def __init__(self, sequence_generator: object) -> None:
+    def __init__(self, sequence_generator: object, **kwargs: object) -> None:
         _probe_write("rail")
-        self._inner = _ProductionRail(sequence_generator)  # type: ignore[arg-type]
+        self._inner = _ProductionRail(sequence_generator, **kwargs)  # type: ignore[arg-type]
 
-    def on_quote(self, quote: NBBOQuote) -> MarkRailUpdate:
-        return self._inner.on_quote(quote)
+    def on_quote(self, quote: NBBOQuote, **kwargs: object) -> MarkRailUpdate:
+        return self._inner.on_quote(quote, **kwargs)  # type: ignore[arg-type]
 
 
 class AttrProbe:
@@ -1398,6 +1405,7 @@ def _assert_probe(log: Path) -> None:
 
 
 def test_unset_resolution_matches_stub_records() -> None:
+    """D-204 supersedes the P-10 stub digest (D-203): ages, warm-up and the window."""
     tape = make_tape(seed=11, n=20, symbol="SYN", start_ns=T0, size=1000)
     records = run_synthetic(tape, symbols=("SYN",))
     digest = hashlib.sha256("\n".join(format_line(row) for row in records).encode()).hexdigest()

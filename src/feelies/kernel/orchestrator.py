@@ -4396,7 +4396,7 @@ class Orchestrator:
                 self._strategy_positions.mark_stale(quote.symbol)
 
         if self._mark_rail is not None:
-            self._bus.publish(self._mark_rail.on_quote(quote))
+            self._bus.publish(self._mark_rail.on_quote(quote, quality=quality))
 
         # Sensor fan-out (+ router on_quote) runs synchronously inside
         # publish; time the call for hot-path attribution.

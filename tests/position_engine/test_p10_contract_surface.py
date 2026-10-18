@@ -31,6 +31,7 @@ from feelies.core.events import (
 )
 from feelies.core.identifiers import SequenceGenerator
 from feelies.core.platform_config import OperatingMode, PlatformConfig
+from feelies.core.quote_quality import classify
 from feelies.core.sequence_authority import STREAM_AUTHORITIES
 from feelies.core.wiring_manifest import SUBSCRIPTIONS
 from feelies.portfolio.mark_rail import MarkRail
@@ -396,13 +397,23 @@ def _quote(
     )
 
 
-def test_t6_mark_rail_stub() -> None:
-    rail = MarkRail(SequenceGenerator(stream="mark_rail", thread_safe=False))
-    first = rail.on_quote(
-        _quote(bid="10.00", ask="10.02", sequence=1, exchange_timestamp_ns=1_000)
+def _on(rail: MarkRail, quote: NBBOQuote):
+    return rail.on_quote(
+        quote,
+        quality=classify(quote.bid, quote.ask, quote.bid_size, quote.ask_size),
     )
+
+
+def test_t6_mark_rail_stub() -> None:
+    rail = MarkRail(
+        SequenceGenerator(stream="mark_rail", thread_safe=False),
+        slippage_ticks=0,
+        dwell_ns=0,
+    )
+    first = _on(rail, _quote(bid="10.00", ask="10.02", sequence=1, exchange_timestamp_ns=1_000))
     assert first.symbol_quiet_ns == 0
-    assert first.warmed_up is False
+    # D-204: t − first-quote ts ≥ D. D = 0, so true at the first quote (D-41).
+    assert first.warmed_up is True
     assert first.locked is False
     assert first.crossed is False
     assert first.feed_gap_before is False
@@ -417,7 +428,8 @@ def test_t6_mark_rail_stub() -> None:
     assert first.long.valuation_age_ns == 0
     assert first.long.paying_absent_for_ns == 0
     assert first.long.valuation_absent_for_ns == 0
-    assert first.long.dwell_window_clean is False
+    # D-204: every quote in the window is VALID and none has a feed gap.
+    assert first.long.dwell_window_clean is True
     assert first.short.paying_mark_cents == 1000
     assert first.short.valuation_mark_cents == 1002
     assert first.short.worst_side_mark_cents == 1002
@@ -425,44 +437,45 @@ def test_t6_mark_rail_stub() -> None:
     assert first.short.dwelled_exit_mark_cents == 1002
     assert first.short.paying_size == 100
     assert first.short.valuation_size == 200
-    assert first.short.dwell_window_clean is False
+    assert first.short.dwell_window_clean is True
 
-    second = rail.on_quote(
-        _quote(bid="10.01", ask="10.01", sequence=2, exchange_timestamp_ns=1_500)
-    )
+    second = _on(rail, _quote(bid="10.01", ask="10.01", sequence=2, exchange_timestamp_ns=1_500))
     assert second.locked is True
     assert second.crossed is False
     assert second.symbol_quiet_ns == 500
-    assert second.warmed_up is False
+    # D-204: 500 ≥ D = 0.
+    assert second.warmed_up is True
+    # D-62: LOCKED is not VALID, so the window is not clean (D-204).
     assert second.long.dwell_window_clean is False
-    assert second.long.paying_mark_cents == 1001
-    assert second.long.valuation_mark_cents == 1001
-    assert second.short.worst_side_mark_cents == 1001
+    # D-82: an absent side republishes its last present price (1000 / 1002).
+    assert second.long.paying_mark_cents == 1002
+    assert second.long.valuation_mark_cents == 1000
+    assert second.short.worst_side_mark_cents == 1002
 
-    crossed = rail.on_quote(
-        _quote(bid="10.05", ask="10.01", sequence=3, exchange_timestamp_ns=2_000)
-    )
+    crossed = _on(rail, _quote(bid="10.05", ask="10.01", sequence=3, exchange_timestamp_ns=2_000))
     assert crossed.crossed is True
     assert crossed.locked is False
-    assert crossed.long.paying_mark_cents == 1001
-    assert crossed.long.valuation_mark_cents == 1005
-    assert crossed.long.worst_side_mark_cents == min(1005, 1001)
-    assert crossed.short.paying_mark_cents == 1005
-    assert crossed.short.valuation_mark_cents == 1001
-    assert crossed.short.worst_side_mark_cents == max(1005, 1001)
+    # D-62 and D-82: both sides absent; held bid 1000 and held ask 1002.
+    assert crossed.long.paying_mark_cents == 1002
+    assert crossed.long.valuation_mark_cents == 1000
+    assert crossed.long.worst_side_mark_cents == min(1000, 1002)
+    assert crossed.short.paying_mark_cents == 1000
+    assert crossed.short.valuation_mark_cents == 1002
+    assert crossed.short.worst_side_mark_cents == max(1000, 1002)
+    # D-78: S = 0, so forced equals worst side.
     assert crossed.long.forced_exit_mark_cents == crossed.long.worst_side_mark_cents
+    # D-41: D = 0 holds only the current quote, so dwelled equals the held valuation.
     assert crossed.short.dwelled_exit_mark_cents == crossed.short.valuation_mark_cents
 
     with pytest.raises(ValueError, match="ZZZ"):
-        rail.on_quote(
-            _quote(
-                symbol="ZZZ",
-                bid="10.001",
-                ask="10.02",
-                sequence=4,
-                exchange_timestamp_ns=3_000,
-            )
+        bad = _quote(
+            symbol="ZZZ",
+            bid="10.001",
+            ask="10.02",
+            sequence=4,
+            exchange_timestamp_ns=3_000,
         )
+        _on(rail, bad)
 
 
 def test_t7_enabled_subscriptions_are_declared_and_present() -> None:
