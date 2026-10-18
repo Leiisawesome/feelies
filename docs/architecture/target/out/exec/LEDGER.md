@@ -34094,9 +34094,14 @@ OWNER:       campaign 15.
                  B10, B12, B15, B16, B17. Shard B exit 0, 10 of 10
                  KILLED: B2, B3, B5, B6, B7, B8, B9, B11, B13, B14.
                  CONTROL 0 failures, exit 0.
-  CI:            pending
-  MERGE:         pending
-  BUGBOT:        pending
+  CI:            PR head 39098799313 success, check 925.00 s,
+                 ratio 74.73. Merge 39099949890 success, check
+                 924.00 s, ratio 72.77.
+  MERGE:         3fe1d67ff99bfa10e9dc7cbec874c93c5b0f87fb, parents
+                 08a8a8bfffb39972085c2abe698e3ccf93229c84
+                 c1b1ee72af42e8f5e6b6c297b1f7542dae8a69f6, PR #290,
+                 2026-10-18.
+  BUGBOT:        completed, no findings.
   DEVIATIONS:    none.
   STANDING:      D-203's reading of battery.md "No build rung edits a
                  test": members, nodes, broken-engine behaviour and
