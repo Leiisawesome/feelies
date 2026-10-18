@@ -85,20 +85,20 @@ Per orientation (`long`, `short`; shown for long, mirrored for short):
 | `valuation_mark` | bid | cell arithmetic |
 | `worst_side_mark` | worse of the two quoted sides for the exit direction (long: `min(bid, ask)`); a held price stands in for an absent side | adverse gate comparison [A-09] |
 | `forced_exit_mark` | `worst_side_mark` worsened by `S` ticks | adverse, horizon, invalidation proposed price |
-| `dwelled_exit_mark` | worst valuation-side quote over the trailing `D` (long: min bid in window) | favorable proposed price |
+| `dwelled_exit_mark` | worst valuation-side price published over the trailing `D` (long: min bid in window); a held price stands in for an absent side; `None` before any usable value (D-204) | favorable proposed price |
 | `dwell_window_clean` | no absence, crossing or feed gap anywhere in the window | favorable gate |
 | `paying_size`, `valuation_size` | sizes at those quotes | diagnostic, audit |
-| `paying_age_ns`, `valuation_age_ns` | since that side's price last **changed** | context |
-| `paying_side_absent`, `valuation_side_absent` | no price, or price with zero size | gates |
+| `paying_age_ns`, `valuation_age_ns` | since that side's price last **changed**; before any usable value, since the symbol's first quote (D-204) | context |
+| `paying_side_absent`, `valuation_side_absent` | no price, or price with zero size; both sides when the quote's class is not VALID (D-62); an absent side's size is published as 0 (D-204) | gates |
 | `paying_absent_for_ns`, `valuation_absent_for_ns` | 0 while present | gates |
 
 Shared: `symbol_quiet_ns` (since any quote on this name), `locked` (bid == ask),
-`crossed` (bid > ask), `feed_gap_before`, `warmed_up` (window spans the full `D`),
-`event_timestamp_ns`, `event_sequence`.
+`crossed` (bid > ask), `feed_gap_before` (false until ingestion supplies it, F-P40-2), `warmed_up` (t − first-quote ts ≥ `D`, D-204),
+`event_timestamp_ns`, `event_sequence` (published as `quote_sequence`; marks as `*_mark_cents`, D-204).
 
 **Carries between events.** Current bid/ask and sizes; last-changed ts per side;
-absent-since ts per side; last-quote ts; a rolling window of executable quotes bounded by
-`D`. Nothing else.
+absent-since ts per side; last-quote ts; the symbol's first-quote ts (D-204); a rolling
+window of every quote bounded by `D` (D-41). Nothing else.
 
 **Step order (fixed).** feed-gap flag → update book sides (appear/disappear) → update
 timers → push this quote into the window, then trim everything older than `D` → compute
