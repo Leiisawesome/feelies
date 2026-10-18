@@ -34028,3 +34028,80 @@ OWNER:       campaign 15.
                  battery ran. INFERRED the standing nightly dispatcher;
                  checked at the T-4 merge. Recorded.
                  Checked at the merge: VERIFIED nightly dispatcher run 38907005893 at 2026-10-16T13:19:47Z.
+
+## P-39b Rail interface prep for P-40
+
+  VERDICT:       passed
+  DECISIONS:     D-203. Operator decisions 2026-10-17: P-39b, tests
+                 only, before P-40. ReferenceRail and the B1, B11,
+                 B15, B16 and B17 rails accept S, D and the quote
+                 class and ignore them. The harness wrapper forwards
+                 keyword arguments. The harness copies the rail env
+                 into the platform config when it has the D-40 fields.
+  E0:            FAILFIRST 532b1fa8bdd886b2611babb1c3893c91d4b9c2e6.
+                 11 failed, 1 warning in 0.43s. TypeError on
+                 slippage_ticks, on quality, and on the seam wrapper;
+                 ImportError on _copy_rail_env. 0 passed. No
+                 collection error.
+  TREE:          none. No prototype applied.
+  SPEC:          26d337558a21f4eb23be0ceee49ebde9918c622c. D-203; plan
+                 row P-39b (Parity hold).
+  IMPL:          2eac44e2e87b6055d0e0b96208eb91731be0f8b7.
+                 reference/rail.py, mutants.py, scenarios.py.
+                 _copy_rail_env at scenarios.py:2463.
+  BASE:          08a8a8bfffb39972085c2abe698e3ccf93229c84. Baselines
+                 655796464dacb1e255a345f79acc3977b271fc7a.
+                 pre baseline_pre-P-39b.json on
+                 26d337558a21f4eb23be0ceee49ebde9918c622c, git.dirty
+                 false. Full suite 5360 passed, 0 failed, 44 skipped,
+                 exit 0. Determinism 148 passed, exit 0. Parity
+                 constants 64. BASELINE GREEN. Predicted 5360, 0, 44;
+                 148; 64. MATCH.
+                 post baseline_post-P-39b.json on
+                 2eac44e2e87b6055d0e0b96208eb91731be0f8b7, git.dirty
+                 false. The untracked pre JSON was moved aside for
+                 that snapshot, then restored. Full suite 5371
+                 passed, 0 failed, 44 skipped, exit 0. Determinism
+                 148 passed, exit 0. compare parity-only: 64 -> 64,
+                 changed 0. BASELINE GREEN. Predicted 5371, 0, 44;
+                 148; 64 -> 64, changed 0. MATCH.
+  GATES:         a. Hot-path profile refreshed before each capture.
+                 Prepush: prepush: ok (ruff check, ruff format, mypy,
+                 lint-imports, pytest). Serial pytest: 5354 passed,
+                 5 skipped, 57 deselected, 2 xfailed, 49 warnings in
+                 925.49s (0:15:25). pytest -n 4: 5354 passed,
+                 5 skipped, 2 xfailed, 53 warnings in 488.99s
+                 (0:08:08).
+                 b. APP oracle file: 2 passed, 1 warning in 21.13s.
+                 c. Universe check: 1 passed in 113.76s (0:01:53).
+                 d. Docs tests (tests/docs and
+                 tests/conformance/test_doc_integrity.py): 117
+                 passed, 1 warning in 0.52s.
+                 e. Battery. Count clauses equal; durations differ.
+                 Production stage B synthetic: pre "80 passed, 9
+                 deselected in 426.38s (0:07:06)"; post "80 passed,
+                 9 deselected in 367.35s (0:06:07)".
+                 Production stage B real: pre "12 passed, 82
+                 deselected in 280.27s (0:04:40)"; post "12 passed,
+                 82 deselected in 276.50s (0:04:36)".
+                 Reference stage E synthetic: pre "80 passed, 9
+                 deselected in 221.33s (0:03:41)"; post "80 passed,
+                 9 deselected in 231.18s (0:03:51)".
+                 Reference stage E real: pre "12 passed, 82
+                 deselected in 305.87s (0:05:05)"; post "12 passed,
+                 82 deselected in 308.86s (0:05:08)".
+                 f. kill.py. Shard A exit 0, 7 of 7 KILLED: B1, B4,
+                 B10, B12, B15, B16, B17. Shard B exit 0, 10 of 10
+                 KILLED: B2, B3, B5, B6, B7, B8, B9, B11, B13, B14.
+                 CONTROL 0 failures, exit 0.
+  CI:            pending
+  MERGE:         pending
+  BUGBOT:        pending
+  DEVIATIONS:    none.
+  STANDING:      D-203's reading of battery.md "No build rung edits a
+                 test": members, nodes, broken-engine behaviour and
+                 stage are unchanged. P-39b adds ignored parameters
+                 and a harness copy that does not run until the
+                 config has the D-40 fields.
+  EVIDENCE:      P-40 censuses 1-5c and P-39b censuses 1-2, all at
+                 08a8a8bf.
