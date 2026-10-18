@@ -51,13 +51,22 @@ class _Book:
 class ReferenceRail(MarkRailProtocol):
     """Both orientations, every quote. Absent sides hold the last present price."""
 
-    def __init__(self, sequence_generator: SequenceGenerator) -> None:
+    def __init__(
+        self,
+        sequence_generator: SequenceGenerator,
+        *,
+        slippage_ticks: int | None = None,
+        dwell_ns: int | None = None,
+    ) -> None:
+        del slippage_ticks  # D-203
+        del dwell_ns  # D-203
         self._seq = sequence_generator
         self.dwell_ns = int(os.environ.get("FEELIES_RAIL_DWELL_NS", "0"))
         self.slippage_ticks = int(os.environ.get("FEELIES_RAIL_SLIPPAGE_TICKS", "0"))
         self._books: dict[str, _Book] = {}
 
-    def on_quote(self, quote: NBBOQuote) -> MarkRailUpdate:
+    def on_quote(self, quote: NBBOQuote, *, quality: object | None = None) -> MarkRailUpdate:
+        del quality  # D-203
         timestamp = quote.exchange_timestamp_ns
         bid_cents = _cents(quote.symbol, quote.bid)
         ask_cents = _cents(quote.symbol, quote.ask)
