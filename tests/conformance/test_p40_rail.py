@@ -285,3 +285,36 @@ def test_t9_ages_run_from_the_first_quote_until_the_first_usable_price() -> None
         assert side.valuation_age_ns == 0
         assert side.paying_absent_for_ns == 0
         assert side.valuation_absent_for_ns == 0
+
+
+def test_t10_window_excludes_quotes_stamped_after_t() -> None:
+    rail = _rail(dwell_ns=1_000)
+    _on(rail, _quote(bid="10.00", ask="10.05", sequence=1, exchange_timestamp_ns=500))
+    _on(rail, _quote(bid="9.90", ask="10.15", sequence=2, exchange_timestamp_ns=900))
+    third = _on(rail, _quote(bid="10.00", ask="10.05", sequence=3, exchange_timestamp_ns=700))
+    assert third.long.dwelled_exit_mark_cents == 1_000
+    assert third.short.dwelled_exit_mark_cents == 1_005
+    fourth = _on(rail, _quote(bid="10.00", ask="10.05", sequence=4, exchange_timestamp_ns=950))
+    assert fourth.long.dwelled_exit_mark_cents == 990
+    assert fourth.short.dwelled_exit_mark_cents == 1_015
+
+
+def test_t10_clean_ignores_quotes_stamped_after_t() -> None:
+    rail = _rail(dwell_ns=1_000)
+    _on(rail, _quote(bid="10.00", ask="10.05", sequence=1, exchange_timestamp_ns=500))
+    _on(rail, _quote(bid="10.10", ask="10.05", sequence=2, exchange_timestamp_ns=900))
+    third = _on(rail, _quote(bid="10.00", ask="10.05", sequence=3, exchange_timestamp_ns=700))
+    assert third.long.dwell_window_clean is True
+    assert third.short.dwell_window_clean is True
+    fourth = _on(rail, _quote(bid="10.00", ask="10.05", sequence=4, exchange_timestamp_ns=950))
+    assert fourth.long.dwell_window_clean is False
+    assert fourth.short.dwell_window_clean is False
+
+
+def test_t10_trimmed_quote_stays_out_when_time_steps_back() -> None:
+    rail = _rail(dwell_ns=1_000)
+    _on(rail, _quote(bid="9.70", ask="10.35", sequence=1, exchange_timestamp_ns=600))
+    _on(rail, _quote(bid="9.80", ask="10.25", sequence=2, exchange_timestamp_ns=2_000))
+    third = _on(rail, _quote(bid="10.00", ask="10.05", sequence=3, exchange_timestamp_ns=1_500))
+    assert third.long.dwelled_exit_mark_cents == 1_000
+    assert third.short.dwelled_exit_mark_cents == 1_005

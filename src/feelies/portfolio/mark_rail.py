@@ -125,6 +125,7 @@ class MarkRail(MarkRailProtocol):
         self._push_window(book, t, feed_gap, quality)
         long_side, short_side = self._orientations(
             book,
+            t,
             bid_age,
             ask_age,
             bid_absent_for,
@@ -215,13 +216,15 @@ class MarkRail(MarkRailProtocol):
     def _orientations(
         self,
         book: _Book,
+        t: int,
         bid_age: int,
         ask_age: int,
         bid_absent_for: int,
         ask_absent_for: int,
     ) -> tuple[RailOrientation, RailOrientation]:
-        bids = [item.bid for item in book.window if item.bid is not None]
-        asks = [item.ask for item in book.window if item.ask is not None]
+        kept = [item for item in book.window if item.ts <= t]
+        bids = [item.bid for item in kept if item.bid is not None]
+        asks = [item.ask for item in kept if item.ask is not None]
         long_dwelled = min(bids) if bids else None
         short_dwelled = max(asks) if asks else None
         bid = book.bid.price
@@ -234,7 +237,7 @@ class MarkRail(MarkRailProtocol):
             short_worst = max(bid, ask)
         long_forced = None if long_worst is None else long_worst - self.slippage_ticks
         short_forced = None if short_worst is None else short_worst + self.slippage_ticks
-        clean = all(item.valid and not item.feed_gap for item in book.window)
+        clean = all(item.valid and not item.feed_gap for item in kept)
         long_side = RailOrientation(
             paying_mark_cents=ask,
             valuation_mark_cents=bid,

@@ -468,6 +468,26 @@ D-205 — The unset-resolution digest moves with the rail (P-40).
   - P-40's prediction did not list this pin. The move is its own commit,
     touching only that constant; the ledger records the deviation.
 
+D-206 — Rail window upper edge (P-40b).
+  - Operator decision 2026-10-19 (P-40b plan): at a quote stamped t the
+    dwell window holds the kept quotes stamped at or before t. A kept quote
+    stamped after t (exchange time stepped back in sequence order) stays
+    kept and counts again once a later quote's t reaches it. Trimming is
+    unchanged: each quote trims, relative to its own t, every kept quote
+    stamped at or before t − D, and a trimmed quote does not return (D-204).
+  - Alignment, no new choice: D-41 bounds the window at (t − D, t];
+    F-P40-4 found the upper edge unenforced (mark_rail.py:223-224, 237 at
+    728474cb).
+  - F-P40-3 is closed without a change (operator decision 2026-10-19):
+    _Book.reset has no caller found by name, but
+    tests/conformance/test_reset_paths.py::test_reset_path_totality (S16)
+    requires a reset path on every run-scoped class, and deleting it
+    failed S16 (F-P40b-2).
+  - Prediction: no pin moves (the APP oracle and universe runs do not build
+    the rail; the economic pins and kill run the reference rail); the post
+    capture is the pre capture plus 3 passed (T10), determinism 148; parity
+    compare 64 -> 64, changed 0; battery summaries and kill rows unchanged.
+
 ### D-66 pre-registered prediction
 
 ```
