@@ -34298,9 +34298,18 @@ OWNER:       campaign 15.
                  B10, B12, B15, B16, B17. Shard B exit 0, 10 of 10
                  KILLED: B2, B3, B5, B6, B7, B8, B9, B11, B13, B14.
                  CONTROL 0 failures, exit 0.
-  CI:            pending
-  MERGE:
-  BUGBOT:        pending
+  CI:            PR head 39246191888 pull_request success, check
+                 549.00 s, Tests 474.32 s, Determinism 6.73 s,
+                 ratio 70.48, fired no. Merge 39248363458
+                 pull_request success, check 878.00 s, Tests
+                 769.92 s, Determinism 9.86 s, ratio 78.09,
+                 fired no.
+  MERGE:         0942351230cf6485a75f26f2143c1a989ed9ccfc, parents
+                 728474cb554311c2d8354bfda8c1f4b4571322fb
+                 9e3a1cc5fa787ecb44154db7a0333f4afea1e232, trees
+                 equal bdf435244f24309f0be69b4997ae6743e5b66c32,
+                 PR #292, 2026-10-19.
+  BUGBOT:        completed, no findings.
   DEVIATIONS:    Attempt 1 blocked on S16. Probe files:
                  P-40b-attempt1.diff SHA256
                  1C8361D86A30F68941DD1BDD6F05F138A6B0D20DA4C3E4329D84FD9F221706FB;
