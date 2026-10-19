@@ -34231,3 +34231,105 @@ OWNER:       campaign 15.
                  first rung, with a fail-first node on a step-back tape
                  (see F-P39-2). Operator decision 2026-10-19: merge P-40
                  and fix there.
+
+## P-40b Rail window upper edge
+
+  VERDICT:       passed
+  DECISIONS:     D-206. Operator decision 2026-10-19: at a quote
+                 stamped t the dwell window holds the kept quotes
+                 stamped at or before t. A kept quote stamped after t
+                 stays kept and counts again once a later quote's t
+                 reaches it. Trimming is unchanged (D-204). F-P40-3
+                 closed without a change: _Book.reset stays.
+  E0:            FAILFIRST 3f1aa0e59b44ec3035df40172d849cc9a3633f3b,
+                 cherry-pick of 93a1e6ae. Three failed. First q3
+                 assertion on each node:
+                 test_t10_window_excludes_quotes_stamped_after_t
+                 assert 990 == 1000;
+                 test_t10_clean_ignores_quotes_stamped_after_t
+                 assert False is True;
+                 test_t10_trimmed_quote_stays_out_when_time_steps_back
+                 assert 980 == 1000.
+  TREE:          none. No prototype applied. Attempt 1 is saved, not
+                 applied.
+  SPEC:          f7ae7de5e17c296927cf998b1fe8f87645867168. D-206;
+                 plan row P-40b (Parity hold).
+  IMPL:          b79f299844f09afb7419dc8a1625222e6ca5f888.
+  BASE:          07b1979d00bce7be9137d215c42392f32682248c. Baselines
+                 on this commit.
+                 pre baseline_pre-P-40b.json on
+                 f7ae7de5e17c296927cf998b1fe8f87645867168, git.dirty
+                 false. Full suite 5385 passed, 0 failed, 44 skipped,
+                 3 xfailed, exit 0. Determinism 148 passed, exit 0.
+                 Parity constants 64. BASELINE GREEN. Predicted 5385,
+                 0, 44, 3 xfailed; 148; 64. MATCH.
+                 post baseline_post-P-40b.json on
+                 b79f299844f09afb7419dc8a1625222e6ca5f888, git.dirty
+                 false. The untracked pre JSON was moved aside for
+                 that snapshot and restored after. Full suite 5388
+                 passed, 0 failed, 44 skipped, 3 xfailed, exit 0.
+                 Determinism 148 passed, exit 0. compare parity-only:
+                 64 -> 64, changed 0. BASELINE GREEN. Predicted the
+                 pre capture plus 3 passed, failed 0, skipped and
+                 xfailed equal, determinism 148; 64 -> 64, changed 0.
+                 MATCH.
+  GATES:         a. Hot-path profile refreshed before the pre
+                 recapture and before the post capture.
+                 Pre-commit conformance: 221 passed, 2 xfailed,
+                 1 warning in 434.24s (0:07:14).
+                 Prepush: prepush: ok (ruff check, ruff format, mypy,
+                 lint-imports, pytest). Serial pytest: 5371 passed,
+                 5 skipped, 57 deselected, 2 xfailed, 49 warnings in
+                 947.38s (0:15:47). pytest -n 4: 5371 passed,
+                 5 skipped, 2 xfailed, 53 warnings in 507.83s
+                 (0:08:27).
+                 b. Universe check: 1 passed in 114.39s (0:01:54).
+                 c. Battery. Count clauses equal P-40; durations
+                 differ.
+                 Production stage C synthetic: "80 passed, 9
+                 deselected in 382.83s (0:06:22)".
+                 Production stage C real: "12 passed, 82 deselected
+                 in 357.84s (0:05:57)".
+                 Reference stage E synthetic: "80 passed, 9
+                 deselected in 231.24s (0:03:51)".
+                 Reference stage E real: "12 passed, 82 deselected
+                 in 519.93s (0:08:39)".
+                 d. kill.py. Shard A exit 0, 7 of 7 KILLED: B1, B4,
+                 B10, B12, B15, B16, B17. Shard B exit 0, 10 of 10
+                 KILLED: B2, B3, B5, B6, B7, B8, B9, B11, B13, B14.
+                 CONTROL 0 failures, exit 0.
+  CI:            pending
+  MERGE:
+  BUGBOT:        pending
+  DEVIATIONS:    Attempt 1 blocked on S16. Probe files:
+                 P-40b-attempt1.diff SHA256
+                 1C8361D86A30F68941DD1BDD6F05F138A6B0D20DA4C3E4329D84FD9F221706FB;
+                 P-40b-attempt1-baseline_pre.json SHA256
+                 F4D078FF5CF652158EF81E38D4F3FF1E31C2A6D32FD37F923C71CC174BAAD29A;
+                 P-40b-attempt1-baseline_post.json SHA256
+                 9D543F8278DC7DDBD90D203DE2341DA61DC09F8F2A1AD1BFFF2C88EF6E7E87EC.
+                 exec/P-40b reset to
+                 728474cb554311c2d8354bfda8c1f4b4571322fb on the
+                 operator's go (2026-10-19).
+                 The first pre capture was RED before the hot-path
+                 profile refresh (5384 passed, 1 failed,
+                 test_g45_keep, stale profile). Moved aside as
+                 P-40b-red-pre-stale-profile.json SHA256
+                 70CFDC072ABF7A425EB2ADD657254DD9BE7C5C106D9B05FB5D95CFFCD53ED299.
+                 The committed pre capture is the recapture.
+  STANDING:      stage C.
+  EVIDENCE:      D-206; P-40 post at 728474cb.
+  F-P40b-1:      contract :66 names "kill.py --control (B1–B14)";
+                 REGISTRY (mutants.py:818 at 728474cb) holds B1–B17.
+                 Destination: a contract rung, unscheduled.
+  F-P40b-2:      deleting _Book.reset (attempt 1,
+                 P-40b-attempt1.diff) fails
+                 tests/conformance/test_reset_paths.py::test_reset_path_totality
+                 (S16), "Unexpected: ['_Book']". Disposition: F-P40-3
+                 closed without a change (D-206).
+  F-P40b-3:      .github/workflows/ci.yml:408-422, the reference
+                 battery file list omits
+                 test_battery_m9_held_price.py. The P-40 local gate
+                 includes it: 80 passed, 9 deselected. Without it the
+                 same command is 77 passed, 9 deselected. Destination:
+                 unscheduled.
