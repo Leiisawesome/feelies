@@ -740,7 +740,11 @@ def build_platform(
         from feelies.portfolio.mark_rail import MarkRail
         from feelies.position.engine import PositionEngine, PositionRecordSink
 
-        mark_rail = MarkRail(SequenceGenerator(stream="mark_rail", thread_safe=_seq_thread_safe))
+        mark_rail = MarkRail(
+            SequenceGenerator(stream="mark_rail", thread_safe=_seq_thread_safe),
+            slippage_ticks=config.position_rail_slippage_ticks,
+            dwell_ns=config.position_rail_dwell_ns,
+        )
         position_engine = PositionEngine(
             bus,
             SequenceGenerator(stream="position", thread_safe=_seq_thread_safe),

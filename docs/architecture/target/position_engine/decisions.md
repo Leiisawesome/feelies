@@ -415,6 +415,59 @@ D-203 — Rail interface prep for P-40 (P-39b).
     reference reading S and D from the platform config (it would trust the
     harness mapping it should check).
 
+D-204 — Mark rail spec closure (P-40, stage C).
+  - Operator decisions 2026-10-17 and 2026-10-18 (AskUserQuestion):
+    dwelled_exit_mark is the worst valuation-side price the rail published
+    at each quote in the window (long: minimum bid; short: maximum ask), a
+    held price standing for an absent side (D-82), None while no usable
+    value exists; warmed_up is true when t − first-quote ts ≥ D, in
+    exchange time, the first quote of any class counting (D = 0: true from
+    the first quote, D-41); an absent side publishes size 0; before any
+    usable value a side's age runs from the symbol's first quote, and the
+    first usable price is a change, so its age is 0 there.
+  - Alignments, no new choice. A quote whose class is not VALID makes both
+    sides absent, a zero size on one side included (D-62; battery.md
+    member 4). The window holds every quote in (t − D, t] (D-41), so a
+    crossed quote leaves it unclean (D-200).
+  - Derived. Under D-62 both sides are present or absent together, so the
+    worst-side, forced and dwelled marks are None exactly until the first
+    usable quote. dwell_window_clean is true when every quote in the window
+    is VALID and none has a feed gap, on both orientations alike.
+    forced_exit_mark is worst_side_mark less S cents for long, plus S cents
+    for short (D-78). Timers are exact differences of exchange timestamps,
+    never clamped (D-201). Each quote trims, relative to its own t, every
+    retained quote with timestamp ≤ t − D (§1 step order); where exchange
+    time steps back, a trimmed quote does not return. The rail also carries
+    the symbol's first-quote timestamp.
+  - Interface (D-40, D-62). MarkRail takes keyword-only slippage_ticks and
+    dwell_ns, which bootstrap reads from PlatformConfig
+    position_rail_slippage_ticks and position_rail_dwell_ns; on_quote takes
+    keyword-only quality, the class the orchestrator's mark path computed.
+    src keeps one classify call site (T4). The contract's mark names are
+    published as *_mark_cents and event_sequence as quote_sequence.
+  - F-P40-1: battery.md's stage row C omitted member 4's six unusable-side
+    nodes (green_from C); the row now names them.
+  - F-P40-2: contracts.md §1 reads a feed-interruption fact from ingestion,
+    but NBBOQuote carries none. The rail publishes feed_gap_before false
+    until a source exists, outside P-40's row; the battery injects gaps
+    through the harness wrapper.
+  - Prediction: no pin moves (the APP oracle and universe runs do not build
+    the rail; both fields are omitted from the config snapshot at default);
+    full suite +14; the ten C nodes pass on production at C; battery
+    summaries and kill rows unchanged.
+
+D-205 — The unset-resolution digest moves with the rail (P-40).
+  - Operator decision 2026-10-18 (AskUserQuestion), at P-40 gate G.
+  - test_unset_resolution_matches_stub_records
+    (tests/position_engine/test_scenarios.py) pins the digest of the
+    records a run with FEELIES_ENGINE and FEELIES_RAIL unset produces.
+    Until P-40 that run used the P-10 stub rail; the complete rail (D-204)
+    changes its records, so the digest moves:
+    00b7771e3c9b3718f21b313b208bf920bcf53e0c822c35fbb99be227c97eec57 ->
+    a6cdfc8980963b2d02250c4dbe3222adfc561ec0b930a7de67b75d36acb497a7.
+  - P-40's prediction did not list this pin. The move is its own commit,
+    touching only that constant; the ledger records the deviation.
+
 ### D-66 pre-registered prediction
 
 ```

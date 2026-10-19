@@ -53,6 +53,19 @@ def _parse_fill_report_latency_ms(raw: object, *, source: Path) -> int | None:
     return raw
 
 
+def _parse_position_rail_count(raw: object, *, source: Path, key: str) -> int:
+    """Non-negative int. The caller supplies 0 when the key is absent. None is refused."""
+    if raw is None:
+        raise ConfigurationError(f"{source}: {key} must be a non-negative integer, got None")
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise ConfigurationError(
+            f"{source}: {key} must be a non-negative integer, got {type(raw).__name__}: {raw!r}"
+        )
+    if raw < 0:
+        raise ConfigurationError(f"{source}: {key} must be non-negative, got {raw}")
+    return raw
+
+
 def compute_manifest_hash(source: Path | Mapping[str, Any]) -> str:
     """SHA-256 of an alpha spec's content.
 
@@ -209,6 +222,9 @@ class PlatformConfig:
     # simulated clock is at or past the fill stamp plus this many
     # milliseconds. PAPER never constructs those routers.
     fill_report_latency_ms: int | None = None
+    # Mark-rail S (ticks) and D (ns). Omitted from the snapshot at 0 (D-40).
+    position_rail_slippage_ticks: int = 0
+    position_rail_dwell_ns: int = 0
 
     account_id: str = "default"
     # Maintenance floor below which a PDT-flagged account is barred from
@@ -472,6 +488,15 @@ class PlatformConfig:
             raise ConfigurationError(
                 "fill_report_latency_ms must be non-negative or null, "
                 f"got {self.fill_report_latency_ms}"
+            )
+        if self.position_rail_slippage_ticks < 0:
+            raise ConfigurationError(
+                "position_rail_slippage_ticks must be non-negative, "
+                f"got {self.position_rail_slippage_ticks}"
+            )
+        if self.position_rail_dwell_ns < 0:
+            raise ConfigurationError(
+                f"position_rail_dwell_ns must be non-negative, got {self.position_rail_dwell_ns}"
             )
         if self.halt_resolution_blackout_seconds < 0:
             raise ConfigurationError("halt_resolution_blackout_seconds must be non-negative")
@@ -815,6 +840,10 @@ class PlatformConfig:
             data.pop("composition_per_name_cap_pct")
         if self.fill_report_latency_ms is None:
             data.pop("fill_report_latency_ms")
+        if self.position_rail_slippage_ticks == 0:
+            data.pop("position_rail_slippage_ticks")
+        if self.position_rail_dwell_ns == 0:
+            data.pop("position_rail_dwell_ns")
         return data
 
     @classmethod
@@ -1044,6 +1073,18 @@ class PlatformConfig:
             fill_report_latency_ms=_parse_fill_report_latency_ms(
                 data.get("fill_report_latency_ms"),
                 source=path,
+            ),
+            position_rail_slippage_ticks=_parse_position_rail_count(
+                data["position_rail_slippage_ticks"]
+                if "position_rail_slippage_ticks" in data
+                else 0,
+                source=path,
+                key="position_rail_slippage_ticks",
+            ),
+            position_rail_dwell_ns=_parse_position_rail_count(
+                data["position_rail_dwell_ns"] if "position_rail_dwell_ns" in data else 0,
+                source=path,
+                key="position_rail_dwell_ns",
             ),
             stop_loss_per_share=float(data.get("stop_loss_per_share", 0.0)),
             trail_activate_per_share=float(data.get("trail_activate_per_share", 0.0)),
