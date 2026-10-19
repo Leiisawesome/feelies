@@ -34185,9 +34185,14 @@ OWNER:       campaign 15.
                  B10, B12, B15, B16, B17. Shard B exit 0, 10 of 10
                  KILLED: B2, B3, B5, B6, B7, B8, B9, B11, B13, B14.
                  CONTROL 0 failures, exit 0.
-  CI:            pending
-  MERGE:         pending
-  BUGBOT:        pending
+  CI:            PR head 39131761696 success, check 538.00 s,
+                 ratio 78.49. Merge 39182536531 success, check
+                 659.00 s, ratio 74.07.
+  MERGE:         4555e995342fe44dc6acb70e845cf49f17fd2c49, parents
+                 953a2cf2214e43c1b54e75b711bdd1d798b64ee6
+                 f13a41546369ac868dce0c347e8d60af23a1c2e2, PR #291,
+                 2026-10-19.
+  BUGBOT:        completed, no findings.
   DEVIATIONS:    Unpredicted pin move found at gate G: the
                  unset-resolution digest in test_scenarios.py;
                  operator decision D-205 (2026-10-18); own commit
@@ -34214,3 +34219,15 @@ OWNER:       campaign 15.
                  publishes feed_gap_before false until a source
                  exists, outside P-40's row; the battery injects gaps
                  through the harness wrapper.
+  F-P40-3:       src/feelies/portfolio/mark_rail.py:85, _Book.reset(), is
+                 never called (P-40 census 9 at f13a4154) and is not in
+                 the spec. Destination: chat 4's first rung.
+  F-P40-4:       _orientations (mark_rail.py:223-224, 237) reads every
+                 retained window item, and _Book.push (:81) keeps items
+                 stamped after t - D, including any stamped after the
+                 current quote's t when exchange time steps back. D-41's
+                 window is (t - D, t]. Identical while exchange time does
+                 not decrease, so every test passes. Destination: chat 4's
+                 first rung, with a fail-first node on a step-back tape
+                 (see F-P39-2). Operator decision 2026-10-19: merge P-40
+                 and fix there.
