@@ -9,6 +9,8 @@ under `tests/position_engine`. Rail rows are P-22a1. Engine rows are P-22a2.
 | One update per quote, both orientations, executable-side marks | §1:75–93 | rail.py:ReferenceRail.on_quote | test_slippage_worsens_forced_mark |
 | forced_exit_mark is worst_side_mark worsened by S ticks, long lower and short higher (D-40) | §1:87; §9:428–430 | rail.py:ReferenceRail.on_quote | test_slippage_worsens_forced_mark |
 | Dwell window (t − D, t] plus the current quote; D = 0 holds only the current quote and warmed_up is true from the first quote (D-41) | §1:103–106; §9:431–433 | rail.py:ReferenceRail.on_quote | test_dwell_window_drops_quote_older_than_t_minus_d |
+| A quote stamped after t is out of the window at t; it stays kept and counts once t reaches it; trimming is unchanged (D-206) | §1:103–106 | rail.py:ReferenceRail.on_quote | test_window_excludes_rows_stamped_after_t |
+| D = 0 holds only the current quote, even when an earlier quote shares its timestamp (D-41) | §1:103–106; §9:431–433 | rail.py:ReferenceRail.on_quote | test_d0_window_holds_only_the_current_row |
 | dwell_window_clean is false when the window holds an absence, a cross, or a feed gap | §1:89 | rail.py:ReferenceRail.on_quote | test_dwell_window_drops_quote_older_than_t_minus_d |
 | symbol_quiet_ns is feed silence and resets on any quote | §1:95–96; §9:468–471 | rail.py:ReferenceRail.on_quote | test_quiet_clock_triplet |
 | Ages advance only when that side's price changes | §1:92; §1:114–115 | rail.py:ReferenceRail.on_quote | test_rail_age_advances_only_when_the_price_changes |
