@@ -13,6 +13,7 @@ from feelies.core.events import NBBOQuote
 from feelies.core.identifiers import SequenceGenerator
 from feelies.core.quote_quality import QuoteQuality, classify
 from tests.position_engine.reference.rail import ReferenceRail
+from tests.position_engine.scenarios import T0
 from tests.position_engine.tapes import excise, force_class, make_tape, remove_side_run
 
 _CLASSES = (
@@ -45,6 +46,7 @@ def _quote(
     ask_cents: int,
     bid_size: int = 100,
     ask_size: int = 100,
+    exchange_timestamp_ns: int | None = None,
 ) -> NBBOQuote:
     return NBBOQuote(
         timestamp_ns=timestamp_ns,
@@ -55,7 +57,9 @@ def _quote(
         ask=Decimal(ask_cents) / 100,
         bid_size=bid_size,
         ask_size=ask_size,
-        exchange_timestamp_ns=timestamp_ns,
+        exchange_timestamp_ns=(
+            timestamp_ns if exchange_timestamp_ns is None else exchange_timestamp_ns
+        ),
     )
 
 
@@ -189,6 +193,35 @@ def test_dwell_window_drops_quote_older_than_t_minus_d(monkeypatch: pytest.Monke
     assert update.short.dwelled_exit_mark_cents == 81
     assert update.long.dwell_window_clean is True
     assert update.warmed_up is True
+
+
+def test_window_excludes_rows_stamped_after_t(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FEELIES_RAIL_DWELL_NS", "1000")
+    rail = _rail()
+    updates = [
+        rail.on_quote(quote)
+        for quote in (
+            _quote(1, T0 + 1, bid_cents=1000, ask_cents=1005, exchange_timestamp_ns=T0 + 500),
+            _quote(2, T0 + 2, bid_cents=990, ask_cents=1015, exchange_timestamp_ns=T0 + 900),
+            _quote(3, T0 + 3, bid_cents=1000, ask_cents=1005, exchange_timestamp_ns=T0 + 700),
+            _quote(4, T0 + 4, bid_cents=1000, ask_cents=1005, exchange_timestamp_ns=T0 + 950),
+        )
+    ]
+    assert updates[2].long.dwelled_exit_mark_cents == 1000
+    assert updates[2].short.dwelled_exit_mark_cents == 1005
+    assert updates[3].long.dwelled_exit_mark_cents == 990
+    assert updates[3].short.dwelled_exit_mark_cents == 1015
+
+
+def test_d0_window_holds_only_the_current_row(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FEELIES_RAIL_DWELL_NS", "0")
+    rail = _rail()
+    rail.on_quote(_quote(1, T0 + 1, bid_cents=995, ask_cents=1010, exchange_timestamp_ns=T0 + 500))
+    update = rail.on_quote(
+        _quote(2, T0 + 2, bid_cents=1000, ask_cents=1005, exchange_timestamp_ns=T0 + 500)
+    )
+    assert update.long.dwelled_exit_mark_cents == 1000
+    assert update.short.dwelled_exit_mark_cents == 1005
 
 
 def test_slippage_worsens_forced_mark(monkeypatch: pytest.MonkeyPatch) -> None:
