@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import importlib
 import json
+import os
+from decimal import Decimal
 
 import pytest
 
-from feelies.core.events import Event, PositionSnapshot
+from feelies.core.events import Event, NBBOQuote, PositionSnapshot
+from feelies.core.identifiers import SequenceGenerator
+from feelies.core.quote_quality import classify
 from tests.position_engine.scenarios import (
     T0,
     Widened,
@@ -192,3 +197,79 @@ def test_m2_dwell_window_trims_in_step(monkeypatch: pytest.MonkeyPatch) -> None:
         assert at_side["dwell_window_clean"] is True, (
             f"CAP:dwell_window: {o} not clean at t (quote {seq})"
         )
+
+
+def _direct_rail(monkeypatch: pytest.MonkeyPatch, dwell: int) -> object:
+    """The class named by FEELIES_RAIL, built as bootstrap builds the rail."""
+    monkeypatch.setenv("FEELIES_RAIL_DWELL_NS", str(dwell))
+    path = os.environ.get("FEELIES_RAIL", "").strip() or "feelies.portfolio.mark_rail.MarkRail"
+    module_name, _, attr = path.rpartition(".")
+    cls = getattr(importlib.import_module(module_name), attr)
+    return cls(
+        SequenceGenerator(stream="mark_rail", thread_safe=False),
+        slippage_ticks=0,
+        dwell_ns=dwell,
+    )
+
+
+def _nbbo(sequence: int, exchange_offset: int, bid: str, ask: str) -> NBBOQuote:
+    return NBBOQuote(
+        timestamp_ns=T0 + sequence,
+        correlation_id=f"q-{sequence}",
+        sequence=sequence,
+        symbol="SYN",
+        bid=Decimal(bid),
+        ask=Decimal(ask),
+        bid_size=100,
+        ask_size=100,
+        exchange_timestamp_ns=T0 + exchange_offset,
+    )
+
+
+def _feed(rail: object, quotes: tuple[NBBOQuote, ...]) -> list[object]:
+    return [
+        rail.on_quote(  # type: ignore[attr-defined]
+            quote,
+            quality=classify(quote.bid, quote.ask, quote.bid_size, quote.ask_size),
+        )
+        for quote in quotes
+    ]
+
+
+@_DWELL_RAIL
+def test_m2_window_excludes_quotes_stamped_after_t(monkeypatch: pytest.MonkeyPatch) -> None:
+    updates = _feed(
+        _direct_rail(monkeypatch, 1000),
+        (
+            _nbbo(1, 500, "10.00", "10.05"),
+            _nbbo(2, 900, "9.90", "10.15"),
+            _nbbo(3, 700, "10.00", "10.05"),
+            _nbbo(4, 950, "10.00", "10.05"),
+        ),
+    )
+    at_q3 = updates[2]
+    at_q4 = updates[3]
+    long_q3 = at_q3.long.dwelled_exit_mark_cents  # type: ignore[attr-defined]
+    short_q3 = at_q3.short.dwelled_exit_mark_cents  # type: ignore[attr-defined]
+    long_q4 = at_q4.long.dwelled_exit_mark_cents  # type: ignore[attr-defined]
+    short_q4 = at_q4.short.dwelled_exit_mark_cents  # type: ignore[attr-defined]
+    assert long_q3 == 1000, f"CAP:dwell_window: long dwelled {long_q3} != 1000"
+    assert short_q3 == 1005, f"CAP:dwell_window: short dwelled {short_q3} != 1005"
+    assert long_q4 == 990, f"CAP:dwell_window: long dwelled {long_q4} != 990"
+    assert short_q4 == 1015, f"CAP:dwell_window: short dwelled {short_q4} != 1015"
+
+
+@_DWELL_RAIL
+def test_m2_d0_window_holds_only_the_current_quote(monkeypatch: pytest.MonkeyPatch) -> None:
+    updates = _feed(
+        _direct_rail(monkeypatch, 0),
+        (
+            _nbbo(1, 500, "9.95", "10.10"),
+            _nbbo(2, 500, "10.00", "10.05"),
+        ),
+    )
+    at_q2 = updates[1]
+    long_q2 = at_q2.long.dwelled_exit_mark_cents  # type: ignore[attr-defined]
+    short_q2 = at_q2.short.dwelled_exit_mark_cents  # type: ignore[attr-defined]
+    assert long_q2 == 1000, f"CAP:dwell_window: long dwelled {long_q2} != 1000"
+    assert short_q2 == 1005, f"CAP:dwell_window: short dwelled {short_q2} != 1005"

@@ -95,9 +95,11 @@ class ReferenceRail(MarkRailProtocol):
             absent_for = timestamp - book.last_usable_ns
         else:
             absent_for = timestamp - book.first_ns
-        book.window.append((timestamp, book.bid, book.ask, usable))
+        current = (timestamp, book.bid, book.ask, usable)
+        book.window.append(current)
         cutoff = timestamp - self.dwell_ns
-        book.window = [row for row in book.window if row[0] > cutoff or row[0] == timestamp]
+        book.window = [row for row in book.window if row is current or row[0] > cutoff]
+        kept = [row for row in book.window if row[0] <= timestamp]
         bid_age = 0 if book.bid_changed_ns is None else timestamp - book.bid_changed_ns
         ask_age = 0 if book.ask_changed_ns is None else timestamp - book.ask_changed_ns
         if book.bid is None or book.ask is None:
@@ -109,9 +111,9 @@ class ReferenceRail(MarkRailProtocol):
         slip = self.slippage_ticks
         long_forced = None if long_worst is None else long_worst - slip
         short_forced = None if short_worst is None else short_worst + slip
-        long_dwelled = _extreme(book.window, index=1, pick=min)
-        short_dwelled = _extreme(book.window, index=2, pick=max)
-        clean = all(row[3] for row in book.window)
+        long_dwelled = _extreme(kept, index=1, pick=min)
+        short_dwelled = _extreme(kept, index=2, pick=max)
+        clean = all(row[3] for row in kept)
         warmed = self.dwell_ns == 0 or timestamp - book.first_ns >= self.dwell_ns
         absent = not usable
         long_side = _orientation(

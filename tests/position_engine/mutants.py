@@ -366,7 +366,7 @@ class LazyTrimRail(ReferenceRail):
     Battery row: member 2, the D>0 clause.
     Diff against ReferenceRail.on_quote:
         - cutoff = timestamp - self.dwell_ns
-        - book.window = [row for row in book.window if row[0] > cutoff or row[0] == timestamp]
+        - book.window = [row for row in book.window if row is current or row[0] > cutoff]
     ``dwell_ns`` still feeds the dwelled mark and ``warmed_up``.
     """
 
@@ -400,7 +400,9 @@ class LazyTrimRail(ReferenceRail):
             absent_for = timestamp - book.last_usable_ns
         else:
             absent_for = timestamp - book.first_ns
-        book.window.append((timestamp, book.bid, book.ask, usable))
+        current = (timestamp, book.bid, book.ask, usable)
+        book.window.append(current)
+        kept = [row for row in book.window if row[0] <= timestamp]
         bid_age = 0 if book.bid_changed_ns is None else timestamp - book.bid_changed_ns
         ask_age = 0 if book.ask_changed_ns is None else timestamp - book.ask_changed_ns
         if book.bid is None or book.ask is None:
@@ -412,9 +414,9 @@ class LazyTrimRail(ReferenceRail):
         slip = self.slippage_ticks
         long_forced = None if long_worst is None else long_worst - slip
         short_forced = None if short_worst is None else short_worst + slip
-        long_dwelled = _extreme(book.window, index=1, pick=min)
-        short_dwelled = _extreme(book.window, index=2, pick=max)
-        clean = all(row[3] for row in book.window)
+        long_dwelled = _extreme(kept, index=1, pick=min)
+        short_dwelled = _extreme(kept, index=2, pick=max)
+        clean = all(row[3] for row in kept)
         warmed = self.dwell_ns == 0 or timestamp - book.first_ns >= self.dwell_ns
         absent = not usable
         long_side = _orientation(
@@ -536,9 +538,11 @@ class AgeResetRail(ReferenceRail):
             absent_for = timestamp - book.last_usable_ns
         else:
             absent_for = timestamp - book.first_ns
-        book.window.append((timestamp, book.bid, book.ask, usable))
+        current = (timestamp, book.bid, book.ask, usable)
+        book.window.append(current)
         cutoff = timestamp - self.dwell_ns
-        book.window = [row for row in book.window if row[0] > cutoff or row[0] == timestamp]
+        book.window = [row for row in book.window if row is current or row[0] > cutoff]
+        kept = [row for row in book.window if row[0] <= timestamp]
         bid_age = 0 if book.bid_changed_ns is None else timestamp - book.bid_changed_ns
         ask_age = 0 if book.ask_changed_ns is None else timestamp - book.ask_changed_ns
         if book.bid is None or book.ask is None:
@@ -550,9 +554,9 @@ class AgeResetRail(ReferenceRail):
         slip = self.slippage_ticks
         long_forced = None if long_worst is None else long_worst - slip
         short_forced = None if short_worst is None else short_worst + slip
-        long_dwelled = _extreme(book.window, index=1, pick=min)
-        short_dwelled = _extreme(book.window, index=2, pick=max)
-        clean = all(row[3] for row in book.window)
+        long_dwelled = _extreme(kept, index=1, pick=min)
+        short_dwelled = _extreme(kept, index=2, pick=max)
+        clean = all(row[3] for row in kept)
         warmed = self.dwell_ns == 0 or timestamp - book.first_ns >= self.dwell_ns
         absent = not usable
         long_side = _orientation(
@@ -646,9 +650,11 @@ class RawAbsentRail(ReferenceRail):
             absent_for = timestamp - book.last_usable_ns
         else:
             absent_for = timestamp - book.first_ns
-        book.window.append((timestamp, book.bid, book.ask, usable))
+        current = (timestamp, book.bid, book.ask, usable)
+        book.window.append(current)
         cutoff = timestamp - self.dwell_ns
-        book.window = [row for row in book.window if row[0] > cutoff or row[0] == timestamp]
+        book.window = [row for row in book.window if row is current or row[0] > cutoff]
+        kept = [row for row in book.window if row[0] <= timestamp]
         bid_age = 0 if book.bid_changed_ns is None else timestamp - book.bid_changed_ns
         ask_age = 0 if book.ask_changed_ns is None else timestamp - book.ask_changed_ns
         if book.bid is None or book.ask is None:
@@ -660,9 +666,9 @@ class RawAbsentRail(ReferenceRail):
         slip = self.slippage_ticks
         long_forced = None if long_worst is None else long_worst - slip
         short_forced = None if short_worst is None else short_worst + slip
-        long_dwelled = _extreme(book.window, index=1, pick=min)
-        short_dwelled = _extreme(book.window, index=2, pick=max)
-        clean = all(row[3] for row in book.window)
+        long_dwelled = _extreme(kept, index=1, pick=min)
+        short_dwelled = _extreme(kept, index=2, pick=max)
+        clean = all(row[3] for row in kept)
         warmed = self.dwell_ns == 0 or timestamp - book.first_ns >= self.dwell_ns
         absent = not usable
         long_side = _orientation(
@@ -750,9 +756,11 @@ class QuietAbsentRail(ReferenceRail):
             absent_for = quiet
         else:
             absent_for = timestamp - book.first_ns
-        book.window.append((timestamp, book.bid, book.ask, usable))
+        current = (timestamp, book.bid, book.ask, usable)
+        book.window.append(current)
         cutoff = timestamp - self.dwell_ns
-        book.window = [row for row in book.window if row[0] > cutoff or row[0] == timestamp]
+        book.window = [row for row in book.window if row is current or row[0] > cutoff]
+        kept = [row for row in book.window if row[0] <= timestamp]
         bid_age = 0 if book.bid_changed_ns is None else timestamp - book.bid_changed_ns
         ask_age = 0 if book.ask_changed_ns is None else timestamp - book.ask_changed_ns
         if book.bid is None or book.ask is None:
@@ -764,9 +772,226 @@ class QuietAbsentRail(ReferenceRail):
         slip = self.slippage_ticks
         long_forced = None if long_worst is None else long_worst - slip
         short_forced = None if short_worst is None else short_worst + slip
-        long_dwelled = _extreme(book.window, index=1, pick=min)
-        short_dwelled = _extreme(book.window, index=2, pick=max)
-        clean = all(row[3] for row in book.window)
+        long_dwelled = _extreme(kept, index=1, pick=min)
+        short_dwelled = _extreme(kept, index=2, pick=max)
+        clean = all(row[3] for row in kept)
+        warmed = self.dwell_ns == 0 or timestamp - book.first_ns >= self.dwell_ns
+        absent = not usable
+        long_side = _orientation(
+            paying=book.ask,
+            valuation=book.bid,
+            paying_size=quote.ask_size,
+            valuation_size=quote.bid_size,
+            paying_age=ask_age,
+            valuation_age=bid_age,
+            absent=absent,
+            absent_for=absent_for,
+            worst=long_worst,
+            forced=long_forced,
+            dwelled=long_dwelled,
+            clean=clean,
+        )
+        short_side = _orientation(
+            paying=book.bid,
+            valuation=book.ask,
+            paying_size=quote.bid_size,
+            valuation_size=quote.ask_size,
+            paying_age=bid_age,
+            valuation_age=ask_age,
+            absent=absent,
+            absent_for=absent_for,
+            worst=short_worst,
+            forced=short_forced,
+            dwelled=short_dwelled,
+            clean=clean,
+        )
+        return MarkRailUpdate(
+            timestamp_ns=quote.timestamp_ns,
+            correlation_id=quote.correlation_id,
+            sequence=self._seq.next(),
+            source_layer="PORTFOLIO",
+            symbol=quote.symbol,
+            quote_sequence=quote.sequence,
+            event_timestamp_ns=timestamp,
+            long=long_side,
+            short=short_side,
+            symbol_quiet_ns=quiet,
+            locked=bid_cents == ask_cents,
+            crossed=bid_cents > ask_cents,
+            feed_gap_before=False,
+            warmed_up=warmed,
+        )
+
+
+class FutureRowRail(ReferenceRail):
+    """B18. The dwell window reads quotes stamped after t.
+
+    Battery row: member 2, the upper edge (D-206).
+    Diff against ReferenceRail.on_quote:
+        - kept = [row for row in book.window if row[0] <= timestamp]
+        + kept = book.window
+    """
+
+    def on_quote(self, quote: NBBOQuote, *, quality: object | None = None) -> MarkRailUpdate:
+        del quality  # D-203
+        timestamp = quote.exchange_timestamp_ns
+        bid_cents = _cents(quote.symbol, quote.bid)
+        ask_cents = _cents(quote.symbol, quote.ask)
+        book = self._books.get(quote.symbol)
+        if book is None:
+            book = _Book()
+            self._books[quote.symbol] = book
+        if book.first_ns is None:
+            book.first_ns = timestamp
+        usable = (
+            classify(quote.bid, quote.ask, quote.bid_size, quote.ask_size) is QuoteQuality.VALID
+        )
+        if usable:
+            if book.bid != bid_cents:
+                book.bid = bid_cents
+                book.bid_changed_ns = timestamp
+            if book.ask != ask_cents:
+                book.ask = ask_cents
+                book.ask_changed_ns = timestamp
+            book.last_usable_ns = timestamp
+        quiet = 0 if book.prev_ns is None else timestamp - book.prev_ns
+        book.prev_ns = timestamp
+        if usable:
+            absent_for = 0
+        elif book.last_usable_ns is not None:
+            absent_for = timestamp - book.last_usable_ns
+        else:
+            absent_for = timestamp - book.first_ns
+        current = (timestamp, book.bid, book.ask, usable)
+        book.window.append(current)
+        cutoff = timestamp - self.dwell_ns
+        book.window = [row for row in book.window if row is current or row[0] > cutoff]
+        kept = book.window
+        bid_age = 0 if book.bid_changed_ns is None else timestamp - book.bid_changed_ns
+        ask_age = 0 if book.ask_changed_ns is None else timestamp - book.ask_changed_ns
+        if book.bid is None or book.ask is None:
+            long_worst = None
+            short_worst = None
+        else:
+            long_worst = min(book.bid, book.ask)
+            short_worst = max(book.bid, book.ask)
+        slip = self.slippage_ticks
+        long_forced = None if long_worst is None else long_worst - slip
+        short_forced = None if short_worst is None else short_worst + slip
+        long_dwelled = _extreme(kept, index=1, pick=min)
+        short_dwelled = _extreme(kept, index=2, pick=max)
+        clean = all(row[3] for row in kept)
+        warmed = self.dwell_ns == 0 or timestamp - book.first_ns >= self.dwell_ns
+        absent = not usable
+        long_side = _orientation(
+            paying=book.ask,
+            valuation=book.bid,
+            paying_size=quote.ask_size,
+            valuation_size=quote.bid_size,
+            paying_age=ask_age,
+            valuation_age=bid_age,
+            absent=absent,
+            absent_for=absent_for,
+            worst=long_worst,
+            forced=long_forced,
+            dwelled=long_dwelled,
+            clean=clean,
+        )
+        short_side = _orientation(
+            paying=book.bid,
+            valuation=book.ask,
+            paying_size=quote.bid_size,
+            valuation_size=quote.ask_size,
+            paying_age=bid_age,
+            valuation_age=ask_age,
+            absent=absent,
+            absent_for=absent_for,
+            worst=short_worst,
+            forced=short_forced,
+            dwelled=short_dwelled,
+            clean=clean,
+        )
+        return MarkRailUpdate(
+            timestamp_ns=quote.timestamp_ns,
+            correlation_id=quote.correlation_id,
+            sequence=self._seq.next(),
+            source_layer="PORTFOLIO",
+            symbol=quote.symbol,
+            quote_sequence=quote.sequence,
+            event_timestamp_ns=timestamp,
+            long=long_side,
+            short=short_side,
+            symbol_quiet_ns=quiet,
+            locked=bid_cents == ask_cents,
+            crossed=bid_cents > ask_cents,
+            feed_gap_before=False,
+            warmed_up=warmed,
+        )
+
+
+class SameStampRail(ReferenceRail):
+    """B19. At D = 0 the dwell window keeps earlier quotes stamped at t.
+
+    Battery row: member 2, D = 0 (D-41).
+    Diff against ReferenceRail.on_quote:
+        - book.window = [row for row in book.window if row is current or row[0] > cutoff]
+        + book.window = [
+        +     row for row in book.window
+        +     if row is current or row[0] > cutoff or row[0] == timestamp
+        + ]
+    """
+
+    def on_quote(self, quote: NBBOQuote, *, quality: object | None = None) -> MarkRailUpdate:
+        del quality  # D-203
+        timestamp = quote.exchange_timestamp_ns
+        bid_cents = _cents(quote.symbol, quote.bid)
+        ask_cents = _cents(quote.symbol, quote.ask)
+        book = self._books.get(quote.symbol)
+        if book is None:
+            book = _Book()
+            self._books[quote.symbol] = book
+        if book.first_ns is None:
+            book.first_ns = timestamp
+        usable = (
+            classify(quote.bid, quote.ask, quote.bid_size, quote.ask_size) is QuoteQuality.VALID
+        )
+        if usable:
+            if book.bid != bid_cents:
+                book.bid = bid_cents
+                book.bid_changed_ns = timestamp
+            if book.ask != ask_cents:
+                book.ask = ask_cents
+                book.ask_changed_ns = timestamp
+            book.last_usable_ns = timestamp
+        quiet = 0 if book.prev_ns is None else timestamp - book.prev_ns
+        book.prev_ns = timestamp
+        if usable:
+            absent_for = 0
+        elif book.last_usable_ns is not None:
+            absent_for = timestamp - book.last_usable_ns
+        else:
+            absent_for = timestamp - book.first_ns
+        current = (timestamp, book.bid, book.ask, usable)
+        book.window.append(current)
+        cutoff = timestamp - self.dwell_ns
+        book.window = [
+            row for row in book.window if row is current or row[0] > cutoff or row[0] == timestamp
+        ]
+        kept = [row for row in book.window if row[0] <= timestamp]
+        bid_age = 0 if book.bid_changed_ns is None else timestamp - book.bid_changed_ns
+        ask_age = 0 if book.ask_changed_ns is None else timestamp - book.ask_changed_ns
+        if book.bid is None or book.ask is None:
+            long_worst = None
+            short_worst = None
+        else:
+            long_worst = min(book.bid, book.ask)
+            short_worst = max(book.bid, book.ask)
+        slip = self.slippage_ticks
+        long_forced = None if long_worst is None else long_worst - slip
+        short_forced = None if short_worst is None else short_worst + slip
+        long_dwelled = _extreme(kept, index=1, pick=min)
+        short_dwelled = _extreme(kept, index=2, pick=max)
+        clean = all(row[3] for row in kept)
         warmed = self.dwell_ns == 0 or timestamp - book.first_ns >= self.dwell_ns
         absent = not usable
         long_side = _orientation(
@@ -928,6 +1153,28 @@ REGISTRY: dict[str, Mutant] = {
             "::test_m9_absent_for_grows_through_absence",
         ),
         "M9:",
+        "A",
+    ),
+    "B18": Mutant(
+        "B18",
+        "rail",
+        f"{__name__}.FutureRowRail",
+        (
+            "tests/position_engine/test_battery_m2_no_lookahead.py"
+            "::test_m2_window_excludes_quotes_stamped_after_t",
+        ),
+        "CAP:dwell_window:",
+        "A",
+    ),
+    "B19": Mutant(
+        "B19",
+        "rail",
+        f"{__name__}.SameStampRail",
+        (
+            "tests/position_engine/test_battery_m2_no_lookahead.py"
+            "::test_m2_d0_window_holds_only_the_current_quote",
+        ),
+        "CAP:dwell_window:",
         "A",
     ),
 }

@@ -34342,3 +34342,96 @@ OWNER:       campaign 15.
                  includes it: 80 passed, 9 deselected. Without it the
                  same command is 77 passed, 9 deselected. Destination:
                  unscheduled.
+
+## P-40c Reference rail window
+
+  VERDICT:       passed
+  DECISIONS:     D-207. Operator decisions 2026-10-20
+                 (AskUserQuestion): P-40c next, full scope; the
+                 registry pin; F-P40c-3 goes to P-39c. Amended the
+                 same day: trace rows name reference unit tests.
+  E0:            FAILFIRST 19d2dd1d777130cd3a2240db484682a9f4495c8a.
+                 Production battery nodes passed. On the reference,
+                 the first assertion of each new node:
+                 test_m2_window_excludes_quotes_stamped_after_t
+                 CAP:dwell_window: long dwelled 990 != 1000;
+                 assert 990 == 1000;
+                 test_m2_d0_window_holds_only_the_current_quote
+                 CAP:dwell_window: long dwelled 995 != 1000;
+                 assert 995 == 1000;
+                 test_window_excludes_rows_stamped_after_t
+                 assert 990 == 1000;
+                 test_d0_window_holds_only_the_current_row
+                 assert 995 == 1000.
+  TREE:          git apply of P-40c-probe1.diff. SHA256
+                 D242D4879760CBA15F37BA66BD3ABD2EB4E2AEF9414BEDE0D24D984BDDF26533,
+                 1826 bytes. git diff --binary of rail.py after
+                 apply matched that hash.
+  SPEC:          d1aaa6693d6bc128fa5ca9bb304f16b156f61a90. D-207;
+                 plan row P-40c (Parity hold, except
+                 test_kill_runner.py:116).
+  IMPL:          5f1760f9e24e8c6fdcf59aca70f98124dca90d75. Reference
+                 window; B11 and B15-B17 follow; B18, B19.
+                 Pin b670e20a8aab9065b32d6414fb5f6f4c653cf80e,
+                 test_kill_runner.py:116, range(1, 18) to
+                 range(1, 20).
+  BASE:          4a8521ddfbbcc04491cbd851ac465b9e2836bfb3. Baselines
+                 on this commit.
+                 pre baseline_pre-P-40c.json on
+                 d1aaa6693d6bc128fa5ca9bb304f16b156f61a90, git.dirty
+                 false. Full suite 5388 passed, 0 failed, 44 skipped,
+                 3 xfailed, exit 0. Determinism 148 passed, exit 0.
+                 Parity constants 64. BASELINE GREEN. Predicted 5388,
+                 0, 44, 3 xfailed; 148; 64. MATCH.
+                 post baseline_post-P-40c.json on
+                 b670e20a8aab9065b32d6414fb5f6f4c653cf80e, git.dirty
+                 false. The untracked pre JSON was moved aside for
+                 that snapshot and restored after. Full suite 5392
+                 passed, 0 failed, 44 skipped, 3 xfailed, exit 0.
+                 Determinism 148 passed, exit 0. compare parity-only:
+                 64 -> 64, changed 0. BASELINE GREEN. Predicted the
+                 pre capture plus 4 passed, failed 0, skipped and
+                 xfailed equal, determinism 148; 64 -> 64, changed 0.
+                 MATCH.
+  GATES:         a. Hot-path profile refreshed before the pre
+                 capture and before the post capture.
+                 Prepush: prepush: ok (ruff check, ruff format, mypy,
+                 lint-imports, pytest). Serial pytest: 5375 passed,
+                 5 skipped, 57 deselected, 2 xfailed, 49 warnings in
+                 1313.57s (0:21:53). pytest -n 4: 5375 passed,
+                 5 skipped, 2 xfailed, 53 warnings in 755.36s
+                 (0:12:35).
+                 b. Universe check: 1 passed in 191.71s (0:03:11).
+                 c. Battery.
+                 Production stage C synthetic: "82 passed, 9
+                 deselected in 642.19s (0:10:42)".
+                 Production stage C real: "12 passed, 84 deselected
+                 in 507.04s (0:08:27)".
+                 Reference stage E synthetic: "82 passed, 9
+                 deselected in 303.37s (0:05:03)".
+                 Reference stage E real: "12 passed, 84 deselected
+                 in 355.41s (0:05:55)".
+                 d. kill.py. Shard A exit 0, 9 of 9 KILLED: B1, B4,
+                 B10, B12, B15, B16, B17, B18, B19. Shard B exit 0,
+                 10 of 10 KILLED: B2, B3, B5, B6, B7, B8, B9, B11,
+                 B13, B14. CONTROL 0 failures, exit 0.
+  CI:            pending
+  MERGE:
+  BUGBOT:        pending
+  DEVIATIONS:    Attempt 1 blocked before S1: the planned trace
+                 cells failed
+                 test_trace_rows_name_functions_and_tests; no
+                 commits. Amended the same day: trace rows name
+                 reference unit tests, as that test requires.
+  STANDING:      stage C.
+  EVIDENCE:      D-207; P-40b at 1ca7776b.
+  F-P40c-1:      the reference read rows stamped after t
+                 (reference/rail.py:98-100, 112-114 at 1ca7776b).
+                 Closed here (D-207).
+  F-P40c-2:      at D = 0 the reference kept every row stamped at t
+                 (reference/rail.py:100 at 1ca7776b). Closed here
+                 (D-207).
+  F-P40c-3:      run_synthetic's tape cache key omits
+                 exchange_timestamp_ns (scenarios.py:2614-2625);
+                 two tapes differing only in exchange time share
+                 one cached run. Destination: P-39c.
