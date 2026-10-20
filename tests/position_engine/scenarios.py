@@ -2530,7 +2530,7 @@ def _execute_synthetic(
     return result
 
 
-_TAPES: dict[tuple[tuple[int, int, str, str, str, int, int], ...], list[NBBOQuote]] = {}
+_TAPES: dict[tuple[tuple[int, int, int, str, str, str, int, int], ...], list[NBBOQuote]] = {}
 _FACTORIES: dict[str, Callable[..., object]] = {}
 _RAILS: dict[str, Callable[..., object]] = {}
 _TRANSFORMS: dict[str, Callable[[Sequence[Event]], Sequence[Event]]] = {}
@@ -2582,7 +2582,7 @@ def slice_real_events(
 
 @functools.lru_cache(maxsize=None)
 def _cached_synthetic(
-    tape_key: tuple[tuple[int, int, str, str, str, int, int], ...],
+    tape_key: tuple[tuple[int, int, int, str, str, str, int, int], ...],
     symbols: tuple[str, ...],
     factory_key: str,
     rail_key: str,
@@ -2615,6 +2615,7 @@ def run_synthetic(
         (
             quote.sequence,
             quote.timestamp_ns,
+            quote.exchange_timestamp_ns,
             quote.symbol,
             str(quote.bid),
             str(quote.ask),

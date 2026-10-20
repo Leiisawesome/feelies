@@ -34448,3 +34448,107 @@ OWNER:       campaign 15.
                  B4, B10, B12, B18, B19; kill shard A also runs
                  B15, B16 and B17 (stale since P-39).
                  Destination: T-5.
+
+## P-39c Stage-hook tag check and cache key
+
+  VERDICT:       passed
+  DECISIONS:     D-208. Operator decisions 2026-10-20
+                 (AskUserQuestion): the run-time check,
+                 not a static scan; the plan. Amended the
+                 same day: real-battery deselects 85, not
+                 84, accepted by the continue prompt. Plan
+                 row and D-208 unedited.
+  E0:            FAILFIRST 5a4301141f5d10e8acdb60a6599dd5d5591a98e1.
+                 h8 accepted the tag (returncode 0, inner
+                 1 passed). h9 passed. Cache test:
+                 assert 1768532400000000000 ==
+                 (1768532400000000000 + 1).
+  TREE:          none. No prototype applied.
+  SPEC:          4f8475ab8c025916e848674d4a7e6d416b43a168. D-208;
+                 plan row P-39c (Parity hold).
+  IMPL:          74e38f06a0e74a72ea7f92a5c9de41b8856aedfb. The hook
+                 checks a tag against green_from; the tape
+                 key includes exchange_timestamp_ns.
+  BASE:          eba56a13ff59b8a790790c65fa8293f7f83c8497. Baselines
+                 on this commit.
+                 pre baseline_pre-P-39c.json on
+                 4f8475ab8c025916e848674d4a7e6d416b43a168, git.dirty
+                 false. Full suite 5392 passed, 0 failed, 44 skipped,
+                 3 xfailed, exit 0. Determinism 148 passed, exit 0.
+                 Parity constants 64. BASELINE GREEN. Predicted 5392,
+                 0, 44, 3 xfailed; 148; 64. MATCH.
+                 post baseline_post-P-39c.json on
+                 74e38f06a0e74a72ea7f92a5c9de41b8856aedfb, git.dirty
+                 false. The untracked pre JSON was moved aside for
+                 that snapshot and restored after. Full suite 5395
+                 passed, 0 failed, 44 skipped, 3 xfailed, exit 0.
+                 Determinism 148 passed, exit 0. compare parity-only:
+                 64 -> 64, changed 0. BASELINE GREEN. Predicted the
+                 pre capture plus 3 passed, failed 0, skipped and
+                 xfailed equal, determinism 148; 64 -> 64, changed 0.
+                 MATCH.
+                 Battery production C synthetic: predicted 82 passed,
+                 9 deselected. Actual 82 passed, 9 deselected. MATCH.
+                 Battery production C real: predicted 12 passed, 84
+                 deselected. Actual 12 passed, 85 deselected.
+                 Accepted (DEVIATIONS).
+                 Reference E synthetic: predicted 82 passed, 9
+                 deselected. Actual 82 passed, 9 deselected. MATCH.
+                 Reference E real: predicted 12 passed, 84 deselected.
+                 Actual 12 passed, 85 deselected. Accepted
+                 (DEVIATIONS).
+                 Kill shard A: predicted 9/9 KILLED. Actual exit 0,
+                 9 of 9 KILLED. MATCH.
+                 Kill shard B: predicted 10/10 KILLED. Actual exit 0,
+                 10 of 10 KILLED. MATCH.
+                 CONTROL: predicted 0 failures. Actual 0 failures,
+                 exit 0. MATCH.
+                 Universe: predicted 1 passed. Actual 1 passed. MATCH.
+                 Prepush: predicted green, serial and -n 4 counts
+                 equal. Actual serial 5378 passed, 5 skipped,
+                 2 xfailed; -n 4 5378 passed, 5 skipped, 2 xfailed.
+                 MATCH.
+  GATES:         a. Hot-path profile refreshed before the pre
+                 capture and before the post capture.
+                 Prepush: prepush: ok (ruff check, ruff format, mypy,
+                 lint-imports, pytest). Serial pytest: 5378 passed,
+                 5 skipped, 57 deselected, 2 xfailed, 49 warnings in
+                 942.77s (0:15:42). pytest -n 4: 5378 passed,
+                 5 skipped, 2 xfailed, 53 warnings in 508.91s
+                 (0:08:28).
+                 b. Universe check: 1 passed in 113.29s (0:01:53).
+                 c. Battery.
+                 Production stage C synthetic: "82 passed, 9
+                 deselected, 1 warning in 381.59s (0:06:21)".
+                 Production stage C real: "12 passed, 85 deselected
+                 in 299.85s (0:04:59)".
+                 Reference stage E synthetic: "82 passed, 9
+                 deselected in 249.47s (0:04:09)".
+                 Reference stage E real: "12 passed, 85 deselected
+                 in 337.42s (0:05:37)".
+                 d. kill.py. Shard A exit 0, 9 of 9 KILLED: B1, B4,
+                 B10, B12, B15, B16, B17, B18, B19. Shard B exit 0,
+                 10 of 10 KILLED: B2, B3, B5, B6, B7, B8, B9, B11,
+                 B13, B14. CONTROL 0 failures, exit 0.
+  CI:            pending
+  MERGE:
+  BUGBOT:        pending
+  DEVIATIONS:    Real-battery deselect count: predicted 84,
+                 actual 85 on production at C and on the
+                 reference at E. Cause: the real-battery file
+                 list collects test_scenarios.py, which gained
+                 test_synthetic_cache_keys_on_exchange_time,
+                 and -m battery_real deselects it. Passed
+                 counts unchanged. Operator acceptance
+                 2026-10-20 (continue prompt).
+  STANDING:      stage C.
+  EVIDENCE:      D-208; P-40c at e2b9f559.
+  F-P39-1:       before green_from, a failure whose CAP tag
+                 delivers after green_from was accepted.
+                 Closed here (D-208).
+  F-P40c-3:      run_synthetic's tape cache key omitted
+                 exchange_timestamp_ns. Closed here (D-208).
+  F-P39c-1:      LazyTrimRail's docstring (mutants.py:363-371
+                 at e2b9f559) says dwell_ns "still feeds the
+                 dwelled mark"; without the trim it feeds only
+                 warmed_up. Destination: T-5.

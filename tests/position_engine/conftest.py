@@ -122,6 +122,19 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]):
             message = str(excinfo.value)
             if message.startswith("PRECONDITION:"):
                 return report
+            cap = _CAP.match(message)
+            if cap is not None:
+                name = cap.group(1)
+                delivering = CAPABILITIES.get(name)
+                if delivering is not None and _STAGE_ORDER.index(delivering) > _STAGE_ORDER.index(
+                    green_from
+                ):
+                    report.longrepr = (
+                        f"hook error: battery member {member} tag CAP:{name} "
+                        f"(stage {delivering}) is later than its green_from "
+                        f"{green_from} (D-192)"
+                    )
+                    return report
             if _accepted_before(message, stage):
                 report.outcome = "passed"
                 report.longrepr = None
