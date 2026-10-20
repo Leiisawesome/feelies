@@ -92,3 +92,28 @@ def test_h7_failure_at_green_from_stays_a_failure(tmp_path: Path) -> None:
     assert proc.returncode == 1, text
     assert "hook error" not in text
     assert "NONVACUOUS: none" in text
+
+
+def test_h8_tag_later_than_green_from_is_hook_error(tmp_path: Path) -> None:
+    """favorable_fire delivers at E, later than green_from C."""
+    proc = _run(
+        tmp_path,
+        "B",
+        "raise AssertionError('CAP:favorable_fire: ...')",
+        green="C",
+    )
+    text = _out(proc)
+    assert proc.returncode == 1, text
+    assert "hook error" in text
+    assert "D-192" in text
+
+
+def test_h9_tag_at_green_from_is_accepted(tmp_path: Path) -> None:
+    """dwell_window delivers at C, which is this node's green_from."""
+    proc = _run(
+        tmp_path,
+        "B",
+        "raise AssertionError('CAP:dwell_window: ...')",
+        green="C",
+    )
+    assert proc.returncode == 0, _out(proc)

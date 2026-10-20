@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import os
@@ -1705,3 +1706,26 @@ def test_numeric_pack_keeps_type() -> None:
     assert spans[1] == alone_bool[0]
     assert spans[2] == alone_float[0]
     assert len({spans[0], spans[1], spans[2]}) == 3
+
+
+def test_synthetic_cache_keys_on_exchange_time() -> None:
+    tape = make_tape(seed=97, n=40)
+    shifted = [
+        dataclasses.replace(quote, exchange_timestamp_ns=quote.exchange_timestamp_ns + 1)
+        for quote in tape
+    ]
+    unshifted_run = run_synthetic(tape, symbols=("SYN",))
+    shifted_run = run_synthetic(shifted, symbols=("SYN",))
+
+    def event_timestamp_ns(records: Records) -> int:
+        for row in records:
+            if row.type_name != "MarkRailUpdate":
+                continue
+            body = json.loads(row.canonical[row.canonical.index("{") :])
+            assert isinstance(body, dict)
+            stamp = body["event_timestamp_ns"]
+            assert isinstance(stamp, int) and not isinstance(stamp, bool)
+            return stamp
+        raise AssertionError("no MarkRailUpdate")
+
+    assert event_timestamp_ns(shifted_run) == event_timestamp_ns(unshifted_run) + 1
