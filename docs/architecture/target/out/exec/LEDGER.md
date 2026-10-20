@@ -34415,9 +34415,18 @@ OWNER:       campaign 15.
                  B10, B12, B15, B16, B17, B18, B19. Shard B exit 0,
                  10 of 10 KILLED: B2, B3, B5, B6, B7, B8, B9, B11,
                  B13, B14. CONTROL 0 failures, exit 0.
-  CI:            pending
-  MERGE:
-  BUGBOT:        pending
+  CI:            PR head 39377335117 pull_request success, check
+                 543.00 s, Tests 466.73 s, Determinism 6.53 s,
+                 ratio 71.47, fired no. Merge 39378899827
+                 pull_request success, check 836.00 s, Tests
+                 726.18 s, Determinism 9.38 s, ratio 77.42,
+                 fired no.
+  MERGE:         0ad9abc852cb44dbc68524b20bc7b1368b678e79, parents
+                 1ca7776b155d477cd3d60f8cab49626d186ec8dd
+                 3c2054767503d0d6ebe98c0e1a1c6f4c96f350f4, trees
+                 equal f882284d51b297f4dc393871c8dc5e5cd8183210,
+                 PR #293, 2026-10-20.
+  BUGBOT:        completed, no findings.
   DEVIATIONS:    Attempt 1 blocked before S1: the planned trace
                  cells failed
                  test_trace_rows_name_functions_and_tests; no
@@ -34435,3 +34444,7 @@ OWNER:       campaign 15.
                  exchange_timestamp_ns (scenarios.py:2614-2625);
                  two tapes differing only in exchange time share
                  one cached run. Destination: P-39c.
+  F-P40c-4:      battery.md's shard table lists shard A as B1,
+                 B4, B10, B12, B18, B19; kill shard A also runs
+                 B15, B16 and B17 (stale since P-39).
+                 Destination: T-5.
