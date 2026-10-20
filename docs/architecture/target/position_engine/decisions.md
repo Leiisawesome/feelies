@@ -525,6 +525,24 @@ D-207 — The reference rail's window follows D-41 and D-206 (P-40c).
     kill shard A 9/9, shard B 10/10, CONTROL 0 failures; parity compare
     64 -> 64, changed 0.
 
+D-208 — Stage-hook tag check and the synthetic cache key (P-39c).
+  - Operator decisions 2026-10-20 (AskUserQuestion): the run-time check,
+    not a static scan; the plan.
+  - Hook (F-P39-1): before a node's green_from, a failure whose CAP:<name>
+    tag delivers at a stage later than green_from is a hook error naming
+    D-192. D-192's rule that green_from is at least the latest stage among
+    the node's tags is now checked wherever the hook sees a tag; a green
+    node's tags are not scanned.
+  - Cache (F-P40c-3): run_synthetic's tape key includes
+    exchange_timestamp_ns, so two tapes that differ only in exchange time
+    no longer share one cached run.
+  - Not a battery change (D-203's sense): no member, node, broken-engine
+    behaviour or stage changes. Battery and kill runs are repeated to show
+    it.
+  - Prediction: no pin moves; the post capture is the pre capture plus 3
+    passed (h8, h9, the cache test); determinism 148; battery and kill
+    unchanged; parity compare 64 -> 64, changed 0.
+
 ### D-66 pre-registered prediction
 
 ```
