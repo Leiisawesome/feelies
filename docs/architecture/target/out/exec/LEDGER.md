@@ -34530,9 +34530,18 @@ OWNER:       campaign 15.
                  B10, B12, B15, B16, B17, B18, B19. Shard B exit 0,
                  10 of 10 KILLED: B2, B3, B5, B6, B7, B8, B9, B11,
                  B13, B14. CONTROL 0 failures, exit 0.
-  CI:            pending
-  MERGE:
-  BUGBOT:        pending
+  CI:            PR head 39402773317 pull_request success, check
+                 928.00 s, Tests 821.26 s, Determinism 10.95 s,
+                 ratio 75.00, fired no. Merge 39405256756
+                 pull_request success, check 668.00 s, Tests
+                 574.72 s, Determinism 7.99 s, ratio 71.93,
+                 fired no.
+  MERGE:         034efffa20b34f0d750f08223ee8aa73e02694be, parents
+                 e2b9f559a5a2992a27a564dd83eee1f3c92f0f25
+                 d61af000dcc0a77c511fe4b7377609d1d55c5977, trees
+                 equal 46a9c07a8f503ae6b926d8c808552c5ebb7aa300,
+                 PR #294, 2026-10-20.
+  BUGBOT:        completed, no findings.
   DEVIATIONS:    Real-battery deselect count: predicted 84,
                  actual 85 on production at C and on the
                  reference at E. Cause: the real-battery file
