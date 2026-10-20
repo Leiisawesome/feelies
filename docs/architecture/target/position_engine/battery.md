@@ -106,6 +106,14 @@ ASSERTS:           for sampled events k, a run on the tape truncated after k pro
                    P-40: test_m2_dwell_window_trims_in_step, green_from C, reads the
                    rail's dwell_window_clean; test_m2_dwell_favorable_ignores_stale_cross,
                    green_from E, reads the gate. Both catch B11.
+                   Two rail nodes feed the rail named by FEELIES_RAIL directly
+                   (D-207), since replay cannot step back in exchange time:
+                   test_m2_window_excludes_quotes_stamped_after_t (D-206: a quote
+                   stamped after t is out of the window at t and counts once t
+                   reaches it; catches B18) and
+                   test_m2_d0_window_holds_only_the_current_quote (D-41: at D = 0
+                   only the current quote, even when an earlier quote shares its
+                   timestamp; catches B19). Both green_from C.
 FAILURE LOOKS LIKE:the first event where truncated and full runs differ
 BLOCKS THE BUILD:  yes — green from stage B onward
 ```
@@ -406,6 +414,8 @@ and by the named member. A broken engine nothing catches is a hole in the suite.
 | B15 | side age restarts on every usable quote, not only when the held price changes | 9 (age clause) |
 | B16 | an absent side publishes the quote's own price instead of the held price | 9 (held-price clause) |
 | B17 | absent-for measured from the previous quote, not from the last present one | 9 (absent-for clause) |
+| B18 | the dwell window reads quotes stamped after t | 2 (upper edge, D-206) |
+| B19 | at D = 0 the dwell window keeps earlier quotes stamped at t | 2 (D = 0, D-41) |
 
 ## Kill runner
 
@@ -430,7 +440,7 @@ walls plus 11 s, and each is at most 300 s (D-71).
 
 | Shard | Mutants | Walls (s) | Estimate (s) |
 |---|---|---:|---:|
-| A | B1, B4, B10, B12 | 8.7 + 17.6 + 8.3 = 34.6 | 45.6 |
+| A | B1, B4, B10, B12, B18, B19 | 8.7 + 17.6 + 8.3 = 34.6 | 45.6 |
 
 B4's selection is `test_m1_fresh_syn`. The in-process clock test freezes
 `time.monotonic` for its second run; with this mutant that run does not finish
@@ -438,7 +448,7 @@ inside the 240 s limit, and a TIMEOUT is not a kill. The fresh process compares
 two real clocks and fails `fresh records differ`.
 | B | B2, B3, B5, B6, B7, B8, B9, B11, B13, B14 | 2.1 + 1.3 + 1.6 + 1.7 + 2.1 + 2.2 + 2.1 + 1.2 = 14.3 | 25.3 |
 
-B12–B14 are on these shards. Their walls were not remeasured; the P-22b sums above do not include them.
+B12–B14 are on these shards. Their walls were not remeasured; the P-22b sums above do not include them. B18 and B19 (P-40c) are on shard A; their walls were not measured.
 
 **Reference rail (P-22a1) and reference engine (P-22a2).** Built only from the contracts
 text (§§0–9), not from §9 alone, with a spec-trace table (D-92). Rail rows land in P-22a1;

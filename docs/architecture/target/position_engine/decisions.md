@@ -488,6 +488,43 @@ D-206 — Rail window upper edge (P-40b).
     capture is the pre capture plus 3 passed (T10), determinism 148; parity
     compare 64 -> 64, changed 0; battery summaries and kill rows unchanged.
 
+D-207 — The reference rail's window follows D-41 and D-206 (P-40c).
+  - Operator decisions 2026-10-20 (AskUserQuestion): P-40c next, full
+    scope; the pin move below; F-P40c-3 goes to P-39c. Amended the same
+    day: trace rows name reference unit tests, as
+    test_trace_rows_name_functions_and_tests requires.
+  - Change, a battery change under the stage-A rule (contract :123-125):
+    the reference trims every row stamped at or before t − D except the
+    current one, and reads its dwelled marks and dwell_window_clean from the
+    kept rows stamped at or before t (D-41, D-206). B11, B15, B16 and B17
+    copy the reference's window code and take the same change (B11, which
+    never trims, takes only the read), so each keeps its one defect. New
+    broken rails: B18 reads rows stamped after t; B19 keeps, at D = 0,
+    every row stamped at t. Each is killed by a new member-2 node.
+  - Nodes: test_m2_window_excludes_quotes_stamped_after_t and
+    test_m2_d0_window_holds_only_the_current_quote, green_from C, feed the
+    rail named by FEELIES_RAIL directly. Reference unit tests
+    test_window_excludes_rows_stamped_after_t and
+    test_d0_window_holds_only_the_current_row check the same two clauses
+    on ReferenceRail and are the trace's tests for them. Backtest replay
+    cannot step back in exchange time: its order key is
+    (exchange_timestamp_ns, symbol, type rank, sequence)
+    (event_resequence.py:33-43), enforced by ReplayFeed
+    (replay_feed.py:90-98) and the event log (memory_event_log.py:105-112).
+    This answers the order half of F-P39-2.
+  - Pin move (operator, exact values), in its own commit:
+    tests/position_engine/test_kill_runner.py:116
+    old: assert list(REGISTRY) == [f"B{index}" for index in range(1, 18)]
+    new: assert list(REGISTRY) == [f"B{index}" for index in range(1, 20)]
+  - F-P40c-1 and F-P40c-2 close. F-P40c-3 (run_synthetic's tape key omits
+    exchange_timestamp_ns, scenarios.py:2614-2625) goes to P-39c.
+  - Prediction: no other pin moves (trial run P-40c-probe1: full suite,
+    determinism and the reference battery unchanged); the post capture is
+    the pre capture plus 4 passed; battery synthetic runs +2 passed and
+    real runs +2 deselected, on production at C and on the reference at E;
+    kill shard A 9/9, shard B 10/10, CONTROL 0 failures; parity compare
+    64 -> 64, changed 0.
+
 ### D-66 pre-registered prediction
 
 ```
