@@ -367,7 +367,7 @@ class LazyTrimRail(ReferenceRail):
     Diff against ReferenceRail.on_quote:
         - cutoff = timestamp - self.dwell_ns
         - book.window = [row for row in book.window if row is current or row[0] > cutoff]
-    ``dwell_ns`` still feeds the dwelled mark and ``warmed_up``.
+    ``dwell_ns`` still feeds ``warmed_up``.
     """
 
     def on_quote(self, quote: NBBOQuote, *, quality: object | None = None) -> MarkRailUpdate:

@@ -408,16 +408,8 @@ jobs:
       - name: Synthetic members and reference unit tests
         run: >-
           uv run pytest
-          tests/position_engine/test_battery_m1_reproducibility.py
-          tests/position_engine/test_battery_m2_no_lookahead.py
-          tests/position_engine/test_battery_m3_known_answer_conservation.py
-          tests/position_engine/test_battery_m4_side_correctness.py
-          tests/position_engine/test_battery_m5_precedence.py
-          tests/position_engine/test_battery_m6_injection_syn.py
-          tests/position_engine/test_battery_m6_injection_real.py
-          tests/position_engine/test_battery_m11_audit.py
-          tests/position_engine/test_reference_engine.py
-          tests/position_engine/test_reference_trace.py
+          tests/position_engine/test_battery_m*.py
+          tests/position_engine/test_reference_*.py
           -m "not battery_real"
           -q
 
