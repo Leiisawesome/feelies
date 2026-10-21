@@ -543,6 +543,68 @@ D-208 — Stage-hook tag check and the synthetic cache key (P-39c).
     passed (h8, h9, the cache test); determinism 148; battery and kill
     unchanged; parity compare 64 -> 64, changed 0.
 
+D-209 — Contract version 3: the mutant control by REGISTRY,
+reference-battery globs, and the CI watch re-derived (T-5).
+  - Operator decisions 2026-10-21 (AskUserQuestion), on the T-5 censuses at
+    e8a831d7: LazyTrimRail's docstring is fixed in T-5 (F-P39c-1), and the
+    kill shards and control must hold; CI's reference-battery step selects
+    tests/position_engine/test_battery_m*.py and test_reference_*.py by glob
+    (F-P40b-3), checked by a conformance test; CI running no kill control is
+    F-T5-1, placed with F-T5-2 and F-T5-3 at T-6 after P-49; the CI-watch
+    cost trigger averages two runs at three standard errors; the reference
+    and sigma come from a committed run set and tools/exec/ci_watch.py.
+  - Run set: docs/architecture/target/out/exec/ci_watch_runs_T-5.csv, SHA256
+    57A5E6007BBEA233EDF5ACAC7D0617B8AB31ACF9A1E5519681B2E84E8B0D8881 as
+    extracted: every completed pull_request run of ci.yml created on or
+    after 2026-10-08 (f1c237e0, T-2), 50 runs, all eligible. Extracted by
+    tools/exec/ci_watch_extract.ps1, SHA256
+    EFA026CCA22047D3901A8F062E7AF20C164955937166291E2C7A428FC343D9BA, under
+    the operator's gh-read authorisation of 2026-10-21. It matches all 16
+    previously reported runs (T-5 census 5, Q2).
+  - Within one workload (the same Tests passed count), the slope of log
+    Tests seconds on log Determinism seconds is 0.967 (95% CI 0.916 to
+    1.019): the ratio cancels runner speed. Its noise is sigma 0.0382 in log
+    units.
+  - Cost trigger. reference = geometric mean of the ratios of the 12 newest
+    runs in the set; sigma = pooled within-workload standard deviation of
+    log ratio, workload keyed by the Tests passed count, degrees of freedom
+    = runs minus groups; threshold = reference x exp(3 sigma / sqrt(2)).
+    tools/exec/ci_watch.py derive prints "reference 75.09 sigma 0.0382
+    threshold 81.43 runs 50 groups 13". Every merge report prints the
+    geometric mean of the PR-head and merge runs' ratios; above 81.43 fires.
+  - Timeout guard. A check job above 90% of the check job's timeout-minutes
+    fires: 1080 s at 20 (ci.yml:51).
+  - When either fires, the merge proceeds and the next code rung waits on a
+    tooling census (as D-202).
+  - Old -> new: cost trigger "any single run's ratio above 81" -> "the
+    two-run geometric mean above 81.43"; timeout guard "above 1080 s" ->
+    "above 90% of timeout-minutes", 1080 s today. Supersedes those two
+    clauses of D-202. D-202's ASSUMES clause stands; a rung that changes the
+    determinism workload or the check runner re-derives the reference in a
+    new D-entry.
+  - The reference, sigma and threshold move only by an operator D-entry with
+    exact old and new values, after a tooling census.
+  - Rejected: a higher single-run literal (an arbitrary margin; at 81 a
+    false fire is about 7% per rung); a runner-banded baseline (the ratio is
+    runner-invariant); re-anchoring every rung (cumulative cost growth would
+    never fire).
+  - Prediction (pre-registered): full suite 5395 -> 5398 passed; prepush and
+    CI Tests 5378 -> 5381 passed; determinism 148; no pinned literal moves;
+    parity constants 64 -> 64, changed 0; kill A 9/9, B 10/10, control 0
+    failures; CI's reference-battery step gains the collected nodes of
+    test_battery_m9_held_price.py, test_reference_import_boundary.py and
+    test_reference_rail.py, all passing.
+  - ASSUMES: the Tests passed count identifies the workload; log-ratio noise
+    is the same across workloads.
+    TOLERABLE BECAUSE: a false fire costs one census, and the timeout guard
+    protects the hard cap on its own.
+    FALSIFIED BY: two fires in a row whose tooling census finds no cost
+    change; or sigma re-derived on a fresh set of 50 or more runs outside
+    0.025 to 0.057.
+    EXPIRES WHEN: the determinism workload or the check runner changes;
+    P-99.
+    BLAST RADIUS: merge pacing only; no code path reads the threshold.
+
 ### D-66 pre-registered prediction
 
 ```
