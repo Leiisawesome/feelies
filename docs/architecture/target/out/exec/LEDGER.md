@@ -34649,17 +34649,38 @@ OWNER:       campaign 15.
                  1026.60s (0:17:06). pytest -n 4: 5381
                  passed, 5 skipped, 2 xfailed, 53 warnings
                  in 490.18s (0:08:10).
-  CI:            pending
-  MERGE:         pending
-  BUGBOT:        pending
-  DEVIATIONS:    none
+  CI:            PR head 39706449283 pull_request success,
+                 check 684 s, Tests 586.40 s, Determinism
+                 8.10 s, ratio 72.40; reference battery
+                 103 passed, 9 deselected in 228.82s
+                 (0:03:48). Merge 39707837564 pull_request
+                 success, check 946 s, Tests 831.69 s,
+                 Determinism 11.24 s, ratio 73.99. Two-run
+                 geometric mean 73.19; D-209 fired no;
+                 D-202 fired no.
+  MERGE:         ec59f14f1603849f301dcf3aab03fa646a57cb51,
+                 parents
+                 e8a831d71e7839f5c03f60eea8296091e7bacfe7
+                 and
+                 0ed0ceb8fe17c2065b569b41c07c11fe844f794c,
+                 tree 2c780567 = PR head. PR #295.
+                 Operator go 2026-10-22 (AskUserQuestion).
+  BUGBOT:        completed, no findings.
+  DEVIATIONS:    the compare warning that tools/exec
+                 fingerprints differ (21dc2d1114e3 ->
+                 c950b6e0b292) was not in PREDICTION; it
+                 follows from the declared new file
+                 tools/exec/ci_watch.py; no parity
+                 constant moved (Claude's review,
+                 2026-10-22).
   STANDING:      the contract is version 3 from T-5
                  (D-209)
   EVIDENCE:      HC-1021a, HC-1021b and T-5 censuses 1 to
                  5, all at e8a831d7
   F-T5-1:        CI runs no kill control (ci.yml:529-565
                  runs kill.py --shard only); destination
-                 T-6.
+                 T-6. Lines at e8a831d7; at 0ed0ceb8 the
+                 job is ci.yml:521-557.
   F-T5-2:        tests/conformance/test_doc_integrity.py:24
                  _DECISION matches only table rows
                  "| D-n |"; prose entries "D-n — title"
@@ -34669,3 +34690,26 @@ OWNER:       campaign 15.
   F-T5-3:        test_doc_integrity.py:26 _RUNG matches
                  only P- rows; T- and S- rows fall outside
                  the uniqueness check; destination T-6.
+  F-T5-4:        D-209 records the run set's SHA256 as
+                 extracted (CRLF),
+                 57A5E6007BBEA233EDF5ACAC7D0617B8AB31ACF9A1E5519681B2E84E8B0D8881.
+                 Git stores and checks out the LF form
+                 (eol: lf): blob
+                 d654a490beca2b784513f886cdc80820c0ba7c4c,
+                 SHA256
+                 1aa9eb45e9f267e65cd7fec5fa4351950dbf5055f51bba4b645861c605819f18,
+                 0 CR bytes. The extract script has no CR
+                 in either form (blob
+                 55ffdf70032ae690fab9bc59ddf7062bb0c804b1,
+                 SHA256
+                 EFA026CCA22047D3901A8F062E7AF20C164955937166291E2C7A428FC343D9BA).
+                 Destination T-6.
+  F-T5-5:        tools/exec/ci_watch_extract.ps1 is the
+                 T-5 extraction as run (lines at
+                 0ed0ceb8): the start date 2026-10-08 is
+                 fixed (:293, :316, :343); it writes
+                 %USERPROFILE%\feelies-probes\T-5\ci-watch-runs.csv
+                 with CRLF (:8-9, :668); it reads each
+                 run's latest attempt only (:330). A
+                 re-derivation under D-209 needs these as
+                 parameters. Destination T-6.
