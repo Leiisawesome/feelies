@@ -34561,3 +34561,111 @@ OWNER:       campaign 15.
                  at e2b9f559) says dwell_ns "still feeds the
                  dwelled mark"; without the trim it feeds only
                  warmed_up. Destination: T-5.
+
+## T-5 Contract version 3 and CI tidy
+
+  VERDICT:       passed
+  DECISIONS:     D-209. Operator decisions 2026-10-21
+                 (AskUserQuestion), on the T-5 censuses
+                 at e8a831d7.
+  E0:            FAILFIRST
+                 af91d6c81fbe859d146d2d041929eb0a80bef08f.
+                 Selection: AssertionError:
+                 ['tests/position_engine/test_battery_m9_held_price.py',
+                 'tests/position_engine/test_reference_import_boundary.py',
+                 'tests/position_engine/test_reference_rail.py'].
+                 CI-watch: ModuleNotFoundError: No module
+                 named 'tools.exec.ci_watch'. The combined
+                 pytest stopped at that collection error;
+                 the selection failure is from that test
+                 alone.
+  TREE:          none. No prototype applied.
+  SPEC:          49404d0901b2cef547b3ac59b154f50a90a1bc53.
+                 D-209; plan rows T-5 and T-6 (Parity
+                 hold; + 3 tests).
+  IMPL:          af4d98c21a185c7fe928671cae42093f0ee77132.
+                 Contract version 3; ci_watch.py;
+                 reference-battery globs; battery.md shard
+                 A lists B15-B17; LazyTrimRail docstring.
+  BASE:          8254d9d24ea34f8f336afabc35bcea77f6f0f7c7.
+                 Baselines on this commit.
+                 pre baseline_pre-T-5.json on
+                 49404d0901b2cef547b3ac59b154f50a90a1bc53,
+                 git.dirty false. Full suite 5395 passed,
+                 0 failed, 44 skipped, 3 xfailed, exit 0.
+                 Determinism 148 passed, exit 0. Parity
+                 constants 64. BASELINE GREEN. Predicted
+                 5395, 0, 44, 3 xfailed; 148; 64. MATCH.
+                 post baseline_post-T-5.json on
+                 af4d98c21a185c7fe928671cae42093f0ee77132,
+                 git.dirty false. The untracked pre JSON
+                 was moved aside for that snapshot and
+                 restored after. Full suite 5398 passed,
+                 0 failed, 44 skipped, 3 xfailed, exit 0.
+                 Determinism 148 passed, exit 0. compare
+                 parity-only: 64 -> 64, changed 0, exit 0.
+                 VERDICT: parity HOLDS. Both captures
+                 printed BASELINE GREEN. Predicted 5398
+                 passed, 0 failed, 44 skipped, 3 xfailed;
+                 determinism 148; 64 -> 64, changed 0.
+                 MATCH. Compare warned tools/exec
+                 fingerprints differ (21dc2d1114e3 ->
+                 c950b6e0b292) because ci_watch.py is only
+                 in the post capture.
+  GATES:         Hot-path profile refreshed before the pre
+                 capture and before the post capture.
+                 1. The two new tests: 3 passed, 1 warning
+                 in 0.26s. Exit 0.
+                 2. ci_watch.py derive: reference 75.09
+                 sigma 0.0382 threshold 81.43 runs 50
+                 groups 13.
+                 3. tests/conformance: 224 passed,
+                 2 xfailed, 1 warning in 694.85s
+                 (0:11:34). Exit 0.
+                 4. Reference-battery globs, stage E:
+                 103 passed, 9 deselected in 262.75s
+                 (0:04:22). Exit 0. Predicted RB0 79
+                 passed plus N 24. MATCH.
+                 5. kill.py. Shard A exit 0, 9 of 9
+                 KILLED: B1, B4, B10, B12, B15, B16, B17,
+                 B18, B19. Shard B exit 0, 10 of 10
+                 KILLED: B2, B3, B5, B6, B7, B8, B9, B11,
+                 B13, B14. CONTROL 0 failures, exit 0.
+                 6. Battery. Production stage C synthetic:
+                 "82 passed, 9 deselected, 1 warning in
+                 530.40s (0:08:50)". Production stage C
+                 real: "12 passed, 85 deselected in
+                 390.76s (0:06:30)". Reference stage E
+                 synthetic: "82 passed, 9 deselected in
+                 295.49s (0:04:55)". Reference stage E
+                 real: "12 passed, 85 deselected in
+                 357.26s (0:05:57)".
+                 7. Universe check: 1 passed in 111.11s
+                 (0:01:51).
+                 8. Prepush: prepush: ok (ruff check,
+                 ruff format, mypy, lint-imports, pytest).
+                 Serial pytest: 5381 passed, 5 skipped,
+                 57 deselected, 2 xfailed, 49 warnings in
+                 1026.60s (0:17:06). pytest -n 4: 5381
+                 passed, 5 skipped, 2 xfailed, 53 warnings
+                 in 490.18s (0:08:10).
+  CI:            pending
+  MERGE:         pending
+  BUGBOT:        pending
+  DEVIATIONS:    none
+  STANDING:      the contract is version 3 from T-5
+                 (D-209)
+  EVIDENCE:      HC-1021a, HC-1021b and T-5 censuses 1 to
+                 5, all at e8a831d7
+  F-T5-1:        CI runs no kill control (ci.yml:529-565
+                 runs kill.py --shard only); destination
+                 T-6.
+  F-T5-2:        tests/conformance/test_doc_integrity.py:24
+                 _DECISION matches only table rows
+                 "| D-n |"; prose entries "D-n — title"
+                 fall outside the uniqueness check
+                 (INFERRED from the pattern); destination
+                 T-6.
+  F-T5-3:        test_doc_integrity.py:26 _RUNG matches
+                 only P- rows; T- and S- rows fall outside
+                 the uniqueness check; destination T-6.
