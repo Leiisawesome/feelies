@@ -605,6 +605,58 @@ reference-battery globs, and the CI watch re-derived (T-5).
     P-99.
     BLAST RADIUS: merge pacing only; no code path reads the threshold.
 
+D-210 — Member 10 authored (P-49). Supersedes D-91 for member 10.
+  - Operator decisions 2026-10-22 (AskUserQuestion), on the P-49 censuses
+    and trial runs 1 and 2 at cf82b576.
+  - Entry refusal (NO_PAYING_PRICE, CROSSED_AT_BIRTH, CUTOFF_ALREADY_PASSED,
+    NO_SCALE_IN) leaves member 10. It is engine 9's (contracts.md §0:26,
+    §6:399-405). The kill runner swaps only the engine and the rail
+    (kill.py:85-93), so no broken engine for it can be killed. P-51, which
+    delivers it, is not the rung that moves stage.txt to D, so the stage
+    hook cannot gate a battery node for it (battery.md:357-364). P-51 tests
+    refusals outside the battery and first decides how a refusal is recorded
+    (F-P49-2).
+  - Clauses. (1) The horizon fires on the first rail event at or past the
+    deadline, by sequence, including when a gap swallowed the deadline and
+    that event's exit side is unusable (contracts.md §2:264-265). (2) A
+    closed cell publishes no snapshot, gate decision, requirement or second
+    close (§2:155). (3) In EXITING at most one requirement is live, and a
+    re-emission follows only a REJECTED ack (§2:157-161; G11, D-106). (4)
+    Every opened cell closes; a cell open or EXITING at tape end closes with
+    END_OF_TAPE after the last replay index (§2:177-183; §8:428-430).
+  - Capability lifecycle, delivered at D by P-50, tags the clause
+    assertions. green_from D. Four synthetic nodes, one per clause, in
+    tests/position_engine/test_battery_m10_lifecycle.py, on one tape. Each
+    NONVACUOUS requires a record only a stage-D engine produces, so at stage
+    C the nodes are accepted reds.
+  - Broken engines, shard B, each killed by its member-10 node: B20 (the
+    horizon fires only when the exit side is usable), B21 (a closed cell
+    publishes one more snapshot), B22 (finalize closes OPEN cells only).
+    B9's tests start with test_m10_one_live_requirement_in_exiting, so
+    member 10 is its named catcher; member 5's nodes still follow.
+  - P-50 moves stage.txt to D (member 4's birth_touch node turns green
+    there); member 10 goes green at P-50; P-51 and P-52 keep it green.
+  - Pin: tests/position_engine/test_kill_runner.py:116 range(1, 20) ->
+    range(1, 23), in its own commit, which is the rung's fail first (as
+    P-39's d19950b5).
+  - Findings: F-P49-1 and F-P49-4 to T-6; F-P49-2 to P-51; F-P49-3 to P-50.
+  - Rejected: merging P-51 into P-50 (a larger rung that still cannot kill a
+    refusal defect); one tag per clause; B9 unchanged; a real-tape node (the
+    kill runner runs no real node).
+  - Prediction (pre-registered): no src change; full suite 5398 -> 5402
+    passed, 0 failed, 44 skipped, 3 xfailed; determinism 148; prepush and CI
+    Tests 5381 -> 5385 passed; parity constants 64 -> 64, changed 0; the
+    capture tools fingerprint unchanged; no pinned literal moves except the
+    registry pin; at stage C the four nodes are accepted reds (NONVACUOUS);
+    on the reference at E they pass; kill.py: A 9/9, B 13/13 with B9 by
+    test_m10_one_live_requirement_in_exiting and B20, B21, B22 by their
+    nodes, CONTROL 0 failures; the battery synthetic lists with the m10 file
+    86 passed, 9 deselected at C and at E; the real lists 12 passed, 85
+    deselected; the CI reference-battery step 103 -> 107 passed.
+  - Trial run: P-49-probe2.diff, SHA256
+    54E5064A30EB8274AEE729ADC2573DFFD3EB1F9C7C9EE86BADC1B05A58736898, 21354
+    bytes, applied byte-identically in the IMPL commit.
+
 ### D-66 pre-registered prediction
 
 ```

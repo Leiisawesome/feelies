@@ -34713,3 +34713,137 @@ OWNER:       campaign 15.
                  run's latest attempt only (:330). A
                  re-derivation under D-209 needs these as
                  parameters. Destination T-6.
+
+## P-49 Member 10 authored
+
+  VERDICT:       passed
+  DECISIONS:     D-210. Operator decisions 2026-10-22
+                 (AskUserQuestion), on the P-49 censuses and
+                 trial runs 1 and 2 at cf82b576.
+  E0:            FAILFIRST
+                 698de1a0f29c175ae1a9a0e8b2244684cf86e8e7.
+                 def test_registry_names_the_mutants() -> None:
+                 >       assert list(REGISTRY) == [f"B{index}" for index in range(1, 23)]
+                 E       AssertionError: assert ['B1', 'B2', ...5', 'B6', ...] == ['B1', 'B2', ...5', 'B6', ...]
+                 E         Right contains 3 more items, first extra item: 'B20'
+                 E         Use -v to get more diff
+                 tests\position_engine\test_kill_runner.py:116: AssertionError
+                 FAILED tests/position_engine/test_kill_runner.py::test_registry_names_the_mutants
+                 1 failed, 7 passed, 1 warning in 8.40s.
+                 B9 KILLED by tests/position_engine/test_battery_m10_lifecycle.py::test_m10_one_live_requirement_in_exiting: CAP:lifecycle: SYN|sig_position_fixture_v1|1774533630100000000|LONG requirement SYN|sig_position_fixture_v1|1774533630100000000|LONG|EXIT|2 is live while SYN|si
+                 B20 KILLED by tests/position_engine/test_battery_m10_lifecycle.py::test_m10_horizon_fires_on_first_event_past_deadline: CAP:lifecycle: SYN|sig_position_fixture_v1|1774533630100000000|LONG HORIZON requirement at rail 1558, first rail at or after the deadline is 1557
+                 B21 KILLED by tests/position_engine/test_battery_m10_lifecycle.py::test_m10_closed_cell_is_deaf: CAP:lifecycle: SYN|sig_position_fixture_v1|1774533630100000000|LONG PositionSnapshot after PositionClosed
+                 B22 KILLED by tests/position_engine/test_battery_m10_lifecycle.py::test_m10_every_opened_cell_closes: CAP:lifecycle: SYN|sig_position_fixture_v1|1774533690100000000|SHORT has 0 PositionClosed
+                 10:NONVACUOUS: no HORIZON requirement for SYN|sig_position_fixture_v1|1774533630100000000|LONG
+                 10:NONVACUOUS: no HORIZON close
+                 10:NONVACUOUS: no requirement with a rail while EXITING
+                 10:NONVACUOUS: no requirement whose cell has no exit fill by tape end
+  TREE:          P-49-probe2.diff SHA256
+                 54E5064A30EB8274AEE729ADC2573DFFD3EB1F9C7C9EE86BADC1B05A58736898,
+                 applied byte-identically (IMPL).
+  SPEC:          d32a4e0a178406dc71045ffe96cc8ec7780c51f5.
+                 D-210; member 10's spec and the plan rows.
+  PIN:           698de1a0f29c175ae1a9a0e8b2244684cf86e8e7.
+                 test_kill_runner.py:116 range(1, 20) ->
+                 range(1, 23).
+  IMPL:          e42ab6d5641240bbd9880e009cdd24eaa3d92912.
+                 Four nodes, lifecycle at D, B20-B22; member
+                 10 catches B9.
+  BASE:          55e56f121cd211583bba494055042e0e38486daa.
+                 Baselines on this commit. pre
+                 baseline_pre-P-49.json on
+                 d32a4e0a178406dc71045ffe96cc8ec7780c51f5,
+                 git.dirty false. Full suite 5398 passed, 0
+                 failed, 44 skipped, 3 xfailed, exit 0.
+                 Determinism 148 passed, exit 0. Parity
+                 constants 64. BASELINE GREEN. Predicted
+                 5398, 0, 44, 3 xfailed; 148; 64. MATCH.
+                 post baseline_post-P-49.json on
+                 e42ab6d5641240bbd9880e009cdd24eaa3d92912,
+                 git.dirty false. The untracked pre JSON was
+                 moved aside for that snapshot and restored
+                 after. Full suite 5402 passed, 0 failed, 44
+                 skipped, 3 xfailed, exit 0. Determinism 148
+                 passed, exit 0. compare parity-only: 64 ->
+                 64, changed 0, exit 0. VERDICT: parity
+                 HOLDS. Both captures printed BASELINE
+                 GREEN. tools_fingerprint
+                 c950b6e0b292e86a05c169e4c8dc2b4f17e1ca96b917f7b3d44c465d41b3fd73,
+                 files 4, in both. Predicted 5402 passed, 0
+                 failed, 44 skipped, 3 xfailed; determinism
+                 148; 64 -> 64, changed 0; fingerprint
+                 unchanged. MATCH.
+  GATES:         Hot-path profile refreshed before the pre
+                 capture and before the post capture.
+                 1. test_kill_runner.py: 8 passed, 1 warning
+                 in 7.97s. Exit 0.
+                 2. Member 10 at stage C: 4 passed, 1
+                 warning in 1.98s. Exit 0. Accepted reds are
+                 the four NONVACUOUS lines in E0.
+                 3. Member 10 on the reference at stage E: 4
+                 passed, 1 warning in 1.40s. Exit 0.
+                 battery_red count 0.
+                 4. kill.py. Shard A exit 0, 9 of 9 KILLED:
+                 B1, B4, B10, B12, B15, B16, B17, B18, B19.
+                 Shard B exit 0, 13 of 13 KILLED: B2, B3,
+                 B5, B6, B7, B8, B9, B11, B13, B14, B20,
+                 B21, B22. B9 by
+                 test_m10_one_live_requirement_in_exiting;
+                 B20, B21, B22 by their nodes. CONTROL 0
+                 failures, exit 0.
+                 5. Battery. Production stage C synthetic:
+                 86 passed, 9 deselected, 1 warning in
+                 526.46s (0:08:46). Reference stage E
+                 synthetic: 86 passed, 9 deselected, 1
+                 warning in 348.33s (0:05:48). Production
+                 stage C real: 12 passed, 85 deselected, 1
+                 warning in 492.97s (0:08:12). Reference
+                 stage E real: 12 passed, 85 deselected, 1
+                 warning in 538.21s (0:08:58). All exit 0.
+                 6. CI reference-battery globs at stage E,
+                 files sorted ordinally: 107 passed, 9
+                 deselected in 402.86s (0:06:42). Exit 0.
+                 7. tests/conformance: 224 passed, 2
+                 xfailed, 1 warning in 663.11s (0:11:03).
+                 Exit 0.
+                 8. Universe check: 1 passed in 193.54s
+                 (0:03:13). Exit 0.
+                 9. Prepush: prepush: ok (ruff check, ruff
+                 format, mypy, lint-imports, pytest). Serial
+                 pytest: 5385 passed, 5 skipped, 57
+                 deselected, 2 xfailed, 49 warnings in
+                 1415.53s (0:23:35). pytest -n 4: 5385
+                 passed, 5 skipped, 2 xfailed, 53 warnings
+                 in 690.26s (0:11:30). Both exit 0.
+  CI:            pending
+  MERGE:         pending
+  BUGBOT:        pending
+  DEVIATIONS:    none
+  STANDING:      the contract is version 3 (T-5, D-209);
+                 stage C; member 10 authored (D-210)
+  EVIDENCE:      P-49 censuses 1 to 4 and trial runs 1 and
+                 2, all at cf82b576
+  F-P49-1:       tools/exec/baseline.py:86 fingerprints
+                 every *.py under tools/exec, so adding a
+                 tool the capture does not run trips the X0
+                 D2 warning (T-5: 21dc2d1114e3 ->
+                 c950b6e0b292, ci_watch.py). Destination
+                 T-6.
+  F-P49-2:       contracts.md §6:399-403 says a refusal has
+                 "a recorded reason";
+                 src/feelies/core/events.py has no refusal
+                 type. Destination P-51, which decides the
+                 record first.
+  F-P49-3:       contracts.md §2:202 sets
+                 horizon_deadline_ns = min(birth_fill_ts +
+                 T, session_close_ns -
+                 cutoff_before_close_ns); §9:455 (D-45) and
+                 reference/engine.py:332 use birth_fill_ts +
+                 T. Destination P-50.
+  F-P49-4:       the local battery gate commands (LEDGER ##
+                 P-39c GATES) list files by hand; they omit
+                 test_reference_rail.py and
+                 test_reference_import_boundary.py, and P-49
+                 added test_battery_m10_lifecycle.py by
+                 hand. Destination T-6 (globs, as ci.yml
+                 since T-5).

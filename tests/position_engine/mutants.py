@@ -1040,6 +1040,78 @@ class SameStampRail(ReferenceRail):
         )
 
 
+class HorizonNeedsUsable(PositionEngine):
+    """B20. The HORIZON path is added only when the exit side is usable.
+
+    Battery row: member 10.
+    Diff against PositionEngine._resolve, before the reference resolve,
+    when the rail is at or past the deadline and the exit side is not usable:
+        cell.deadline_ns = rail.event_timestamp_ns + 1
+    The deadline is restored after the call.
+    """
+
+    def _resolve(
+        self,
+        cell: Cell,
+        rail: MarkRailUpdate,
+        orient: RailOrientation,
+        adverse: Decision,
+        favorable: Decision,
+    ) -> None:
+        saved = cell.deadline_ns
+        if rail.event_timestamp_ns >= cell.deadline_ns and not ref._exit_side_usable(orient):
+            cell.deadline_ns = rail.event_timestamp_ns + 1
+        try:
+            super()._resolve(cell, rail, orient, adverse, favorable)
+        finally:
+            cell.deadline_ns = saved
+
+
+class TalksAfterClose(PositionEngine):
+    """B21. After a cell closes, it publishes one more PositionSnapshot.
+
+    Battery row: member 10.
+    Diff against PositionEngine._emit_close, after the reference close:
+        remember the cell
+    Diff against PositionEngine._on_mark_rail, after the reference step:
+        on that symbol's next rail event, publish one PositionSnapshot
+    """
+
+    def _emit_close(self, cell: Cell, timestamp_ns: int, correlation_id: str) -> None:
+        super()._emit_close(cell, timestamp_ns, correlation_id)
+        self._closed_talk = cell
+
+    def _on_mark_rail(self, event: MarkRailUpdate) -> None:
+        super()._on_mark_rail(event)
+        cell = getattr(self, "_closed_talk", None)
+        if cell is None or cell.symbol != event.symbol:
+            return
+        self._closed_talk = None
+        orient = ref._orientation(cell, event)
+        self._publish_snapshot(cell, event, orient, None, None, None)
+
+
+class EndSkipsExiting(PositionEngine):
+    """B22. finalize closes OPEN cells only; EXITING cells stay open.
+
+    Battery row: member 10.
+    Diff against PositionEngine.finalize:
+        - pending = sorted(self._open.values(), key=lambda cell: cell.cell_id)
+        + pending = sorted(
+        +     (cell for cell in self._open.values() if cell.state == "OPEN"),
+        +     key=lambda cell: cell.cell_id,
+        + )
+    """
+
+    def finalize(self) -> None:
+        pending = sorted(
+            (cell for cell in self._open.values() if cell.state == "OPEN"),
+            key=lambda cell: cell.cell_id,
+        )
+        for cell in pending:
+            self._close_end(cell)
+
+
 REGISTRY: dict[str, Mutant] = {
     "B1": Mutant("B1", "rail", f"{__name__}.MidRail", (_M4,), "assert", "A"),
     "B2": Mutant("B2", "engine", f"{__name__}.FavorableWins", _M5, "exit reason", "B"),
@@ -1076,7 +1148,11 @@ REGISTRY: dict[str, Mutant] = {
         "B9",
         "engine",
         f"{__name__}.DoubleRequirement",
-        _M5,
+        (
+            "tests/position_engine/test_battery_m10_lifecycle.py"
+            "::test_m10_one_live_requirement_in_exiting",
+            *_M5,
+        ),
         "requirement re-emitted without REJECTED",
         "B",
     ),
@@ -1176,5 +1252,35 @@ REGISTRY: dict[str, Mutant] = {
         ),
         "CAP:dwell_window:",
         "A",
+    ),
+    "B20": Mutant(
+        "B20",
+        "engine",
+        f"{__name__}.HorizonNeedsUsable",
+        (
+            "tests/position_engine/test_battery_m10_lifecycle.py"
+            "::test_m10_horizon_fires_on_first_event_past_deadline",
+        ),
+        "CAP:lifecycle:",
+        "B",
+    ),
+    "B21": Mutant(
+        "B21",
+        "engine",
+        f"{__name__}.TalksAfterClose",
+        ("tests/position_engine/test_battery_m10_lifecycle.py::test_m10_closed_cell_is_deaf",),
+        "CAP:lifecycle:",
+        "B",
+    ),
+    "B22": Mutant(
+        "B22",
+        "engine",
+        f"{__name__}.EndSkipsExiting",
+        (
+            "tests/position_engine/test_battery_m10_lifecycle.py"
+            "::test_m10_every_opened_cell_closes",
+        ),
+        "CAP:lifecycle:",
+        "B",
     ),
 }

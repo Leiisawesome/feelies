@@ -17,6 +17,7 @@ CAPABILITIES: dict[str, str] = {
     "rail_carry": "C",
     "birth_move": "B",
     "birth_touch": "D",
+    "lifecycle": "D",
     "favorable_fire": "E",
     "conservation": "E",
     "exit_accounting": "E",
