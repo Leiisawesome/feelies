@@ -304,12 +304,17 @@ BLOCKS THE BUILD:  no
 
 ```
 MEMBER:            10 Lifecycle
-                   deferred (D-91); authored in P-49 (P-29).
-ASSERTS:           entry refusal with the correct reason for no paying price, crossed at
-                   birth, cutoff passed, scale-in; the horizon fires on the first rail event
-                   at or past the deadline, by sequence, including when a gap swallowed the
-                   deadline; no state change and no requirement after CLOSED; no second
-                   requirement in EXITING; every opened cell closes (END_OF_TAPE counted)
+                   authored in P-49 (D-210; D-91 deferred it). green_from D; one node
+                   per clause in test_battery_m10_lifecycle.py; it catches B9, B20, B21
+                   and B22. Entry refusal is engine 9's (contracts.md §6) and is tested
+                   at P-51, outside the battery (D-210).
+ASSERTS:           the horizon fires on the first rail event at or past the deadline, by
+                   sequence, including when a gap swallowed the deadline and that event's
+                   exit side is unusable; a closed cell publishes no snapshot, gate
+                   decision, requirement or second close; in EXITING at most one
+                   requirement is live, and a re-emission follows only a REJECTED ack;
+                   every opened cell closes, and a cell open or EXITING at tape end closes
+                   with END_OF_TAPE
 BLOCKS THE BUILD:  no
 ```
 
@@ -372,6 +377,7 @@ violation is reported and is not repaired by editing `green_from`.
 | rail_carry | C | ages, held prices and absence spans carried between quotes (contracts.md:91-93); member 9 (D-201) |
 | birth_move | B | contracts.md:258 recompute moves, delivered by the P-30 step (D-195); "move_now_cents = sign × (valuation_mark_cents × size − entry_cost_cents)" |
 | birth_touch | D | battery.md member 4: "the first move_now_cents … = −entry_spread_ticks × size exactly for a MARKET entry filled at the touch"; the frozen entry spread, P-50 (D-195) |
+| lifecycle | D | battery.md member 10: the horizon on the first rail event at or past the deadline, CLOSED absorbing, one live requirement in EXITING, every opened cell closes (contracts.md §2:148-183, §2:264-265); plan row P-50 (D-210) |
 | favorable_fire | E | battery.md member 2 dwell clause: "The decision at that quote is outcome fire"; plan row P-61 |
 | conservation | E | battery.md member 3: "share exiting favorable first = d / (u + d)"; plan stage E |
 | exit_accounting | E | battery.md member 6: exit legs pair with the fill acks; plan rows P-60 and P-61 |
@@ -405,7 +411,7 @@ and by the named member. A broken engine nothing catches is a hole in the suite.
 | B6 | best-so-far seeded at zero | 11 |
 | B7 | adverse gate skips when a side is absent | 6 or 8 |
 | B8 | the cell's clean peak reads the raw NBBOQuote instead of the rail on an unusable event | 6 (A2 on the V5 construction) |
-| B9 | second requirement emitted while EXITING | 5 or 10 |
+| B9 | second requirement emitted while EXITING | 10 (`test_m10_one_live_requirement_in_exiting`), or 5 |
 | B10 | the resolve phase publishes a second PositionSnapshot for the same (cell_id, rail_sequence) | 1 (immutability clause) |
 | B11 | window trimmed lazily (on read, not in the step) | 2 (D > 0 clause) |
 | B12 | sink write dropped | 1 (`test_m1_sinks_syn`) |
@@ -416,6 +422,9 @@ and by the named member. A broken engine nothing catches is a hole in the suite.
 | B17 | absent-for measured from the previous quote, not from the last present one | 9 (absent-for clause) |
 | B18 | the dwell window reads quotes stamped after t | 2 (upper edge, D-206) |
 | B19 | at D = 0 the dwell window keeps earlier quotes stamped at t | 2 (D = 0, D-41) |
+| B20 | the horizon fires only when the exit side is usable | 10 (horizon clause) |
+| B21 | a closed cell publishes one more PositionSnapshot | 10 (closed clause) |
+| B22 | finalize closes OPEN cells only; EXITING cells stay open | 10 (every-cell-closes clause) |
 
 ## Kill runner
 
@@ -446,9 +455,9 @@ B4's selection is `test_m1_fresh_syn`. The in-process clock test freezes
 `time.monotonic` for its second run; with this mutant that run does not finish
 inside the 240 s limit, and a TIMEOUT is not a kill. The fresh process compares
 two real clocks and fails `fresh records differ`.
-| B | B2, B3, B5, B6, B7, B8, B9, B11, B13, B14 | 2.1 + 1.3 + 1.6 + 1.7 + 2.1 + 2.2 + 2.1 + 1.2 = 14.3 | 25.3 |
+| B | B2, B3, B5, B6, B7, B8, B9, B11, B13, B14, B20, B21, B22 | 2.1 + 1.3 + 1.6 + 1.7 + 2.1 + 2.2 + 2.1 + 1.2 = 14.3 | 25.3 |
 
-B12–B17 are on these shards: B12 and B15–B17 on A, B13 and B14 on B. Their walls were not remeasured; the P-22b sums above do not include them. B18 and B19 (P-40c) are on shard A; their walls were not measured. Shard membership is Mutant.shard in tests/position_engine/mutants.py.
+B12–B17 are on these shards: B12 and B15–B17 on A, B13 and B14 on B. Their walls were not remeasured; the P-22b sums above do not include them. B18 and B19 (P-40c) are on shard A; their walls were not measured. Shard membership is Mutant.shard in tests/position_engine/mutants.py. B20–B22 (P-49) are on shard B; the P-49 trial runs measured about 2.3 s each, not included in the sums above.
 
 **Reference rail (P-22a1) and reference engine (P-22a2).** Built only from the contracts
 text (§§0–9), not from §9 alone, with a spec-trace table (D-92). Rail rows land in P-22a1;
@@ -502,6 +511,8 @@ words is not an amendment.
 Amendments already made (carried from v2): member 1 "restart mid-run" replaced by "a fresh
 process" (no state serialisation exists); member 6 injects the feed-gap flag directly (a
 per-name sequence discontinuity can be neither produced nor detected from this feed).
+Member 10's entry-refusal clause moved to engine-9 tests at P-51 (D-210): engine 9 is
+outside the kill runner's seams, and P-51 is not the rung that moves the stage.
 
 ## Running locally
 
