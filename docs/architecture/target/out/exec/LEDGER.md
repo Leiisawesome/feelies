@@ -34815,9 +34815,23 @@ OWNER:       campaign 15.
                  1415.53s (0:23:35). pytest -n 4: 5385
                  passed, 5 skipped, 2 xfailed, 53 warnings
                  in 690.26s (0:11:30). Both exit 0.
-  CI:            pending
-  MERGE:         pending
-  BUGBOT:        pending
+  CI:            PR head 39924048464 pull_request success,
+                 check 868 s, Tests 756.86 s, Determinism
+                 9.81 s, ratio 77.15; reference battery
+                 107 passed, 9 deselected in 352.99s
+                 (0:05:52); mutant kill A 9 KILLED, B 13
+                 KILLED. Merge 39926300950 pull_request
+                 success, check 554 s, Tests 477.94 s,
+                 Determinism 6.43 s, ratio 74.33. Two-run
+                 geometric mean 75.73; D-209 fired no.
+  MERGE:         43edd2cf17c4b8d21eedb9a745e5f4544f265f19,
+                 parents
+                 cf82b576d35f2cfe5017430818a4a86fa84af745
+                 and
+                 fa247e34c7b08ff6091edff120966064150125cd,
+                 tree 4a23f034 = PR head. PR #296.
+                 Operator go 2026-10-23 (AskUserQuestion).
+  BUGBOT:        completed, no findings.
   DEVIATIONS:    none
   STANDING:      the contract is version 3 (T-5, D-209);
                  stage C; member 10 authored (D-210)
