@@ -34959,9 +34959,24 @@ OWNER:       campaign 15.
                  924.97s (0:15:24). pytest -n 4: 5389
                  passed, 5 skipped, 2 xfailed, 53 warnings
                  in 487.75s (0:08:07). Both exit 0.
-  CI:            pending
-  MERGE:         pending
-  BUGBOT:        pending
+  CI:            PR head 40064624919 pull_request success,
+                 check 948 s, Tests 834.24 s, Determinism
+                 12.05 s, ratio 69.23; reference battery 107
+                 passed, 9 deselected in 347.79s (0:05:47);
+                 mutant kill A 9 KILLED, CONTROL 0 failures,
+                 282 s; B 13 KILLED, CONTROL 0 failures, 121
+                 s. Merge 40065885651 pull_request success,
+                 check 932 s, Tests 817.80 s, Determinism
+                 11.04 s, ratio 74.08. Two-run geometric
+                 mean 71.61; D-209 fired no.
+  MERGE:         2cca55236b687712eb505aa15b947d7ae4d29fa7,
+                 parents
+                 d9efc8768c4dca26614ba09309c05811f06b4192
+                 and
+                 9ecaf215d2f5ba79f9c3e094cbf9e40a6f9d08e2,
+                 tree cae4fdbe = PR head. PR #297. Operator
+                 go 2026-10-24 (AskUserQuestion).
+  BUGBOT:        completed, no findings.
   DEVIATIONS:    the first post snapshot recorded
                  git.dirty true (porcelain
                  ?? baseline_post-T-6a.json). It was moved
