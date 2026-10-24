@@ -1,9 +1,11 @@
 """Features over true event-time horizon windows.
 
 Per-symbol state uses a timestamped deque and Welford moments. ``observe``
-evicts against reading time; ``finalize`` evicts again against the boundary so
-silent sensors age correctly. Reducers are ``last``, ``mean``, ``sum``, ``rms``,
-``zscore``, Hazen ``percentile``, and ``delta``. Processing is deterministic.
+evicts against reading time, or against the oldest unfinalised boundary when
+one is bound, so a later crossing event cannot drop samples that boundary
+still needs. ``finalize`` evicts again against the boundary so silent sensors
+age correctly. Reducers are ``last``, ``mean``, ``sum``, ``rms``, ``zscore``,
+Hazen ``percentile``, and ``delta``. Processing is deterministic.
 """
 
 from __future__ import annotations
@@ -231,12 +233,24 @@ class HorizonWindowedFeature:
         win: deque[tuple[int, float]] = state["win"]
         win.append((ts, x))
         self._welford_add(state, x)
-        # Primary (time) eviction anchored at the reading ts.
-        self._evict_before(state, ts - self._window_ns)
-        # Safety count cap — only bites pathological bursts.
-        while len(win) > self._max_samples:
-            _ts, x_old = win.popleft()
-            self._welford_remove(state, x_old)
+        # A bound anchor is the oldest unfinalised boundary. Evicting at the
+        # crossing event would drop samples that boundary still includes.
+        raw_anchor = state.get("_retain_boundary_ns")
+        anchor = raw_anchor if isinstance(raw_anchor, int) else None
+        retain = anchor is not None and anchor < ts
+        cutoff_base = anchor if retain and anchor is not None else ts
+        cutoff = cutoff_base - self._window_ns
+        self._evict_before(state, cutoff)
+        # Safety count cap — only bites pathological bursts. While a boundary
+        # is unfinalised, do not drop samples that boundary still includes.
+        if retain:
+            while len(win) > self._max_samples and win[0][0] < cutoff:
+                _ts, x_old = win.popleft()
+                self._welford_remove(state, x_old)
+        else:
+            while len(win) > self._max_samples:
+                _ts, x_old = win.popleft()
+                self._welford_remove(state, x_old)
 
     def finalize(
         self,
@@ -252,26 +266,21 @@ class HorizonWindowedFeature:
         self._evict_before(state, asof_ns - self._window_ns)
         win: deque[tuple[int, float]] = state["win"]
         reducer = self._reducer
-
-        if any(ts > asof_ns for ts, _x in win):
-            live = [(ts, x) for ts, x in win if ts <= asof_ns]
-            n = len(live)
-            if n > 0:
-                mean = sum(x for _ts, x in live) / n
-                m2 = sum((x - mean) ** 2 for _ts, x in live)
-                latest = live[-1][1]
-                oldest = live[0][1]
-            else:
-                mean = 0.0
-                m2 = 0.0
-                latest = 0.0
-                oldest = 0.0
+        # One reduction for every boundary: the filtered two-pass moments.
+        # A frozen window and a window that still holds a later sample then
+        # return the same bits for the samples at or before as-of.
+        live = [(ts, x) for ts, x in win if ts <= asof_ns]
+        n = len(live)
+        if n > 0:
+            mean = sum(x for _ts, x in live) / n
+            m2 = sum((x - mean) ** 2 for _ts, x in live)
+            latest = live[-1][1]
+            oldest = live[0][1]
         else:
-            n = state["n"]
-            mean = state["mean"]
-            m2 = state["M2"]
-            latest = win[-1][1] if win else 0.0
-            oldest = win[0][1] if win else 0.0
+            mean = 0.0
+            m2 = 0.0
+            latest = 0.0
+            oldest = 0.0
 
         if n < self._min_samples or not win:
             # Percentile uses 0.5 (neutral prior) during warm-up, matching

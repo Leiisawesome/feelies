@@ -1,0 +1,275 @@
+"""Member 2: no lookahead. Red from stage A until B (D-18)."""
+
+from __future__ import annotations
+
+import importlib
+import json
+import os
+from decimal import Decimal
+
+import pytest
+
+from feelies.core.events import Event, NBBOQuote, PositionSnapshot
+from feelies.core.identifiers import SequenceGenerator
+from feelies.core.quote_quality import classify
+from tests.position_engine.scenarios import (
+    T0,
+    Widened,
+    assert_widened_prefix,
+    decision_cut_indices,
+    decision_trigger_indexes,
+    fixture_variant,
+    nonvacuous,
+    require_entry_fills,
+    rth_replay,
+    run_real,
+    run_real_prefixes,
+    run_synthetic,
+    session_digest,
+)
+from tests.position_engine.tapes import force_class, make_tape, set_quote
+
+_MARK = pytest.mark.battery_member(member=2, green_from="B", red_reason="^NONVACUOUS: ")
+_DWELL = pytest.mark.battery_member(member=2, green_from="E", red_reason="NONVACUOUS")
+_DWELL_RAIL = pytest.mark.battery_member(member=2, green_from="C", red_reason="CAP:dwell_window")
+_REAL = pytest.mark.battery_real
+_SYN_FRACTIONS = (0.20, 0.45, 0.70, 0.90)
+_REAL_FRACTIONS = (0.15, 0.30, 0.45)
+
+
+def _assert_decision_cuts(
+    events: tuple[Event, ...] | list[Event],
+    widened: tuple[Widened, ...],
+    cuts: tuple[int, ...],
+    fractions: tuple[float, ...],
+) -> None:
+    assert list(cuts) == sorted(cuts)
+    assert all(cuts[i] < cuts[i + 1] for i in range(len(cuts) - 1))
+    triggers = decision_trigger_indexes(events, widened)
+    n = len(events)
+    for cut, fraction in zip(cuts, fractions, strict=True):
+        target = int(n * fraction)
+        assert cut in triggers
+        assert cut >= target
+        assert not any(target <= index < cut for index in triggers)
+
+
+@_MARK
+def test_m2_syn() -> None:
+    n = 36000
+    tape = make_tape(seed=11, n=n, symbol="SYN", start_ns=T0, size=1000)
+    full = run_synthetic(tape, symbols=("SYN",))
+    rows = session_digest("syn-11-36000", full.widened)
+    cuts = decision_cut_indices(tape, rows, _SYN_FRACTIONS)
+    print(f"syn cuts {list(cuts)}")
+    _assert_decision_cuts(tape, rows, cuts, _SYN_FRACTIONS)
+    for cut in cuts:
+        truncated = run_synthetic(tape[: cut + 1], symbols=("SYN",))
+        assert_widened_prefix(truncated.widened, rows, tape[cut].sequence)
+    require_entry_fills(full)
+    nonvacuous(full, PositionSnapshot, scenario="m2_syn")
+
+
+def _real() -> None:
+    full = run_real()
+    events = rth_replay()
+    rows = session_digest("real-app-2026-03-26", full.widened)
+    cuts = decision_cut_indices(events, rows, _REAL_FRACTIONS)
+    print(f"real cuts {list(cuts)}")
+    _assert_decision_cuts(events, rows, cuts, _REAL_FRACTIONS)
+    for cut, truncated in zip(cuts, run_real_prefixes(cuts), strict=True):
+        assert_widened_prefix(truncated, rows, events[cut].sequence)
+    require_entry_fills(full)
+    nonvacuous(full, PositionSnapshot, scenario="m2_real")
+
+
+@_MARK
+@_REAL
+def test_m2_real() -> None:
+    _real()
+
+
+def _v3a() -> dict[str, object]:
+    """Horizon 30 so boundary 1 births a LONG. The fill lands on quote sequence 302."""
+    return fixture_variant(
+        horizon_seconds=30,
+        fee_round_trip_ticks=0,
+        T_seconds=16_000,
+        centre_ticks=11,
+        band_ticks=0,
+        lo_ticks=2,
+        target_ticks=4,
+    )
+
+
+@_DWELL
+def test_m2_dwell_favorable_ignores_stale_cross(monkeypatch: pytest.MonkeyPatch) -> None:
+    """D > 0 (D-87). A cross older than t-D does not block the favorable condition at t.
+
+    V3a, seed 11, 420 quotes at 100 ms. Birth fill is quote sequence 302.
+    D = 2 s. The crossed quote is at t - D - 100 ms; t is quote sequence 401.
+    """
+    dwell = 2_000_000_000
+    interval = 100_000_000
+    monkeypatch.setenv("FEELIES_RAIL_DWELL_NS", str(dwell))
+    t_index = 400
+    tape = make_tape(seed=11, n=420, symbol="SYN", start_ns=T0, interval_ns=interval, size=1000)
+    cross_index = t_index - (dwell + interval) // interval
+    birth_ask = int(tape[301].ask * 100)
+    bid = birth_ask + 8
+    shaped = set_quote(
+        force_class(tape, cross_index, "CROSSED"),
+        t_index,
+        bid_cents=bid,
+        ask_cents=bid + 1,
+    )
+    current = shaped[t_index]
+    records = run_synthetic(shaped, symbols=("SYN",), variant=_v3a())
+    require_entry_fills(records)
+    nonvacuous(records, "GateDecision", scenario="m2_dwell")
+    hits = [
+        json.loads(row.canonical[row.canonical.index("{") :])
+        for row in records
+        if row.type_name == "GateDecision"
+    ]
+    matched = [
+        body
+        for body in hits
+        if body.get("gate") == "FAVORABLE" and body.get("rail_sequence") == current.sequence
+    ]
+    assert matched, f"no favorable decision at {current.sequence}"
+    assert any(body.get("outcome") == "fire" for body in matched), (
+        f"CAP:favorable_fire: favorable outcome at {current.sequence} is not fire"
+    )
+    assert not any(body.get("reason") == "DWELL_NOT_CLEAN" for body in matched), (
+        f"CAP:dwell_window: DWELL_NOT_CLEAN at {current.sequence}"
+    )
+
+
+@_DWELL_RAIL
+def test_m2_dwell_window_trims_in_step(monkeypatch: pytest.MonkeyPatch) -> None:
+    dwell = 2_000_000_000
+    interval = 100_000_000
+    monkeypatch.setenv("FEELIES_RAIL_DWELL_NS", str(dwell))
+    t_index = 400
+    tape = make_tape(seed=11, n=420, symbol="SYN", start_ns=T0, interval_ns=interval, size=1000)
+    cross_index = t_index - (dwell + interval) // interval
+    birth_ask = int(tape[301].ask * 100)
+    bid = birth_ask + 8
+    shaped = set_quote(
+        force_class(tape, cross_index, "CROSSED"),
+        t_index,
+        bid_cents=bid,
+        ask_cents=bid + 1,
+    )
+    current = shaped[t_index]
+    records = run_synthetic(shaped, symbols=("SYN",), variant=_v3a())
+    nonvacuous(records, "MarkRailUpdate", scenario="m2_dwell_rail")
+    updates: dict[int, dict[str, object]] = {}
+    for row in records:
+        if row.type_name != "MarkRailUpdate":
+            continue
+        body = json.loads(row.canonical[row.canonical.index("{") :])
+        assert isinstance(body, dict)
+        long = body["long"]
+        short = body["short"]
+        assert isinstance(long, dict) and isinstance(short, dict)
+        sequence = body["quote_sequence"]
+        assert isinstance(sequence, int) and not isinstance(sequence, bool)
+        updates[sequence] = body
+    after_seq = shaped[cross_index + 1].sequence
+    t_seq = current.sequence
+    after = updates.get(after_seq)
+    at_t = updates.get(t_seq)
+    if after is None:
+        raise AssertionError(f"CAP:dwell_window: no rail update at quote {after_seq}")
+    if at_t is None:
+        raise AssertionError(f"CAP:dwell_window: no rail update at quote {t_seq}")
+    for o in ("long", "short"):
+        after_side = after[o]
+        at_side = at_t[o]
+        assert isinstance(after_side, dict) and isinstance(at_side, dict)
+        seq = after_seq
+        assert after_side["dwell_window_clean"] is False, (
+            f"CAP:dwell_window: {o} clean at quote {seq} with the crossed quote in the window"
+        )
+        seq = t_seq
+        assert at_side["dwell_window_clean"] is True, (
+            f"CAP:dwell_window: {o} not clean at t (quote {seq})"
+        )
+
+
+def _direct_rail(monkeypatch: pytest.MonkeyPatch, dwell: int) -> object:
+    """The class named by FEELIES_RAIL, built as bootstrap builds the rail."""
+    monkeypatch.setenv("FEELIES_RAIL_DWELL_NS", str(dwell))
+    path = os.environ.get("FEELIES_RAIL", "").strip() or "feelies.portfolio.mark_rail.MarkRail"
+    module_name, _, attr = path.rpartition(".")
+    cls = getattr(importlib.import_module(module_name), attr)
+    return cls(
+        SequenceGenerator(stream="mark_rail", thread_safe=False),
+        slippage_ticks=0,
+        dwell_ns=dwell,
+    )
+
+
+def _nbbo(sequence: int, exchange_offset: int, bid: str, ask: str) -> NBBOQuote:
+    return NBBOQuote(
+        timestamp_ns=T0 + sequence,
+        correlation_id=f"q-{sequence}",
+        sequence=sequence,
+        symbol="SYN",
+        bid=Decimal(bid),
+        ask=Decimal(ask),
+        bid_size=100,
+        ask_size=100,
+        exchange_timestamp_ns=T0 + exchange_offset,
+    )
+
+
+def _feed(rail: object, quotes: tuple[NBBOQuote, ...]) -> list[object]:
+    return [
+        rail.on_quote(  # type: ignore[attr-defined]
+            quote,
+            quality=classify(quote.bid, quote.ask, quote.bid_size, quote.ask_size),
+        )
+        for quote in quotes
+    ]
+
+
+@_DWELL_RAIL
+def test_m2_window_excludes_quotes_stamped_after_t(monkeypatch: pytest.MonkeyPatch) -> None:
+    updates = _feed(
+        _direct_rail(monkeypatch, 1000),
+        (
+            _nbbo(1, 500, "10.00", "10.05"),
+            _nbbo(2, 900, "9.90", "10.15"),
+            _nbbo(3, 700, "10.00", "10.05"),
+            _nbbo(4, 950, "10.00", "10.05"),
+        ),
+    )
+    at_q3 = updates[2]
+    at_q4 = updates[3]
+    long_q3 = at_q3.long.dwelled_exit_mark_cents  # type: ignore[attr-defined]
+    short_q3 = at_q3.short.dwelled_exit_mark_cents  # type: ignore[attr-defined]
+    long_q4 = at_q4.long.dwelled_exit_mark_cents  # type: ignore[attr-defined]
+    short_q4 = at_q4.short.dwelled_exit_mark_cents  # type: ignore[attr-defined]
+    assert long_q3 == 1000, f"CAP:dwell_window: long dwelled {long_q3} != 1000"
+    assert short_q3 == 1005, f"CAP:dwell_window: short dwelled {short_q3} != 1005"
+    assert long_q4 == 990, f"CAP:dwell_window: long dwelled {long_q4} != 990"
+    assert short_q4 == 1015, f"CAP:dwell_window: short dwelled {short_q4} != 1015"
+
+
+@_DWELL_RAIL
+def test_m2_d0_window_holds_only_the_current_quote(monkeypatch: pytest.MonkeyPatch) -> None:
+    updates = _feed(
+        _direct_rail(monkeypatch, 0),
+        (
+            _nbbo(1, 500, "9.95", "10.10"),
+            _nbbo(2, 500, "10.00", "10.05"),
+        ),
+    )
+    at_q2 = updates[1]
+    long_q2 = at_q2.long.dwelled_exit_mark_cents  # type: ignore[attr-defined]
+    short_q2 = at_q2.short.dwelled_exit_mark_cents  # type: ignore[attr-defined]
+    assert long_q2 == 1000, f"CAP:dwell_window: long dwelled {long_q2} != 1000"
+    assert short_q2 == 1005, f"CAP:dwell_window: short dwelled {short_q2} != 1005"

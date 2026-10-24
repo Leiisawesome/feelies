@@ -45,6 +45,13 @@ from feelies.alpha.signal_layer_module import (
     LoadedSignalLayerModule,
     _CompiledHorizonSignal,
 )
+from feelies.core.exit_policy import (
+    AdversePolicy,
+    ExitPolicy,
+    FavorablePolicy,
+    HorizonPolicy,
+    seconds_to_ns,
+)
 from feelies.core.events import (
     HorizonFeatureSnapshot,
     NBBOQuote,
@@ -206,6 +213,50 @@ def _check_arity(
 
 class AlphaLoadError(Exception):
     """Raised when an .alpha.yaml file fails validation or compilation."""
+
+
+# Closed top-level set (amended P15-b) plus keys the loader already accepts:
+# author, regimes, construct, data_sources, fill_model, story_permission.
+_TOP_LEVEL_KNOWN_KEYS: frozenset[str] = frozenset(
+    {
+        "schema_version",
+        "alpha_id",
+        "version",
+        "description",
+        "hypothesis",
+        "falsification_criteria",
+        "symbols",
+        "parameters",
+        "risk_budget",
+        "features",
+        "signal",
+        "layer",
+        "horizon_seconds",
+        "cost_arithmetic",
+        "regime_gate",
+        "depends_on_sensors",
+        "reads_no_sensor",
+        "depends_on_signals",
+        "structural_actor",
+        "mechanism",
+        "trend_mechanism",
+        "hazard_exit",
+        "session",
+        "promotion",
+        "lifecycle_state",
+        "universe",
+        "factor_neutralization",
+        "safety_exit_policy",
+        "notes",
+        "exit_policy",
+        "author",
+        "regimes",
+        "construct",
+        "data_sources",
+        "fill_model",
+        "story_permission",
+    }
+)
 
 
 # ── AlphaLoader ──────────────────────────────────────────────────────
@@ -420,6 +471,7 @@ class AlphaLoader:
             trend_mechanism=trend_mechanism_block,
             hazard_exit=hazard_exit_block,
             safety_exit_policy=safety_exit_policy_block,
+            exit_policy=self._parse_exit_policy_block(spec.get("exit_policy"), source),
             gate_thresholds_overrides=promotion_overrides,
             lifecycle_cap=lifecycle_cap,
             manifest_hash=manifest_hash,
@@ -548,6 +600,7 @@ class AlphaLoader:
             layer="PORTFOLIO",
             trend_mechanism=trend_mechanism_block,
             hazard_exit=hazard_exit_block,
+            exit_policy=self._parse_exit_policy_block(spec.get("exit_policy"), source),
             gate_thresholds_overrides=promotion_overrides,
             lifecycle_cap=lifecycle_cap,
             manifest_hash=manifest_hash,
@@ -795,6 +848,13 @@ class AlphaLoader:
         if not isinstance(spec, dict):
             raise AlphaLoadError(f"{source}: root must be a YAML mapping")
 
+        unknown_top = sorted(set(spec) - _TOP_LEVEL_KNOWN_KEYS)
+        if unknown_top:
+            raise AlphaLoadError(
+                f"{source}: unknown top-level key(s) {unknown_top}; "
+                f"supported keys are {sorted(_TOP_LEVEL_KNOWN_KEYS)}"
+            )
+
         schema_version = spec.get("schema_version")
         if schema_version is None:
             raise AlphaLoadError(
@@ -956,6 +1016,190 @@ class AlphaLoader:
                 f"See §20.2 of docs/three_layer_architecture.md."
             )
         return dict(block)
+
+    _EXIT_POLICY_KNOWN_KEYS: frozenset[str] = frozenset(
+        {
+            "archetype",
+            "declared_shape",
+            "curve_ref",
+            "fee_round_trip_ticks",
+            "horizon",
+            "adverse",
+            "favorable",
+        }
+    )
+    _EXIT_HORIZON_KEYS: frozenset[str] = frozenset({"T_seconds", "cutoff_before_close_seconds"})
+    _EXIT_ADVERSE_KEYS: frozenset[str] = frozenset(
+        {
+            "centre_ticks",
+            "band_ticks",
+            "lo_ticks",
+            "hi_ticks",
+            "blind_limit_seconds",
+            "crossing_ticks",
+            "premium_bps",
+        }
+    )
+    _EXIT_FAVORABLE_KEYS: frozenset[str] = frozenset(
+        {
+            "form",
+            "target_ticks",
+            "giveback_spread_multiple",
+            "ceiling_ticks",
+            "quiet_limit_seconds",
+        }
+    )
+
+    def _parse_exit_policy_block(self, block: Any, source: str) -> ExitPolicy | None:
+        """Parse the optional ``exit_policy:`` block. Structural only."""
+        if block is None:
+            return None
+        if not isinstance(block, dict):
+            raise AlphaLoadError(
+                f"{source}: 'exit_policy' must be a mapping, got {type(block).__name__}"
+            )
+        self._reject_unknown_keys(block, self._EXIT_POLICY_KNOWN_KEYS, source, "exit_policy")
+        horizon = self._require_mapping(block.get("horizon"), source, "exit_policy.horizon")
+        adverse = self._require_mapping(block.get("adverse"), source, "exit_policy.adverse")
+        favorable = self._require_mapping(block.get("favorable"), source, "exit_policy.favorable")
+        self._reject_unknown_keys(horizon, self._EXIT_HORIZON_KEYS, source, "exit_policy.horizon")
+        self._reject_unknown_keys(adverse, self._EXIT_ADVERSE_KEYS, source, "exit_policy.adverse")
+        self._reject_unknown_keys(
+            favorable, self._EXIT_FAVORABLE_KEYS, source, "exit_policy.favorable"
+        )
+        shape = block.get("declared_shape")
+        if shape is not None and not isinstance(shape, str):
+            raise AlphaLoadError(
+                f"{source}: exit_policy.declared_shape must be a string, got {shape!r}"
+            )
+        curve_ref = block.get("curve_ref")
+        if not isinstance(curve_ref, str):
+            raise AlphaLoadError(
+                f"{source}: exit_policy.curve_ref must be a string, got {curve_ref!r}"
+            )
+        return ExitPolicy(
+            archetype=str(block.get("archetype", "")),
+            declared_shape=shape,
+            curve_ref=curve_ref,
+            fee_round_trip_ticks=self._require_int(
+                block.get("fee_round_trip_ticks"), source, "exit_policy.fee_round_trip_ticks"
+            ),
+            horizon=HorizonPolicy(
+                T_ns=seconds_to_ns(
+                    self._require_int(
+                        horizon.get("T_seconds"), source, "exit_policy.horizon.T_seconds"
+                    )
+                ),
+                cutoff_before_close_ns=seconds_to_ns(
+                    self._require_int(
+                        horizon.get("cutoff_before_close_seconds"),
+                        source,
+                        "exit_policy.horizon.cutoff_before_close_seconds",
+                    )
+                ),
+            ),
+            adverse=AdversePolicy(
+                centre_ticks=self._require_int(
+                    adverse.get("centre_ticks"), source, "exit_policy.adverse.centre_ticks"
+                ),
+                band_ticks=self._require_int(
+                    adverse.get("band_ticks"), source, "exit_policy.adverse.band_ticks"
+                ),
+                lo_ticks=self._require_int(
+                    adverse.get("lo_ticks"), source, "exit_policy.adverse.lo_ticks"
+                ),
+                hi_ticks=self._require_int(
+                    adverse.get("hi_ticks"), source, "exit_policy.adverse.hi_ticks"
+                ),
+                blind_limit_ns=seconds_to_ns(
+                    self._require_int(
+                        adverse.get("blind_limit_seconds"),
+                        source,
+                        "exit_policy.adverse.blind_limit_seconds",
+                    )
+                ),
+                crossing_ticks=(
+                    None
+                    if "crossing_ticks" not in adverse
+                    else self._require_int(
+                        adverse.get("crossing_ticks"), source, "exit_policy.adverse.crossing_ticks"
+                    )
+                ),
+                premium_bps=(
+                    None
+                    if "premium_bps" not in adverse
+                    else self._require_number(
+                        adverse.get("premium_bps"), source, "exit_policy.adverse.premium_bps"
+                    )
+                ),
+            ),
+            favorable=FavorablePolicy(
+                form=str(favorable.get("form", "")),
+                quiet_limit_ns=seconds_to_ns(
+                    self._require_int(
+                        favorable.get("quiet_limit_seconds"),
+                        source,
+                        "exit_policy.favorable.quiet_limit_seconds",
+                    )
+                ),
+                target_ticks=(
+                    None
+                    if "target_ticks" not in favorable
+                    else self._require_int(
+                        favorable.get("target_ticks"), source, "exit_policy.favorable.target_ticks"
+                    )
+                ),
+                giveback_spread_multiple=(
+                    None
+                    if "giveback_spread_multiple" not in favorable
+                    else self._require_number(
+                        favorable.get("giveback_spread_multiple"),
+                        source,
+                        "exit_policy.favorable.giveback_spread_multiple",
+                    )
+                ),
+                ceiling_ticks=(
+                    None
+                    if "ceiling_ticks" not in favorable
+                    else self._require_int(
+                        favorable.get("ceiling_ticks"),
+                        source,
+                        "exit_policy.favorable.ceiling_ticks",
+                    )
+                ),
+            ),
+        )
+
+    @staticmethod
+    def _reject_unknown_keys(
+        block: dict[str, Any], known: frozenset[str], source: str, where: str
+    ) -> None:
+        for key in block:
+            if key not in known:
+                raise AlphaLoadError(
+                    f"{source}: {where} carries unknown key {key!r}; "
+                    f"supported keys are {sorted(known)}"
+                )
+
+    @staticmethod
+    def _require_mapping(value: Any, source: str, where: str) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise AlphaLoadError(
+                f"{source}: '{where}' must be a mapping, got {type(value).__name__}"
+            )
+        return value
+
+    @staticmethod
+    def _require_int(value: Any, source: str, where: str) -> int:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise AlphaLoadError(f"{source}: {where} must be int, got {value!r}")
+        return int(value)
+
+    @staticmethod
+    def _require_number(value: Any, source: str, where: str) -> float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise AlphaLoadError(f"{source}: {where} must be numeric, got {value!r}")
+        return float(value)
 
     _HAZARD_EXIT_KNOWN_KEYS: frozenset[str] = frozenset(
         {

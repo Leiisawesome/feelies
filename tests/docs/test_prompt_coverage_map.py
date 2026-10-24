@@ -32,6 +32,7 @@ _PACKAGE_OWNERS: dict[str, str | None] = {
     "bus": "audit_kernel",
     "core": "audit_core_clock_config",
     "monitoring": "audit_monitoring_safety",
+    "position": "audit_position_engine",
     "harness": "audit_harness_cli",
     "cli": None,  # split: backtest vs promote
 }
@@ -109,6 +110,7 @@ _FILE_OWNERS: dict[str, str] = {
     "portfolio/strategy_position_store.py": "audit_position_management",
     "portfolio/lot_ledger.py": "audit_position_management",
     "portfolio/position_book_view.py": "audit_position_management",
+    "portfolio/mark_rail.py": "audit_position_engine",
     # ── storage/ overrides (PnL fill journal) ───────────────────────
     "storage/trade_journal.py": "audit_position_management",
     "storage/memory_trade_journal.py": "audit_position_management",

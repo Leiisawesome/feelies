@@ -499,42 +499,70 @@ def _boot_to_backtest(orch: Orchestrator) -> None:
 # ── Tests: Boot lifecycle ─────────────────────────────────────────────
 
 
+def _calibration_boot() -> tuple[Orchestrator, _CountingReplayLog, _StubRegimeEngine]:
+    clock = SimulatedClock(start_ns=1000)
+    quotes = tuple(_make_quote(ts=1000 + i, seq=i + 1) for i in range(100))
+    event_log = _CountingReplayLog(quotes)
+    regime_engine = _StubRegimeEngine()
+    orch = Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
+        clock=clock,
+        bus=EventBus(),
+        backend=ExecutionBackend(
+            market_data=_StubMarketData(),
+            order_router=BacktestOrderRouter(clock=clock),
+            mode="BACKTEST",
+        ),
+        risk_engine=_StubRiskEngine(),
+        position_store=MemoryPositionStore(),
+        event_log=event_log,
+        metric_collector=_NoOpMetricCollector(),
+        regime_engine=regime_engine,
+    )
+    return orch, event_log, regime_engine
+
+
 class TestOrchestratorBoot:
     def test_initial_macro_state_is_init(self) -> None:
         clock = SimulatedClock(start_ns=1000)
         orch = _build_orchestrator(clock)
         assert orch.macro_state == MacroState.INIT
 
-    def test_regime_calibration_does_not_scan_suffix_for_total_count(
+    def test_regime_calibration_does_not_scan_the_current_log(
         self,
     ) -> None:
-        clock = SimulatedClock(start_ns=1000)
-        quotes = tuple(_make_quote(ts=1000 + i, seq=i + 1) for i in range(100))
-        event_log = _CountingReplayLog(quotes)
-        regime_engine = _StubRegimeEngine()
-        bt_router = BacktestOrderRouter(clock=clock)
-        backend = ExecutionBackend(
-            market_data=_StubMarketData(),
-            order_router=bt_router,
-            mode="BACKTEST",
-        )
-        orch = Orchestrator(
-            selection_policy=Top1SelectionPolicy(),
-            clock=clock,
-            bus=EventBus(),
-            backend=backend,
-            risk_engine=_StubRiskEngine(),
-            position_store=MemoryPositionStore(),
-            event_log=event_log,
-            metric_collector=_NoOpMetricCollector(),
-            regime_engine=regime_engine,
-        )
+        orch, event_log, regime_engine = _calibration_boot()
         orch._regime_calibration_max_quotes = 3
 
         _calibrate_regime_engine(orch)
 
-        assert regime_engine.calibration_count == 3
-        assert event_log.events_yielded == 3
+        assert regime_engine.calibration_count is None
+        assert event_log.events_yielded == 0
+        assert orch.regime_calibration_provenance == (None, 0)
+
+    def test_regime_calibration_skips_empty_tuple(self) -> None:
+        orch, event_log, regime_engine = _calibration_boot()
+        orch._regime_calibration_max_quotes = 3
+        orch._regime_calibration_quotes = ()
+
+        _calibrate_regime_engine(orch)
+
+        assert regime_engine.calibration_count is None
+        assert event_log.events_yielded == 0
+        assert orch.regime_calibration_provenance == (None, 0)
+
+    def test_regime_calibration_fits_only_the_supplied_tuple(self) -> None:
+        orch, event_log, regime_engine = _calibration_boot()
+        supplied = orch._event_log._events[:2]
+        orch._regime_calibration_max_quotes = 3
+        orch._regime_calibration_quotes = supplied
+        orch._regime_calibration_source_date = "2026-03-25"
+
+        _calibrate_regime_engine(orch)
+
+        assert regime_engine.calibration_count == 2
+        assert event_log.events_yielded == 0
+        assert orch.regime_calibration_provenance == ("2026-03-25", 2)
 
     def test_boot_transitions_to_ready(self) -> None:
         clock = SimulatedClock(start_ns=1000)
@@ -4311,8 +4339,11 @@ class TestHaltModeling:
     def test_halt_suppresses_passive_router_fill_paths(self) -> None:
         """Halt suppression covers passive and deferred-aggressive fills.
 
-        Halt-on cancels resting passive orders and withholds quotes from both
-        paths. After resume, a surviving market order uses the new quote.
+        Original intent: halt-on cancels resting passive orders and withholds
+        quotes from both paths, so a quote inside the halt cannot price the
+        surviving market order. R2-1 prices that fill on the quote prevailing
+        at arrival, the pre-halt submit quote (150.50), once the post-resume
+        quote makes it eligible. The old pin was the resume quote, 150.90.
         """
         from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
 
@@ -4399,9 +4430,9 @@ class TestHaltModeling:
         assert router.poll_acks() == []
         assert position_store.get("AAPL").quantity == 0
 
-        # Resume, then a post-blackout quote reaches the router: the
-        # surviving deferred MARKET fills at THIS quote's cross (150.90),
-        # not at any price from inside the halt window.
+        # Resume, then a post-blackout quote reaches the router. The
+        # surviving deferred MARKET becomes eligible here and fills at the
+        # arrival quote (150.50), not at the halt-window ask.
         orch._process_trade(self._trade(ts=2000, seq=4, conditions=self._HALT_OFF))
         clock.set_time(2500)
         q_after = _make_quote(ts=2500, bid="150.00", ask="150.90", seq=5)
@@ -4411,7 +4442,7 @@ class TestHaltModeling:
 
         fills = [a for a in acks_on_bus if a.status == OrderAckStatus.FILLED]
         assert [a.order_id for a in fills] == ["halt-mkt-1"]
-        assert fills[0].fill_price == Decimal("150.90")
+        assert fills[0].fill_price == Decimal("150.50")
         assert position_store.get("AAPL").quantity == 40
 
 
@@ -4849,3 +4880,57 @@ class TestRiskBudgetIsTheSizingAuthority:
         target = _compute_target_quantity(orch, self._signal(), quote)
         assert target == 6, "sized target was inflated toward min_order_shares"
         assert target < orch._min_order_shares
+
+
+def test_regime_calibration_fits_per_symbol_when_quotes_span_symbols() -> None:
+    """Quotes that span symbols are fitted per symbol, not as one pooled emission."""
+    from feelies.services.regime_engine import HMM3StateFractional
+
+    def _span_quote(symbol: str, seq: int, bid: str, ask: str) -> NBBOQuote:
+        return NBBOQuote(
+            timestamp_ns=seq * 1000,
+            correlation_id=f"{symbol}:{seq}",
+            sequence=seq,
+            symbol=symbol,
+            bid=Decimal(bid),
+            ask=Decimal(ask),
+            bid_size=100,
+            ask_size=100,
+            exchange_timestamp_ns=seq * 1000,
+        )
+
+    quotes: list[NBBOQuote] = []
+    for i in range(40):
+        cents = Decimal("0.01") + Decimal(i % 5) * Decimal("0.01")
+        quotes.append(_span_quote("AAPL", i + 1, "150.00", str(Decimal("150.00") + cents)))
+    for i in range(40):
+        cents = Decimal("0.50") + Decimal(i % 5) * Decimal("0.10")
+        quotes.append(_span_quote("MSFT", 100 + i, "300.00", str(Decimal("300.00") + cents)))
+
+    clock = SimulatedClock(start_ns=1000)
+    engine = HMM3StateFractional()
+    orch = Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
+        clock=clock,
+        bus=EventBus(),
+        backend=ExecutionBackend(
+            market_data=_StubMarketData(),
+            order_router=BacktestOrderRouter(clock=clock),
+            mode="BACKTEST",
+        ),
+        risk_engine=_StubRiskEngine(),
+        position_store=MemoryPositionStore(),
+        event_log=_CountingReplayLog(()),
+        metric_collector=_NoOpMetricCollector(),
+        regime_engine=engine,
+    )
+    orch._regime_calibration_max_quotes = len(quotes)
+    orch._regime_calibration_quotes = tuple(quotes)
+    orch._regime_calibration_source_date = "2026-03-25"
+
+    _calibrate_regime_engine(orch)
+
+    assert engine._per_symbol_calibration is True
+    assert "AAPL" in engine._emission_by_symbol
+    assert "MSFT" in engine._emission_by_symbol
+    assert engine._emission_by_symbol["AAPL"] != engine._emission_by_symbol["MSFT"]

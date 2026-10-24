@@ -14,6 +14,7 @@ cross-sectional standardization belong to downstream layers.
 
 from __future__ import annotations
 
+import copy
 import logging
 import math
 from bisect import bisect_left, bisect_right, insort_right
@@ -23,10 +24,12 @@ from typing import Any, Mapping, Sequence
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
+    BoundaryStateCapture,
     HorizonFeatureSnapshot,
     HorizonTick,
     SensorReading,
 )
+from feelies.features.impl.horizon_windowed import HorizonWindowedFeature
 from feelies.core.identifiers import SequenceGenerator, make_correlation_id
 from feelies.features.protocol import HorizonFeature
 from feelies.monitoring.telemetry import MetricCollector
@@ -130,6 +133,7 @@ class HorizonAggregator:
         "_subscribed",
         "_metric_collector",
         "_metrics_seq",
+        "_boundary_state",
     )
 
     def __init__(
@@ -143,6 +147,7 @@ class HorizonAggregator:
         metric_collector: MetricCollector | None = None,
         known_sensor_ids: frozenset[str] | None = None,
         feature_params: Mapping[str, Mapping[str, Any]] | None = None,
+        boundary_state: BoundaryStateCapture | None = None,
     ) -> None:
         if sensor_buffer_seconds <= 0:
             raise ValueError(f"sensor_buffer_seconds must be > 0, got {sensor_buffer_seconds}")
@@ -237,6 +242,7 @@ class HorizonAggregator:
         self._subscribed = False
 
         # Isolate metric sequences from the snapshot stream.
+        self._boundary_state = boundary_state
         self._metric_collector = metric_collector
         self._metrics_seq: SequenceGenerator | None = (
             SequenceGenerator(stream="aggregator_metrics", thread_safe=True)
@@ -330,6 +336,12 @@ class HorizonAggregator:
                     sorted(version_seen),
                 )
 
+        # Point state is still captured before this event mutates it.
+        # Windowed deques stay live. Eviction is held at the oldest
+        # unfinalised boundary so finalize sees the same samples a copy saw.
+        if self._boundary_state is not None and self._boundary_state.needs_point_state(symbol):
+            self._boundary_state.freeze_point_state(symbol, self._copy_point_state(symbol))
+
         # Dispatch through the precomputed sensor-to-feature index.
         for feature in self._features_by_sensor.get(reading.sensor_id, ()):
             state_key = (feature.feature_id, feature.horizon_seconds, symbol)
@@ -338,11 +350,18 @@ class HorizonAggregator:
                 # Allocate state lazily for symbols added after construction.
                 state = feature.initial_state()
                 self._feature_state[state_key] = state
-            feature.observe(
-                reading,
-                state,
-                params=self._feature_params.get(feature.feature_id, {}),
-            )
+            if isinstance(feature, HorizonWindowedFeature) and self._boundary_state is not None:
+                anchor = self._boundary_state.retention_anchor_ns(symbol, feature.horizon_seconds)
+                if anchor is not None:
+                    state["_retain_boundary_ns"] = anchor
+            try:
+                feature.observe(
+                    reading,
+                    state,
+                    params=self._feature_params.get(feature.feature_id, {}),
+                )
+            finally:
+                state.pop("_retain_boundary_ns", None)
 
     def _on_horizon_tick(self, tick: HorizonTick) -> tuple[HorizonFeatureSnapshot, ...]:
         # Emit each symbol/horizon/boundary once, regardless of tick scope order.
@@ -369,6 +388,24 @@ class HorizonAggregator:
             snapshots.append(snapshot)
         return tuple(snapshots)
 
+    def _copy_point_state(self, symbol: str) -> dict[tuple[str, int], dict[str, Any]]:
+        """Deep-copy non-windowed feature state for *symbol*.
+
+        Windowed deques are omitted: ``finalize`` already drops readings
+        after the boundary as-of. The copy is the passthrough scalars and
+        the bounded rolling windows.
+        """
+        copied: dict[tuple[str, int], dict[str, Any]] = {}
+        for feature in self._features_sorted:
+            if isinstance(feature, HorizonWindowedFeature):
+                continue
+            state_key = (feature.feature_id, feature.horizon_seconds, symbol)
+            state = self._feature_state.get(state_key)
+            if state is None:
+                continue
+            copied[(feature.feature_id, feature.horizon_seconds)] = copy.deepcopy(state)
+        return copied
+
     def _build_snapshot(
         self,
         *,
@@ -379,6 +416,13 @@ class HorizonAggregator:
         warm: dict[str, bool] = {}
         stale: dict[str, bool] = {}
         asof_ns = tick.asof_timestamp_ns
+        prior: dict[tuple[str, int], dict[str, Any]] | None = None
+        if self._boundary_state is not None:
+            prior = self._boundary_state.point_state_for(
+                symbol,
+                tick.horizon_seconds,
+                tick.boundary_index,
+            )
 
         # Visit only this horizon's features in their global stable order.
         for feature in self._features_by_horizon.get(tick.horizon_seconds, ()):
@@ -387,6 +431,12 @@ class HorizonAggregator:
             if state is None:
                 state = feature.initial_state()
                 self._feature_state[state_key] = state
+            feature_key = (feature.feature_id, feature.horizon_seconds)
+            # Windowed features read the live deque. Samples past this
+            # boundary stay in it and are excluded by finalize's as-of filter.
+            if prior is not None and not isinstance(feature, HorizonWindowedFeature):
+                frozen = prior.get(feature_key)
+                state = feature.initial_state() if frozen is None else frozen
             value, w, s = feature.finalize(
                 tick,
                 state,

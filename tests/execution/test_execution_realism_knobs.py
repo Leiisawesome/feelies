@@ -213,10 +213,12 @@ def _buy_limit(order_id: str = "p1") -> OrderRequest:
 
 class TestPassiveThroughFillCap:
     def test_default_fills_whole_order_on_through(self) -> None:
-        router = PassiveLimitOrderRouter(SimulatedClock(start_ns=0), cost_model=ZeroCostModel())
+        clock = SimulatedClock(start_ns=0)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel())
         router.on_quote(_quote())
         router.submit(_buy_limit())
         router.poll_acks()  # drain ACKNOWLEDGED
+        clock.set_time(1000)
         # ask gaps through the resting BUY limit (ask 100.04 < limit 100.05).
         router.on_quote(_quote(ask="100.04", ask_size=30, ts=2000, seq=2))
         acks = router.poll_acks()
@@ -224,14 +226,16 @@ class TestPassiveThroughFillCap:
         assert acks[0].filled_quantity == 100
 
     def test_cap_partial_fills_and_rests_remainder(self) -> None:
+        clock = SimulatedClock(start_ns=0)
         router = PassiveLimitOrderRouter(
-            SimulatedClock(start_ns=0),
+            clock,
             cost_model=ZeroCostModel(),
             through_fill_size_cap_enabled=True,
         )
         router.on_quote(_quote())
         router.submit(_buy_limit())
         router.poll_acks()
+        clock.set_time(1000)
         router.on_quote(_quote(ask="100.04", ask_size=30, ts=2000, seq=2))
         acks = router.poll_acks()
         assert [a.status for a in acks] == [OrderAckStatus.PARTIALLY_FILLED]
@@ -254,6 +258,7 @@ class TestVolumeGatedLevelFill:
         router.on_quote(_quote(bid="100.05", bid_size=50, ask="100.10", ask_size=5000, ts=1000))
         router.submit(_buy_limit())
         router.poll_acks()
+        router._clock.set_time(1000)
         out: list = []
         for k in range(2, 25):
             ts = k * 1000

@@ -17,6 +17,7 @@ from feelies.harness.backtest_prep import (
 from feelies.harness.backtest_report import (
     compute_combined_parity_hash,
     compute_config_hash,
+    compute_economic_trade_hash,
     compute_parity_hash,
     format_section,
     generate_report,
@@ -41,6 +42,7 @@ __all__ = [
     "apply_backtest_cli_overrides",
     "compute_combined_parity_hash",
     "compute_config_hash",
+    "compute_economic_trade_hash",
     "compute_parity_hash",
     "emit_signals_jsonl",
     "format_section",

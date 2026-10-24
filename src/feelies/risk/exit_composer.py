@@ -58,6 +58,7 @@ from enum import Enum, auto
 from typing import Mapping, Protocol
 
 from feelies.bus.event_bus import EventBus
+from feelies.core.clock import Clock
 from feelies.core.events import (
     DeRiskRequirement,
     SafetyReason,
@@ -258,6 +259,7 @@ class ExitComposer:
         # Suppresses a re-fire against a slice already flattened this episode; a
         # quantity change (partial fill) or a new episode releases it.
         "_pending_exit",
+        "_clock",
     )
 
     def __init__(
@@ -267,10 +269,12 @@ class ExitComposer:
         sequence_generator: SequenceGenerator,
         position_store: _StrategyPositionStore,
         policies: Mapping[str, ExitComposerPolicy] | None = None,
+        clock: Clock | None = None,
     ) -> None:
         self._bus = bus
         self._seq = sequence_generator
         self._position_store = position_store
+        self._clock = clock
         self._policies: dict[str, ExitComposerPolicy] = dict(policies or {})
         self._attached = False
         self._pending_exit: dict[tuple[str, str], tuple[int | None, int]] = {}
@@ -482,7 +486,7 @@ class ExitComposer:
         order_id = derive_order_id(id_seed)
 
         req = DeRiskRequirement(
-            timestamp_ns=timestamp_ns,
+            timestamp_ns=self._clock.now_ns() if self._clock is not None else timestamp_ns,
             correlation_id=correlation_id,
             sequence=self._seq.next(),
             source_layer=EXIT_COMPOSER_SOURCE_LAYER,

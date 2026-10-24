@@ -1,7 +1,7 @@
 """Single-pass backtest event-log preparation.
 
-Combines RTH filtering, ingest counts, session metadata, corporate-action
-spans, and regime-calibration quotes in one replay scan.
+Combines RTH filtering, ingest counts, session metadata, and corporate-action
+spans in one replay scan. Regime calibration quotes come from the prior session.
 """
 
 from __future__ import annotations
@@ -146,9 +146,11 @@ def prepare_backtest_event_log(
     config: PlatformConfig,
     event_log: InMemoryEventLog,
 ) -> BacktestEventLogPrep:
-    """Single pass: optional RTH filter + counts + spans + calibration prefix."""
+    """Single pass: optional RTH filter + counts + spans.
+
+    The replayed session is not harvested into ``regime_calibration_quotes``.
+    """
     filter_rth = config.session_kind == "RTH"
-    max_cal = config.regime_calibration_max_quotes
 
     kept: list[Event] = []
     first_ts: int | None = None
@@ -156,7 +158,6 @@ def prepare_backtest_event_log(
     n_trades = 0
     rth_dropped = 0
     spans_ns: dict[str, tuple[int, int]] = {}
-    cal_quotes: list[NBBOQuote] = []
 
     for ev in event_log.replay():
         if filter_rth:
@@ -172,8 +173,6 @@ def prepare_backtest_event_log(
         if isinstance(ev, NBBOQuote):
             n_quotes += 1
             _update_calendar_span(spans_ns, ev.symbol, ev.exchange_timestamp_ns)
-            if max_cal is not None and len(cal_quotes) < max_cal:
-                cal_quotes.append(ev)
         elif isinstance(ev, Trade):
             n_trades += 1
             _update_calendar_span(spans_ns, ev.symbol, ev.exchange_timestamp_ns)
@@ -200,5 +199,5 @@ def prepare_backtest_event_log(
         n_trades=n_trades,
         rth_dropped=rth_dropped,
         calendar_spans=calendar_spans,
-        regime_calibration_quotes=tuple(cal_quotes) if max_cal is not None else None,
+        regime_calibration_quotes=None,
     )
