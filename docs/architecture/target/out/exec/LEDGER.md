@@ -34993,3 +34993,150 @@ OWNER:       campaign 15.
                  script tests -ceq 'first', so -Attempt
                  First is accepted and selects the latest
                  attempt. Destination T-6b.
+
+## T-6b The capture fingerprint covers baseline.py alone
+
+  VERDICT:       passed
+  DECISIONS:     D-212
+  E0:            FAILFIRST
+                 dfb9eadabe65622a95a342e49ad91a9235b00547.
+                 >       assert baseline.tools_fingerprint() == before
+                 E       AssertionError: assert {'files': 2, ...818f1b2f50f5'} == {'files': 1, ...e27ebc14c608'}
+                 tests\conformance\test_capture_fingerprint.py:30: AssertionError
+                 E       AssertionError:     [ValidateSet('latest', 'first')][string]$Attempt = 'latest',
+                 E       assert None
+                 tests\conformance\test_ci_watch_extract.py:15: AssertionError
+                 FAILED tests/conformance/test_capture_fingerprint.py::test_unrun_tool_leaves_fingerprint_unchanged
+                 FAILED tests/conformance/test_ci_watch_extract.py::test_attempt_accepts_only_exact_values
+                 2 failed, 2 passed, 1 warning in 0.47s.
+                 PS=5.1.26100.9444 count=1 IgnoreCase=True ValidValues=latest,first
+  TREE:          T-6b-probe1.diff SHA256
+                 55522e9f88c6295119f454e92be86740804aa8fd99d9cf024e2869b06e5a6313,
+                 4645 bytes, reproduced for the four
+                 files (IMPL).
+  SPEC:          a712808e4c610bf18f06f6f69cec0d58b27bda0c.
+                 D-212 and the T-6b plan row.
+  FAILFIRST:     dfb9eadabe65622a95a342e49ad91a9235b00547.
+                 Fingerprint and -Attempt tests.
+  IMPL:          91bdafff7994bda69bd9552297306dd759924c0b.
+                 The capture fingerprint covers
+                 baseline.py alone; -Attempt takes exact
+                 values.
+  BASE:          6e64e94575907f070d63839150843ee39a515b53.
+                 Baselines on this commit. pre
+                 baseline_pre-T-6b.json on
+                 a712808e4c610bf18f06f6f69cec0d58b27bda0c,
+                 git.dirty false. Full suite 5406 passed, 0
+                 failed, 44 skipped, 3 xfailed, exit 0.
+                 Determinism 148 passed, exit 0. Parity
+                 constants 64. BASELINE GREEN.
+                 tools_fingerprint
+                 c950b6e0b292e86a05c169e4c8dc2b4f17e1ca96b917f7b3d44c465d41b3fd73,
+                 files 4. Evidence: alphaleak n 0;
+                 available true; imports n_cycles 1,
+                 n_edges 713, n_modules 208; modules
+                 public_symbols 626, total_files 257,
+                 total_sloc 49749. Predicted 5406 passed,
+                 0 failed, 44 skipped, 3 xfailed;
+                 determinism 148; parity 64; fingerprint
+                 c950b6e0 files 4. MATCH. post
+                 baseline_post-T-6b.json on
+                 91bdafff7994bda69bd9552297306dd759924c0b,
+                 git.dirty false. The untracked pre JSON
+                 was moved aside for that snapshot and
+                 restored after. Full suite 5410 passed, 0
+                 failed, 44 skipped, 3 xfailed, exit 0.
+                 Determinism 148 passed, exit 0. compare
+                 parity-only, exit 0: constants 64 -> 64,
+                 changed 0. VERDICT: parity HOLDS -- no
+                 constant moved. WARNING: captures taken
+                 by different tools/exec versions
+                 (c950b6e0b292 -> 261f203f547c) -- a hold
+                 over a changed constant set is not
+                 evidence (X0 D2). Re-capture both with
+                 the frozen oracle before trusting this
+                 comparison. tools_fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. Evidence: alphaleak n 0;
+                 available true; imports n_cycles 1,
+                 n_edges 713, n_modules 208; modules
+                 public_symbols 626, total_files 257,
+                 total_sloc 49749. Predicted 5410 passed,
+                 0 failed, 44 skipped, 3 xfailed;
+                 determinism 148; 64 -> 64, changed 0;
+                 fingerprint 261f203f, files 1; the X0 D2
+                 warning (c950b6e0b292 -> 261f203f547c).
+                 MATCH.
+  GATES:         Hot-path profile refreshed before the pre
+                 capture and before the retaken post
+                 capture.
+                 1. The two test files: 4 passed, 1
+                 warning in 0.27s. Exit 0.
+                 2. BIND PS=5.1.26100.9444 count=1
+                 IgnoreCase=False ValidValues=latest,first.
+                 ci_watch_extract.ps1 parse errors 0.
+                 Exit 0.
+                 3. tools_fingerprint sha256
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. Exit 0.
+                 4. tests/conformance: 232 passed, 2
+                 xfailed, 1 warning in 423.85s (0:07:03).
+                 Exit 0.
+                 5. ruff check: All checks passed. ruff
+                 format: 808 files already formatted.
+                 mypy: Success: no issues found in 257
+                 source files. lint-imports: 2 kept, 0
+                 broken. All exit 0.
+                 6. Battery. Production stage C synthetic:
+                 107 passed, 9 deselected, 1 warning in
+                 368.89s (0:06:08). Reference stage E
+                 synthetic: 107 passed, 9 deselected, 1
+                 warning in 239.66s (0:03:59). Production
+                 stage C real: 12 passed, 5445 deselected,
+                 1 warning in 519.97s (0:08:39). Reference
+                 stage E real: 12 passed, 5445 deselected,
+                 1 warning in 590.86s (0:09:50). All exit 0.
+                 7. kill.py. Shard A exit 0, 9 of 9 KILLED:
+                 B1, B4, B10, B12, B15, B16, B17, B18, B19.
+                 Shard B exit 0, 13 of 13 KILLED: B2, B3,
+                 B5, B6, B7, B8, B9, B11, B13, B14, B20,
+                 B21, B22. B9 by
+                 test_m10_one_live_requirement_in_exiting.
+                 Shard A control CONTROL 0 failures, exit
+                 0. Shard B control CONTROL 0 failures,
+                 exit 0.
+                 8. Universe check: 1 passed in 199.95s
+                 (0:03:19). Exit 0.
+                 9. Prepush: prepush: ok (ruff check, ruff
+                 format, mypy, lint-imports, pytest).
+                 Serial pytest: 5393 passed, 5 skipped, 57
+                 deselected, 2 xfailed, 49 warnings in
+                 1664.78s (0:27:44). pytest -n 4: 5393
+                 passed, 5 skipped, 2 xfailed, 53 warnings
+                 in 588.03s (0:09:48). Both exit 0.
+  CI:            pending
+  MERGE:         pending
+  BUGBOT:        pending
+  DEVIATIONS:    an untracked baseline_post-T-6b.json was
+                 already present when the post capture was
+                 about to run (captured_at
+                 2026-10-24T12:11:45.938202+00:00, git sha
+                 91bdafff7994bda69bd9552297306dd759924c0b,
+                 git.dirty false, file SHA256
+                 222ac5594593a467d0641c31f0b6da41f411781e3cb342b3be25ef6e01cc1c9c).
+                 Its counts matched the prediction. It was
+                 set aside and the capture was retaken on
+                 a clean tree. The committed snapshot is
+                 git.dirty false, file SHA256
+                 76cbf287608fe4a3e385435908da74e7cdd8f37f6c98b5cedd64379cb0c554da.
+  STANDING:      the contract is version 4 (T-6a, D-211);
+                 stage C
+  EVIDENCE:      T-6b censuses 1 and 2 at 2cfc3696; T-6b
+                 trial run 1 at 2cfc3696
+  F-T6b-1:       tools/arch/measure.py runs in every
+                 capture (evidence_snapshot in
+                 tools/exec/baseline.py) and fills its
+                 evidence block, but no tools fingerprint
+                 has covered it. The contract's compare
+                 (--parity-only) does not read that block.
+                 Not scheduled.
