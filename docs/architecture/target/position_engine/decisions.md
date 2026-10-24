@@ -711,6 +711,52 @@ patterns and the run-set extract's parameters (T-6a).
     9611a15684e165c8db326335dfe023eb32f9afa11c9212956c01d95de8c3a0dd, 8566
     bytes; the IMPL tree reproduces it for the four files.
 
+D-212 — The capture fingerprint covers baseline.py alone; -Attempt takes
+exact values (T-6b).
+  - Operator decisions 2026-10-24 (AskUserQuestion), on T-6b censuses 1 and
+    2 at 2cfc3696 and the T-6b trial run.
+  - Fingerprint (F-P49-1). tools_fingerprint hashes tools/exec/baseline.py
+    alone, by relative path and then bytes as before; the result keeps its
+    shape {sha256, files} and compare is unchanged. A capture runs git, uv
+    run pytest -q, uv run pytest tests/determinism -q and
+    tools/arch/measure.py, and no other tools/exec file; the parity
+    constants and test counts come from baseline.py itself.
+    tests/conformance/test_capture_fingerprint.py checks that an unrun tool
+    beside baseline.py leaves the fingerprint unchanged, that an edit to
+    baseline.py moves it, and that baseline.py imports only the standard
+    library, so no future import escapes the fingerprint.
+  - tools/arch/measure.py fills the capture's evidence block, which the
+    contract's compare (--parity-only) does not read. It stays outside the
+    fingerprint, as before (F-T6b-1, not scheduled).
+  - -Attempt (F-T6a-1). ci_watch_extract.ps1 declares [ValidateSet('latest',
+    'first', IgnoreCase = $false)], so -Attempt First fails at binding
+    instead of selecting the latest attempt.
+    tests/conformance/test_ci_watch_extract.py checks the declaration's
+    text; no CI step or test runs PowerShell. In the trial run, Windows
+    PowerShell 5.1.26100.9444 read the binding attribute as IgnoreCase True
+    before the change and False after.
+  - Rejected: baseline.py plus the tools/exec modules it imports (import
+    parsing in the frozen tool, and no check on other imports); baseline.py
+    plus tools/arch/measure.py (wider than D-211 gave T-6b); a pytest that
+    runs pwsh on every run (a new dependency for the suite).
+  - Prediction (pre-registered): no src change; full suite 5406 -> 5410
+    passed, 0 failed, 44 skipped, 3 xfailed; determinism 148; prepush and CI
+    Tests 5389 -> 5393 passed; tests/conformance 228 -> 232 passed, 2
+    xfailed; at FAILFIRST the two new files give 2 failed, 2 passed; parity
+    constants 64 -> 64, changed 0; tools fingerprint
+    c950b6e0b292e86a05c169e4c8dc2b4f17e1ca96b917f7b3d44c465d41b3fd73, files
+    4 (pre) ->
+    261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97, files
+    1 (post), so compare prints the X0 D2 warning by design and the parity
+    evidence rests on the CI parity oracle and the pinned-literal tests; no
+    pinned literal moves; battery commands synthetic 107 passed, 9
+    deselected and real 12 passed, 5445 deselected, at C and at E; kill A
+    9/9, B 13/13, each shard's control CONTROL 0 failures; universe check 1
+    passed; the evidence block is not predicted.
+  - Trial run: T-6b-probe1.diff, SHA256
+    55522e9f88c6295119f454e92be86740804aa8fd99d9cf024e2869b06e5a6313, 4645
+    bytes; the IMPL tree reproduces it for the four files.
+
 ### D-66 pre-registered prediction
 
 ```
