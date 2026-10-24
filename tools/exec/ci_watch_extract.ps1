@@ -1,13 +1,31 @@
-# T-5 CI-watch census. Reads completed pull_request runs of ci.yml and writes one CSV.
+# CI-watch run-set extract (D-209, D-211). Reads completed pull_request runs of ci.yml created from CreatedFrom through CreatedTo (UTC dates, inclusive) and writes one CSV.
+param(
+    [string]$CreatedFrom = '2026-10-08',
+    [string]$CreatedTo = '2026-10-20',
+    [ValidateSet('latest', 'first')][string]$Attempt = 'latest',
+    [Parameter(Mandatory = $true)][string]$OutputPath
+)
+$exactDate = 'yyyy-MM-dd'
+$dateCulture = [Globalization.CultureInfo]::InvariantCulture
+$parsedFrom = [datetime]::MinValue
+$parsedTo = [datetime]::MinValue
+if (-not [datetime]::TryParseExact($CreatedFrom, $exactDate, $dateCulture, [Globalization.DateTimeStyles]::None, [ref]$parsedFrom)) {
+    throw "CreatedFrom must be yyyy-MM-dd: $CreatedFrom"
+}
+if (-not [datetime]::TryParseExact($CreatedTo, $exactDate, $dateCulture, [Globalization.DateTimeStyles]::None, [ref]$parsedTo)) {
+    throw "CreatedTo must be yyyy-MM-dd: $CreatedTo"
+}
+if ($parsedFrom -gt $parsedTo) {
+    throw "CreatedFrom is after CreatedTo"
+}
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $OutputEncoding = [Console]::OutputEncoding
 $ErrorActionPreference = 'Continue'
 $env:GH_PROMPT_DISABLED = '1'
 $env:GH_NO_UPDATE_NOTIFIER = '1'
 
-$ProbeDir = Join-Path $env:USERPROFILE 'feelies-probes\T-5'
-$CsvPath = Join-Path $ProbeDir 'ci-watch-runs.csv'
-New-Item -ItemType Directory -Force -Path $ProbeDir | Out-Null
+$CsvPath = $OutputPath
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $CsvPath) | Out-Null
 
 $Repo = 'Leiisawesome/feelies'
 $CheckJobName = 'check (ubuntu-latest)'
@@ -290,7 +308,7 @@ try {
     $totalCount = $null
     $page = 1
     do {
-        $endpoint = "repos/Leiisawesome/feelies/actions/workflows/ci.yml/runs?event=pull_request&status=completed&created=%3E%3D2026-10-08&per_page=100&page=$page"
+        $endpoint = "repos/Leiisawesome/feelies/actions/workflows/ci.yml/runs?event=pull_request&status=completed&created=$CreatedFrom..$CreatedTo&per_page=100&page=$page"
         $apiRaw = $null
         $apiExit = 1
         foreach ($tryN in 1..3) {
@@ -313,7 +331,8 @@ try {
         throw "api count mismatch collected=$($allRuns.Count) total=$totalCount"
     }
 
-    $cut = ConvertTo-Dto '2026-10-08T00:00:00Z'
+    $cutFrom = ConvertTo-Dto ($parsedFrom.ToString($exactDate, $dateCulture) + 'T00:00:00Z')
+    $cutTo = ConvertTo-Dto ($parsedTo.AddDays(1).ToString($exactDate, $dateCulture) + 'T00:00:00Z')
     $meta = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::Ordinal)
     $dropped = New-Object System.Collections.Generic.List[string]
     foreach ($run in $allRuns) {
@@ -321,13 +340,14 @@ try {
         $eventName = [string]$run.event
         $statusName = [string]$run.status
         $created = [string]$run.created_at
-        if ($eventName -cne 'pull_request' -or $statusName -cne 'completed' -or (ConvertTo-Dto $created) -lt $cut) {
+        $createdAt = ConvertTo-Dto $created
+        if ($eventName -cne 'pull_request' -or $statusName -cne 'completed' -or $createdAt -lt $cutFrom -or $createdAt -ge $cutTo) {
             $dropped.Add($id)
             continue
         }
         $meta[$id] = [pscustomobject]@{
             Id         = $id
-            Attempt    = ('{0:0}' -f $run.run_attempt)
+            Attempt    = $(if ($Attempt -ceq 'first') { '1' } else { '{0:0}' -f $run.run_attempt })
             Created    = $created
             Branch     = [string]$run.head_branch
             Sha        = [string]$run.head_sha
@@ -340,7 +360,7 @@ try {
     $listRaw = $null
     $listExit = 1
     foreach ($tryN in 1..3) {
-        $listRaw = & gh run list --repo Leiisawesome/feelies --workflow ci.yml --event pull_request --status completed --created '>=2026-10-08' --limit 200 --json databaseId
+        $listRaw = & gh run list --repo Leiisawesome/feelies --workflow ci.yml --event pull_request --status completed --created "$CreatedFrom..$CreatedTo" --limit 200 --json databaseId
         $listExit = $LASTEXITCODE
         if ($listExit -eq 0) { break }
         Start-Sleep -Seconds (5 * $tryN)

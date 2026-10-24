@@ -34861,3 +34861,120 @@ OWNER:       campaign 15.
                  added test_battery_m10_lifecycle.py by
                  hand. Destination T-6 (globs, as ci.yml
                  since T-5).
+
+## T-6a Contract version 4 and CI control
+
+  VERDICT:       passed
+  DECISIONS:     D-211
+  E0:            FAILFIRST
+                 5b108577bd443cb442dba0f07157108f8e8565ce.
+                 >       assert _CONTROL in runs
+                 E       assert 'uv run python tests/position_engine/kill.py --shard ${{ matrix.shard }} --control' in ['uv sync --all-extras --locked', 'uv run python scripts/ci_event_cache_guard.py --cache-dir "$HOME/.feelies/cache" APP/2026-03-25 APP/2026-03-26 || true', 'uv run python tests/position_engine/kill.py --shard ${{ matrix.shard }}']
+                 tests\conformance\test_ci_mutant_control.py:40: AssertionError
+                 E       Failed: DID NOT RAISE <class 'AssertionError'>
+                 tests\conformance\test_doc_integrity.py:47: Failed
+                 tests\conformance\test_doc_integrity.py:53: Failed
+                 tests\conformance\test_doc_integrity.py:71: Failed
+                 FAILED tests/conformance/test_ci_mutant_control.py::test_mutant_kill_job_runs_the_control
+                 FAILED tests/conformance/test_doc_integrity.py::test_duplicated_prose_decision_names_lines
+                 FAILED tests/conformance/test_doc_integrity.py::test_table_and_prose_ids_share_one_registry
+                 FAILED tests/conformance/test_doc_integrity.py::test_duplicated_t_row_names_lines
+                 4 failed, 10 passed, 1 warning in 0.52s.
+  TREE:          T-6a-probe1.diff SHA256
+                 9611a15684e165c8db326335dfe023eb32f9afa11c9212956c01d95de8c3a0dd,
+                 reproduced for the four files (IMPL).
+  SPEC:          56904c7f4a138ae93dfe63a04445ca6d449fb888.
+                 D-211 and the T-6a and T-6b plan rows.
+  FAILFIRST:     5b108577bd443cb442dba0f07157108f8e8565ce.
+                 CI control and doc-integrity tests.
+  IMPL:          be54dc73e68852910c2fbdff3f55ad39d1308014.
+                 Contract version 4; CI mutant control;
+                 wider doc-integrity patterns; extract
+                 parameters.
+  BASE:          ba0813ef943e0638af4e9bb28ad9637569ad9c03.
+                 Baselines on this commit. pre
+                 baseline_pre-T-6a.json on
+                 56904c7f4a138ae93dfe63a04445ca6d449fb888,
+                 git.dirty false. Full suite 5402 passed, 0
+                 failed, 44 skipped, 3 xfailed, exit 0.
+                 Determinism 148 passed, exit 0. Parity
+                 constants 64. BASELINE GREEN. Predicted
+                 5402, 0, 44, 3 xfailed; 148; 64. MATCH.
+                 post baseline_post-T-6a.json on
+                 be54dc73e68852910c2fbdff3f55ad39d1308014,
+                 git.dirty false. The untracked pre JSON was
+                 moved aside for that snapshot and restored
+                 after. The first post snapshot was dirty
+                 because baseline_post-T-6a.json was already
+                 untracked; it was set aside and the capture
+                 was retaken. Full suite 5406 passed, 0
+                 failed, 44 skipped, 3 xfailed, exit 0.
+                 Determinism 148 passed, exit 0. compare
+                 parity-only: 64 -> 64, changed 0, exit 0.
+                 VERDICT: parity HOLDS. No fingerprint
+                 warning. Both captures printed BASELINE
+                 GREEN. tools_fingerprint
+                 c950b6e0b292e86a05c169e4c8dc2b4f17e1ca96b917f7b3d44c465d41b3fd73,
+                 files 4, in both. Predicted 5406 passed, 0
+                 failed, 44 skipped, 3 xfailed; determinism
+                 148; 64 -> 64, changed 0; fingerprint
+                 unchanged. MATCH.
+  GATES:         Hot-path profile refreshed before the pre
+                 capture and before the post capture.
+                 1. The two test files: 14 passed, 1
+                 warning in 0.30s. Exit 0.
+                 2. tests/conformance: 228 passed, 2
+                 xfailed, 1 warning in 415.89s (0:06:55).
+                 Exit 0.
+                 3. ruff check: All checks passed. ruff
+                 format: 806 files already formatted.
+                 mypy: Success: no issues found in 257
+                 source files. lint-imports: 2 kept, 0
+                 broken. ci_watch_extract.ps1 parse errors
+                 0. All exit 0.
+                 4. Battery. Production stage C synthetic:
+                 107 passed, 9 deselected, 1 warning in
+                 369.20s (0:06:09). Reference stage E
+                 synthetic: 107 passed, 9 deselected, 1
+                 warning in 230.45s (0:03:50). Production
+                 stage C real: 12 passed, 5441 deselected,
+                 1 warning in 293.04s (0:04:53). Reference
+                 stage E real: 12 passed, 5441 deselected,
+                 1 warning in 317.32s (0:05:17). All exit 0.
+                 5. kill.py. Shard A exit 0, 9 of 9 KILLED:
+                 B1, B4, B10, B12, B15, B16, B17, B18, B19.
+                 Shard B exit 0, 13 of 13 KILLED: B2, B3,
+                 B5, B6, B7, B8, B9, B11, B13, B14, B20,
+                 B21, B22. B9 by
+                 test_m10_one_live_requirement_in_exiting.
+                 Shard A control CONTROL 0 failures, exit
+                 0. Shard B control CONTROL 0 failures,
+                 exit 0.
+                 6. Universe check: 1 passed in 109.58s
+                 (0:01:49). Exit 0.
+                 7. Prepush: prepush: ok (ruff check, ruff
+                 format, mypy, lint-imports, pytest).
+                 Serial pytest: 5389 passed, 5 skipped, 57
+                 deselected, 2 xfailed, 49 warnings in
+                 924.97s (0:15:24). pytest -n 4: 5389
+                 passed, 5 skipped, 2 xfailed, 53 warnings
+                 in 487.75s (0:08:07). Both exit 0.
+  CI:            pending
+  MERGE:         pending
+  BUGBOT:        pending
+  DEVIATIONS:    the first post snapshot recorded
+                 git.dirty true (porcelain
+                 ?? baseline_post-T-6a.json). It was moved
+                 aside and the capture was retaken on a
+                 clean tree. The committed snapshot is
+                 git.dirty false. The dirty snapshot's
+                 counts matched the retake.
+  STANDING:      the contract is version 4 (T-6a, D-211);
+                 stage C
+  EVIDENCE:      T-6 censuses 1 and 2 at d9efc876; T-6a
+                 trial run 1 at d9efc876
+  F-T6a-1:       tools/exec/ci_watch_extract.ps1's
+                 ValidateSet is case-insensitive and the
+                 script tests -ceq 'first', so -Attempt
+                 First is accepted and selects the latest
+                 attempt. Destination T-6b.

@@ -21,9 +21,9 @@ BATTERY = _ROOT / "docs/architecture/target/position_engine/battery.md"
 LADDER = _ROOT / "docs/architecture/target/out/phase14_position_engine.md"
 LEDGER = _ROOT / "docs/architecture/target/out/exec/LEDGER.md"
 
-_DECISION = r"^\| (D-\d+) \|"
+_DECISION = r"^(?:\| )?(D-\d+)(?: \|| — )"
 _MEMBER = r"^MEMBER:\s+(\d+)\b"
-_RUNG = r"^\| (P-\d+[a-z]*) \|"
+_RUNG = r"^\| ([PTS]-\d+[a-z0-9]*) \|"
 
 
 def _rel(path: Path) -> str:
@@ -42,6 +42,18 @@ def test_duplicated_decision_id_names_lines() -> None:
         require_registry("decisions.md", text, _DECISION)
 
 
+def test_duplicated_prose_decision_names_lines() -> None:
+    text = "D-5 — one\ncontinued\nD-5 — two\n"
+    with pytest.raises(AssertionError, match=r"^decisions.md: D-5 count 2 at lines 1, 3$"):
+        require_registry("decisions.md", text, _DECISION)
+
+
+def test_table_and_prose_ids_share_one_registry() -> None:
+    text = "| D-7 | row |\nD-7 — prose\n"
+    with pytest.raises(AssertionError, match=r"^decisions.md: D-7 count 2 at lines 1, 2$"):
+        require_registry("decisions.md", text, _DECISION)
+
+
 def test_duplicated_member_names_lines() -> None:
     text = "MEMBER: 1 Alpha\nMEMBER: 1 Beta\n"
     with pytest.raises(AssertionError, match=r"^battery.md: 1 count 2 at lines 1, 2$"):
@@ -51,6 +63,12 @@ def test_duplicated_member_names_lines() -> None:
 def test_duplicated_ladder_row_names_lines() -> None:
     text = "| P-21e | a |\n| P-21e | b |\n"
     with pytest.raises(AssertionError, match=r"^ladder.md: P-21e count 2 at lines 1, 2$"):
+        require_registry("ladder.md", text, _RUNG)
+
+
+def test_duplicated_t_row_names_lines() -> None:
+    text = "| T-6a | a |\n| T-6a | b |\n"
+    with pytest.raises(AssertionError, match=r"^ladder.md: T-6a count 2 at lines 1, 2$"):
         require_registry("ladder.md", text, _RUNG)
 
 

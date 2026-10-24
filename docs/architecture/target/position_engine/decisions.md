@@ -657,6 +657,60 @@ D-210 — Member 10 authored (P-49). Supersedes D-91 for member 10.
     54E5064A30EB8274AEE729ADC2573DFFD3EB1F9C7C9EE86BADC1B05A58736898, 21354
     bytes, applied byte-identically in the IMPL commit.
 
+D-211 — Contract version 4, the CI mutant control, wider doc-integrity
+patterns and the run-set extract's parameters (T-6a).
+  - Operator decisions 2026-10-23 and 2026-10-24 (AskUserQuestion), on T-6
+    censuses 1 and 2 at d9efc876 and the T-6a trial run. T-6 splits: T-6a
+    takes F-T5-1 to F-T5-5 and F-P49-4; T-6b takes F-P49-1 (the capture's
+    tools fingerprint) alone, because a change to the capture tool is its
+    own step (playbook, campaign setup), and F-T6a-1.
+  - CI mutant control (F-T5-1). Each mutant-kill shard runs
+    kill.py --shard <shard> --control after its kill step; a failure fails
+    the job. tests/conformance/test_ci_mutant_control.py checks it. Trial
+    run, locally: shard A 134 s, shard B 82 s; the job's timeout is 15
+    minutes (ci.yml:524).
+  - Battery commands (F-P49-4). The contract states them as CI runs them:
+    synthetic, tests/position_engine/test_battery_m*.py and
+    test_reference_*.py expanded in ordinal order, -m "not battery_real";
+    real, -m battery_real from the repo root with
+    FEELIES_REQUIRE_BASELINE_CACHE=1. Trial run: synthetic 107 passed, 9
+    deselected at C and at E; real 12 passed, 5441 deselected at C and at E.
+  - Doc integrity (F-T5-2, F-T5-3). The decision pattern matches table rows
+    "| D-n |" and prose entries "D-n — "; one id in both forms is a
+    duplicate. The ladder pattern matches P-, T- and S- rows with letter or
+    digit suffixes. At d9efc876: 190 table and 20 prose ids, no duplicate,
+    no overlap; 63 ladder ids, no duplicate.
+  - Run set (F-T5-4).
+    docs/architecture/target/out/exec/ci_watch_runs_T-5.csv as stored and
+    checked out (eol: lf): blob
+    d654a490beca2b784513f886cdc80820c0ba7c4c, SHA256
+    1aa9eb45e9f267e65cd7fec5fa4351950dbf5055f51bba4b645861c605819f18, 0 CR
+    bytes. D-209's 57A5E600 hash is the same content as extracted (CRLF).
+    D-209 stands; this entry adds the stored form.
+  - Extract parameters (F-T5-5). tools/exec/ci_watch_extract.ps1 takes
+    -CreatedFrom (default 2026-10-08), -CreatedTo (default 2026-10-20,
+    inclusive), -Attempt latest|first (default latest) and a required
+    -OutputPath; the CSV format and CRLF endings are unchanged. With the
+    defaults it reproduced T-5's run set byte for byte (50 runs, SHA256
+    57A5E6007BBEA233EDF5ACAC7D0617B8AB31ACF9A1E5519681B2E84E8B0D8881) under
+    the operator's gh-read authorisation of 2026-10-23. Script blob
+    55ffdf70032ae690fab9bc59ddf7062bb0c804b1 ->
+    3339b4d5d06ba2aa9d72228b3f5231ff1d2ac126. F-T6a-1: -Attempt accepts any
+    case, and only lowercase first selects attempt 1; destination T-6b.
+  - Rejected: one T-6 (its own compare would warn); a separate control job;
+    explicit file lists in the contract; deferring the parameters.
+  - Prediction (pre-registered): no src change; full suite 5402 -> 5406
+    passed, 0 failed, 44 skipped, 3 xfailed; determinism 148; prepush and CI
+    Tests 5385 -> 5389 passed; tests/conformance 224 -> 228 passed, 2
+    xfailed; parity constants 64 -> 64, changed 0; the capture tools
+    fingerprint unchanged (the .ps1 is outside it), so compare prints no
+    warning; no pinned literal moves; kill A 9/9, B 13/13; each shard's
+    control CONTROL 0 failures; the battery commands as above; the contract
+    137 -> 144 lines; ci.yml 557 -> 560 lines.
+  - Trial run: T-6a-probe1.diff, SHA256
+    9611a15684e165c8db326335dfe023eb32f9afa11c9212956c01d95de8c3a0dd, 8566
+    bytes; the IMPL tree reproduces it for the four files.
+
 ### D-66 pre-registered prediction
 
 ```
