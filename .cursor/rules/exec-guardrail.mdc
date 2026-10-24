@@ -1,5 +1,5 @@
 ---
-description: Phase-14 standing contract (position engine, backtest only). Binds every Cursor session in this repo until P-99. Version 3 (T-5, D-209).
+description: Phase-14 standing contract (position engine, backtest only). Binds every Cursor session in this repo until P-99. Version 4 (T-6a, D-211).
 alwaysApply: true
 ---
 
@@ -58,12 +58,19 @@ The Claude chat rollover limit is 3 merged steps (playbook v1.2; D-202).
   uv run pytest -m "$(Get-Content scripts/ci_gate_expr.txt)" -q -n 4
 - Universe check, every rung, local only (needs the eight-name cache):
   $env:PYTHONHASHSEED='0'; uv run pytest tests/conformance/test_cap_neutral_universe.py -q -m universe_check; Remove-Item Env:PYTHONHASHSEED
-- Battery on the reference:
-  FEELIES_ENGINE=tests.position_engine.reference.engine.PositionEngine and
-  FEELIES_RAIL=tests.position_engine.reference.rail.ReferenceRail; stage
-  override FEELIES_STAGE_FILE; real members with
-  FEELIES_REQUIRE_BASELINE_CACHE=1 and -m battery_real. Mutant control:
-  kill.py --control (every REGISTRY entry; --shard or --only narrows it).
+- Battery, synthetic (the files CI's reference-battery step selects):
+  $s = [IO.Directory]::GetFiles('tests/position_engine','test_battery_m*.py'); [Array]::Sort($s, [StringComparer]::Ordinal)
+  $r = [IO.Directory]::GetFiles('tests/position_engine','test_reference_*.py'); [Array]::Sort($r, [StringComparer]::Ordinal)
+  uv run pytest $s $r -m "not battery_real" -q
+- Battery, real: with FEELIES_REQUIRE_BASELINE_CACHE=1,
+  uv run pytest -m battery_real -q (by marker, as CI's real job).
+- Production runs the battery with stage.txt as it stands. The reference runs
+  it with FEELIES_ENGINE=tests.position_engine.reference.engine.PositionEngine,
+  FEELIES_RAIL=tests.position_engine.reference.rail.ReferenceRail and
+  FEELIES_STAGE_FILE pointing at a file holding E.
+- Mutant kill: kill.py --shard A and --shard B. Mutant control: kill.py
+  --control (every REGISTRY entry; --shard or --only narrows it). CI runs both
+  per shard (D-211).
 
 ## Every step
 - One step per session. The first prompt of a rung and every merge open a new

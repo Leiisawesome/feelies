@@ -21,9 +21,9 @@ BATTERY = _ROOT / "docs/architecture/target/position_engine/battery.md"
 LADDER = _ROOT / "docs/architecture/target/out/phase14_position_engine.md"
 LEDGER = _ROOT / "docs/architecture/target/out/exec/LEDGER.md"
 
-_DECISION = r"^\| (D-\d+) \|"
+_DECISION = r"^(?:\| )?(D-\d+)(?: \|| — )"
 _MEMBER = r"^MEMBER:\s+(\d+)\b"
-_RUNG = r"^\| (P-\d+[a-z]*) \|"
+_RUNG = r"^\| ([PTS]-\d+[a-z0-9]*) \|"
 
 
 def _rel(path: Path) -> str:

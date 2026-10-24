@@ -555,3 +555,6 @@ jobs:
 
       - name: Kill shard ${{ matrix.shard }}
         run: uv run python tests/position_engine/kill.py --shard ${{ matrix.shard }}
+
+      - name: Control shard ${{ matrix.shard }}
+        run: uv run python tests/position_engine/kill.py --shard ${{ matrix.shard }} --control
