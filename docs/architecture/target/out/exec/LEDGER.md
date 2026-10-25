@@ -35114,9 +35114,24 @@ OWNER:       campaign 15.
                  1664.78s (0:27:44). pytest -n 4: 5393
                  passed, 5 skipped, 2 xfailed, 53 warnings
                  in 588.03s (0:09:48). Both exit 0.
-  CI:            pending
-  MERGE:         pending
-  BUGBOT:        pending
+  CI:            PR head 40146981171 pull_request success,
+                 check 926 s, Tests 820.45 s, Determinism
+                 11.00 s, ratio 74.59; reference battery 107
+                 passed, 9 deselected in 348.67s (0:05:48);
+                 mutant kill A 9 KILLED, CONTROL 0 failures,
+                 277 s; B 13 KILLED, CONTROL 0 failures, 187
+                 s. Merge 40148263148 pull_request success,
+                 check 903 s, Tests 794.14 s, Determinism
+                 11.23 s, ratio 70.72. Two-run geometric
+                 mean 72.63; D-209 fired no.
+  MERGE:         47e037e387618e8c6462d4ce4ee81190f40fa9c9,
+                 parents
+                 2cfc369661791fd8974b1d59e8815fbbe6e8522e
+                 and
+                 b7b26809df3e2366c65dee37dc908edcc9086c99,
+                 tree 0bd43031 = PR head. PR #298. Operator
+                 go 2026-10-24 (AskUserQuestion).
+  BUGBOT:        completed, no findings.
   DEVIATIONS:    an untracked baseline_post-T-6b.json was
                  already present when the post capture was
                  about to run (captured_at
