@@ -2,7 +2,7 @@
 param(
     [string]$CreatedFrom = '2026-10-08',
     [string]$CreatedTo = '2026-10-20',
-    [ValidateSet('latest', 'first')][string]$Attempt = 'latest',
+    [ValidateSet('latest', 'first', IgnoreCase = $false)][string]$Attempt = 'latest',
     [Parameter(Mandatory = $true)][string]$OutputPath
 )
 $exactDate = 'yyyy-MM-dd'
