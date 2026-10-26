@@ -147,7 +147,13 @@ class AccumulatedMoves(PositionEngine):
         move_now += previous move_now (same for worst and forced)
     """
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
+    def __init__(
+        self,
+        *args: object,
+        session_bounds: object | None = None,
+        **kwargs: object,
+    ) -> None:
+        del session_bounds  # D-203
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
         self._move_sums: dict[str, list[int]] = {}
 

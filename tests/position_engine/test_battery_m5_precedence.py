@@ -18,6 +18,7 @@ from tests.position_engine.scenarios import (
     first_horizon_index,
     fixture_variant,
     nonvacuous,
+    require_adverse_level,
     require_entry_fills,
     require_favorable_tie,
     run_real,
@@ -123,6 +124,7 @@ def test_m5_deadline_beyond_stop() -> None:
     )
     _tie(tape, higher="HORIZON", form="fixed", horizon_s=10)
     records = run_synthetic(tape, symbols=("SYN",), variant=_v3a(T_seconds=10))
+    require_adverse_level(records)
     require_entry_fills(records)
     nonvacuous(records, PositionClosed, scenario="m5_deadline")
     assert_no_risk_rejects(records)

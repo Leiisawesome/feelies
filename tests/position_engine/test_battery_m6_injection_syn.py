@@ -21,6 +21,7 @@ from tests.position_engine.scenarios import (
     check_a6,
     fixture_variant,
     nonvacuous,
+    require_adverse_level,
     require_entry_fills,
     run_synthetic,
 )
@@ -85,6 +86,7 @@ def test_m6_a4_gap_through() -> None:
     tape = make_tape(seed=11, n=800, symbol="SYN", start_ns=T0, size=1000)
     tape = shift_from(excise(tape, 302, 20), 302, -15)
     records = run_synthetic(tape, symbols=("SYN",), variant=_v3a())
+    require_adverse_level(records)
     _ready(records, "m6_a4")
     check_a4(records, birth_sequence=302, centre=11, band=0)
 
@@ -101,6 +103,7 @@ def _quiet(n_excise: int) -> tuple[list, int, bool]:
 def test_m6_a5_quiet(n_excise: int) -> None:
     tape, sequence, blind = _quiet(n_excise)
     records = run_synthetic(tape, symbols=("SYN",), variant=_v3a())
+    require_adverse_level(records)
     _ready(records, f"m6_a5_quiet_{n_excise}")
     check_a5(records, expect_blind=blind, deciding_sequence=sequence if blind else None)
 
@@ -118,6 +121,7 @@ def _absent(count: int, side: str) -> tuple[list, int, bool]:
 def test_m6_a5_valuation_absent(count: int) -> None:
     tape, sequence, blind = _absent(count, "bid")
     records = run_synthetic(tape, symbols=("SYN",), variant=_v3a())
+    require_adverse_level(records)
     _ready(records, f"m6_a5_valuation_{count}")
     check_a5(records, expect_blind=blind, deciding_sequence=sequence if blind else None)
 
@@ -127,6 +131,7 @@ def test_m6_a5_valuation_absent(count: int) -> None:
 def test_m6_a5_paying_absent(count: int) -> None:
     tape, sequence, blind = _absent(count, "ask")
     records = run_synthetic(tape, symbols=("SYN",), variant=_v3a())
+    require_adverse_level(records)
     _ready(records, f"m6_a5_paying_{count}")
     check_a5(records, expect_blind=blind, deciding_sequence=sequence if blind else None)
 
@@ -136,6 +141,7 @@ def test_m6_a6_short() -> None:
     tape = make_tape(seed=11, n=4_000, symbol="SYN", start_ns=T0, size=1000)
     tape = _cross_span(shift_from(tape, 3602, 51), 3602, 3901, 10_052, 10_042)
     records = run_synthetic(tape, symbols=("SYN",))
+    require_adverse_level(records)
     _ready(records, "m6_a6_short")
     check_a6(records, birth_sequence=3602, kind="ADVERSE", deciding_sequence=3902)
 
@@ -145,6 +151,7 @@ def test_m6_a6_long() -> None:
     tape = make_tape(seed=11, n=1_800, symbol="SYN", start_ns=T0, size=1000)
     tape = _cross_span(shift_from(tape, 1202, -47), 1202, 1503, 9_978, 9_977)
     records = run_synthetic(tape, symbols=("SYN",))
+    require_adverse_level(records)
     _ready(records, "m6_a6_long")
     check_a6(records, birth_sequence=1202, kind="BLIND", deciding_sequence=1503)
 

@@ -1312,7 +1312,10 @@ class ProbeEngine:
         policies: object = None,
         gate_order: object = None,
         clock: object = None,
+        *,
+        session_bounds: object | None = None,
     ) -> None:
+        del session_bounds  # D-203
         _probe_write(f"engine {gate_order!r}")
         self._inner = _ProductionEngine(
             bus,  # type: ignore[arg-type]
