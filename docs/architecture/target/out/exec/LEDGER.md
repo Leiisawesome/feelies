@@ -35155,3 +35155,121 @@ OWNER:       campaign 15.
                  has covered it. The contract's compare
                  (--parity-only) does not read that block.
                  Not scheduled.
+
+## T-7 Engine seam and stage-proofing for P-50
+
+  VERDICT:       passed
+  DECISIONS:     D-213
+  E0:            FAILFIRST
+                 E   KeyError: 'session_bounds'
+                 E   ImportError: cannot import name 'require_adverse_level' from 'tests.position_engine.scenarios' (C:\Users\cheng.lei\OneDrive\Documents\GitHub\feelies\tests\position_engine\scenarios.py)
+  TREE:          T-7-probe2.diff SHA256
+                 42E71B4C3205D6EAC4CAF0F0062DB5E48DC9700F6E7430D308DF854588309B76,
+                 7627 bytes. T-7-impl-check.diff
+                 reproduces it, same SHA256.
+  SPEC:          072e0e550718b33ee528908b0890a7023fc3ad8f.
+                 D-213 and the T-7 plan row.
+  FAILFIRST:     67d2f781e2dc0fd10de07c0976c987ff87da38db.
+                 Seam and helper tests.
+                 KeyError 'session_bounds';
+                 ImportError require_adverse_level.
+  IMPL:          fc2e50cda29d25fbbc2f5c60ff7ce6b6eb27dce1.
+                 Every selectable engine accepts
+                 session_bounds; pre-D-210 nodes call
+                 require_adverse_level first.
+  BASE:          9d63366062723ddeb8acbfae34fb9276f7b519ab.
+                 Baselines on
+                 fed0c3e8f739e86c6fbbacf32bfa01a8ae83706e.
+                 pre baseline_pre-T-7.json on
+                 072e0e550718b33ee528908b0890a7023fc3ad8f,
+                 git.dirty false, captured_at
+                 2026-10-26T03:08:22.902720+00:00.
+                 Full suite 5410 passed, 0 failed, 44
+                 skipped, 3 xfailed, exit 0. Determinism
+                 148 passed, exit 0. Parity constants 64.
+                 BASELINE GREEN. tools_fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. Evidence: alphaleak n 0;
+                 available true; imports n_cycles 1,
+                 n_edges 713, n_modules 208; modules
+                 public_symbols 626, total_files 257,
+                 total_sloc 49749. post
+                 baseline_post-T-7.json on
+                 fc2e50cda29d25fbbc2f5c60ff7ce6b6eb27dce1,
+                 git.dirty false, captured_at
+                 2026-10-26T04:16:35.956006+00:00. The
+                 untracked pre JSON was moved aside for
+                 that snapshot and restored after. Full
+                 suite 5412 passed, 0 failed, 44 skipped,
+                 3 xfailed, exit 0. Determinism 148
+                 passed, exit 0. compare parity-only,
+                 exit 0: constants 64 -> 64, changed 0.
+                 VERDICT: parity HOLDS -- no constant
+                 moved. No fingerprint warning.
+                 tools_fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. Evidence: alphaleak n 0;
+                 available true; imports n_cycles 1,
+                 n_edges 713, n_modules 208; modules
+                 public_symbols 626, total_files 257,
+                 total_sloc 49749. Predicted 5412 passed,
+                 0 failed, 44 skipped, 3 xfailed;
+                 determinism 148; 64 -> 64, changed 0;
+                 no fingerprint warning. MATCH.
+  GATES:         Hot-path profile before the post
+                 capture, exit 0, wrote
+                 tools/arch/evidence/hotpath_executed.json.
+                 1. Universe check: 1 passed in 199.63s
+                 (0:03:19). Exit 0.
+                 2. Battery. Production stage C synthetic:
+                 107 passed, 9 deselected, 1 warning in
+                 480.04s (0:08:00). Reference stage E
+                 synthetic: 107 passed, 9 deselected, 1
+                 warning in 272.77s (0:04:32). Production
+                 stage C real: 12 passed, 5447 deselected,
+                 1 warning in 296.86s (0:04:56). Reference
+                 stage E real: 12 passed, 5447 deselected,
+                 1 warning in 319.05s (0:05:19). All exit 0.
+                 3. Fourteen D-213 ids at stage C: 14
+                 passed, each accepted red
+                 CAP:gate_fire: no ADVERSE GateDecision
+                 with drawn_level_ticks > 0. Exit 0.
+                 4. kill.py. Shard A exit 0, 9 of 9 KILLED:
+                 B1, B4, B10, B12, B15, B16, B17, B18, B19.
+                 Shard B exit 0, 13 of 13 KILLED: B2, B3,
+                 B5, B6, B7, B8, B9, B11, B13, B14, B20,
+                 B21, B22. B9 by
+                 test_m10_one_live_requirement_in_exiting.
+                 Shard A control CONTROL 0 failures, exit
+                 0. Shard B control CONTROL 0 failures,
+                 exit 0.
+                 5. Prepush: prepush: ok (ruff check, ruff
+                 format, mypy, lint-imports, pytest).
+                 ruff check: All checks passed! ruff
+                 format: 809 files already formatted.
+                 mypy: Success: no issues found in 257
+                 source files. lint-imports: Contracts:
+                 2 kept, 0 broken. Serial pytest: 5395
+                 passed, 5 skipped, 57 deselected, 2
+                 xfailed, 49 warnings in 916.16s
+                 (0:15:16). pytest -n 4: 5395 passed, 5
+                 skipped, 2 xfailed, 53 warnings in
+                 479.65s (0:07:59). Marker: not functional
+                 and not paper_rth and not battery_real
+                 and not universe_check. Both exit 0.
+                 Predicted 5395 passed, 5 skipped, 57
+                 deselected, 2 xfailed, both modes.
+                 Serial matches. The -n 4 summary does
+                 not print deselected. MATCH on the
+                 counts that summary prints.
+  CI:            pending
+  MERGE:
+  BUGBOT:        pending
+  DEVIATIONS:    none
+  STANDING:      the contract is version 4 (T-6a, D-211);
+                 stage C
+  EVIDENCE:      T-7-probe2.diff; exec-*.log under the
+                 T-7 probe directory
+  FILES:         14 declared, 14 touched, plus this
+                 ledger. SPEC 4, FAILFIRST 1, IMPL 7,
+                 baselines 2.
