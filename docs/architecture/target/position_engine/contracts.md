@@ -428,6 +428,9 @@ output).
 - (D-97) The harness calls `engine.finalize()` (if defined) after replay. Records published
   then carry replay index `N = len(replay)` and attribution cursor `EOT`. They are never
   attributed to a quote and never fall inside a replay-index prefix.
+- (D-213) `PositionEngine` accepts keyword-only `session_bounds`
+  (`TradingSessionBounds | None`, default `None`), the session close fact of
+  §2 [A-11]. Every engine the harness can select accepts it.
 
 ## 9. Definitions closed at P-21c (D-40..D-47)
 

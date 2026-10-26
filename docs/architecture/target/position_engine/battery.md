@@ -513,6 +513,7 @@ process" (no state serialisation exists); member 6 injects the feed-gap flag dir
 per-name sequence discontinuity can be neither produced nor detected from this feed).
 Member 10's entry-refusal clause moved to engine-9 tests at P-51 (D-210): engine 9 is
 outside the kill runner's seams, and P-51 is not the rung that moves the stage.
+T-7 (D-213): fourteen node ids written before D-210 call `require_adverse_level` first, so before stage E they fail as `CAP:gate_fire`.
 
 ## Running locally
 
