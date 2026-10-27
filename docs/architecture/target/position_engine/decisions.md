@@ -757,6 +757,27 @@ exact values (T-6b).
     55522e9f88c6295119f454e92be86740804aa8fd99d9cf024e2869b06e5a6313, 4645
     bytes; the IMPL tree reproduces it for the four files.
 
+D-213 — Engine seam and stage-proofing for P-50 (T-7).
+  - Operator decisions 2026-10-25 and 2026-10-26 (chat 7): T-7, tests only,
+    lands before P-50 (D-203 pattern).
+  - Seam. PositionEngine takes keyword-only session_bounds
+    (TradingSessionBounds | None, default None), the session close fact of
+    contracts.md §2:192-193 [A-11]. The reference, the broken engines that
+    define __init__, and ProbeEngine accept it and ignore it. The
+    reference's deadline cap is F-P50-2, scheduled before stage E.
+  - Stage-proofing (battery.md amendment rule). Eight node functions, 14
+    pytest ids (m3 barriers_and_deadline; m5 deadline_beyond_stop; m6 a4,
+    a5 quiet, valuation_absent and paying_absent, a6 short and long)
+    predate D-210. Each calls require_adverse_level first: CAP:gate_fire
+    unless an ADVERSE GateDecision has drawn_level_ticks > 0 (contracts.md
+    §4:360, §4:381; L2 makes a real level at least 2; the stub publishes 0).
+  - Prediction: battery 107 passed, 9 deselected and 12 passed at C and E;
+    the 14 ids accepted red at C with CAP:gate_fire; kill A 9/9, B 13/13,
+    controls 0 failures, killers unchanged; tests + 2; parity constants
+    64 -> 64, changed 0; no pinned value moves.
+  - Rejected: requiring a firing gate (six under-limit A5 ids fail on the
+    reference at E; T-7-probe1).
+
 ### D-66 pre-registered prediction
 
 ```

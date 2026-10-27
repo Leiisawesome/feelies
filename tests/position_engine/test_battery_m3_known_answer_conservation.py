@@ -14,6 +14,7 @@ from tests.position_engine.scenarios import (
     fixture_variant,
     mean_within_se,
     nonvacuous,
+    require_adverse_level,
     require_entry_fills,
     run_synthetic,
 )
@@ -114,6 +115,7 @@ def test_m3_barriers_and_deadline() -> None:
         symbols=("SYN",),
         variant=_base(T_seconds=10),
     )
+    require_adverse_level(records)
     require_entry_fills(records)
     nonvacuous(records, PositionClosed, scenario="m3_deadline")
     assert_no_risk_rejects(records)

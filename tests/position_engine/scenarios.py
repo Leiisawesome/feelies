@@ -230,6 +230,18 @@ def require_quote_present(records: Records, sequence: int) -> None:
         raise AssertionError(f"PRECONDITION: injected quote {sequence} present (0)")
 
 
+def require_adverse_level(records: Records) -> None:
+    """An ADVERSE gate publishes a drawn level above the stub's zero."""
+    for row in records:
+        if row.type_name != "GateDecision":
+            continue
+        body = _body(row.canonical)
+        level = body.get("drawn_level_ticks")
+        if body.get("gate") == "ADVERSE" and type(level) is int and level > 0:
+            return
+    raise AssertionError("CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0")
+
+
 def nonvacuous(records: Sequence[Record], *type_names: type[Event] | str, scenario: str) -> None:
     present = {row.type_name for row in records}
     for type_name in type_names:

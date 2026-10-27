@@ -55,7 +55,9 @@ class PositionEngine:
         gate_order: tuple[str, ...] = ("ADVERSE", "FAVORABLE"),
         *,
         clock: _Clock | None = None,
+        session_bounds: object | None = None,
     ) -> None:
+        del session_bounds  # D-203
         self._bus = bus
         self._seq = sequence_generator
         self._clock = clock
