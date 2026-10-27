@@ -344,7 +344,7 @@ field exists (contracts §2). (D-104)
 | A | tape generator + its test; the six blocking members, red; the broken engines | every broken engine caught, each by a named member |
 | B | walking skeleton on the P-10 surface (event types, wiring, streams and sinks landed in P-10): stub cell with birth/close from slice fills, stub gates, the two-phase step | members 1, 2 green; member 4 partial checks birth_move only (D-195) |
 | C | mark rail | members 1, 2 (its gate dwell node from E, D-200), 9 green; 4 (rail half) green since A (D-37); 4's six unusable-side nodes green (F-P40-1) |
-| D | position cell | + 4 (birth touch), 10, 11 green |
+| D | position cell | + 4 (birth touch), 10 green; 11 green_from E (D-221) |
 | E | both gates, precedence | all eleven green |
 
 Engine-on regression after P-99 is guarded by the position oracle, not by this battery

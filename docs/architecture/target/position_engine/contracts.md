@@ -22,7 +22,7 @@ measured feed has timestamp ties (854 in one session, `feed.md` F2); sequence do
 |---|---|---|---|
 | Mark rail | engine 7 portfolio (`portfolio/mark_rail.py`, `MarkRail`) | `portfolio` | the kernel calls `MarkRailProtocol.on_quote(quote)` right after the book-mark update and before publishing the quote, and publishes the returned `MarkRailUpdate` (stream `mark_rail`, owner `MarkRail`) |
 | Slice fills | kernel (`Orchestrator`) | — | after each per-strategy slice write on a fill, publishes `SlicePositionUpdate` (stream `slice_position`) [A-17] |
-| Position cell, both gates, precedence | engine 13 position [A-01] (`position/engine.py`, `PositionEngine`) | `position` (13th member of the "Engine module sets" independence contract) | subscribes `MarkRailUpdate`, `SlicePositionUpdate`, `Signal`; publishes `PositionSnapshot`, `GateDecision`, `PositionClosed`, `DeRiskRequirement` (stream `position`) |
+| Position cell, both gates, precedence | engine 13 position [A-01] (`position/engine.py`, `PositionEngine`) | `position` (13th member of the "Engine module sets" independence contract) | subscribes `MarkRailUpdate`, `SlicePositionUpdate`, `Signal`, `OrderAck` (its own exit orders, D-217); publishes `PositionSnapshot`, `GateDecision`, `PositionClosed`, `DeRiskRequirement` (stream `position`) |
 | Entry refusal at birth | engine 9 execution, admission [A-04] | `execution` | reads the latest `MarkRailUpdate` fact for the name |
 | Exit plan | engine 9 execution | `execution` / kernel copy site | consumes `DeRiskRequirement` with `source_layer="POSITION"` |
 | Veto and safety exits | engine 8 risk | `risk` | unchanged: `check_order` on every order; `FORCE_FLATTEN`, `DATA_*`, kill switch outrank everything here |
@@ -189,7 +189,7 @@ resolves the exit; writes the closing record.
 all flags, passed through unaltered). `SlicePositionUpdate` for its slice (fill price, signed
 fill quantity, fill ack sequence and timestamp, slice quantity and average entry after the
 fill) [A-17]. `PositionUpdate` is not read: it is the symbol-net book, without strategy or fill
-detail. `Signal` for its slice (invalidation intake). The
+detail. `Signal` for its slice (invalidation intake). `OrderAck` for its own exit orders (D-217). The
 session close fact for the birth date [A-11]. Both gate decisions (resolve phase only).
 Run config.
 

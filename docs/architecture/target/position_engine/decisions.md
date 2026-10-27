@@ -815,6 +815,46 @@ D-217 — Exit requirement, exit legs and re-emission (G11).
     P-50). REJECTED on the live order re-emits with attempt + 1 at the next
     rail whose valuation side is present. One live requirement at a time.
 
+D-218 — Closing record at stage D.
+  - Filled at P-50: exit_reason; triggered_paths (HORIZON, the
+    forced_exit_mark at the deciding rail, trigger DEADLINE);
+    proposed_price_cents (the same mark); horizon_deadline_ns;
+    entry_spread_ticks; exit legs; extremes; lived_through_feed_gap;
+    closed_on_stale_data (contracts.md §9:461, Q = favorable.quiet_limit_ns)
+    and first_event_exit, both at the deciding rail. A None mark there
+    gives no path and price None (operator 2026-10-27, as D-102).
+  - Left at stage-B values until stage E: drawn_level_ticks,
+    exited_on_unusable_data, stop_inside_round_trip, target_inside_round_trip.
+
+D-219 — End of tape and extremes.
+  - finalize() closes OPEN and EXITING cells END_OF_TAPE (D-84, D-102).
+    Price: the valuation mark of the last rail whose valuation side was
+    present; flags and correlation_id from that rail. None ever: price
+    None, closed_on_stale_data True, the last rail's correlation_id. No
+    requirement.
+  - Extremes seed at the first CLEAN rail after birth whatever the move
+    (D-79); the stub skipped a zero move (F-P50-3).
+
+D-220 — R-SYN re-pin (P-50).
+  - Operator decision 2026-10-27 (AskUserQuestion): ECONOMIC_TRADE_HASH_RSYN
+    3b795e551574d0f56e5c2319acaef921137396f80baba52868434bb07201060c ->
+    b62b42d2dcc8e7315ca4d75de9b6748af605a6d280ed424dac0edd9cacfd4535; the
+    record count stays 29. Cause: HORIZON exits on the production
+    engine's synthetic run. Its own commit, after IMPL.
+
+D-221 — Stage D's gate (F-P50-1) and P-50's prediction.
+  - battery.md's stage table and plan row P-50 named member 11 green at
+    D; its nodes are green_from E with NONVACUOUS
+    (test_battery_m11_audit.py:33). Stage D's gate is member 4's birth
+    nodes and member 10's four nodes.
+  - Prediction: full 5413 passed, 0 failed, 44 skipped, 2 xfailed (T7c
+    turns from xfail to pass); determinism 148; parity constants 64 -> 64,
+    changed 0; universe 1 passed; battery 107 passed, 9 deselected and 12
+    passed at D and at E; the 14 D-213 ids accepted red at D with
+    CAP:gate_fire; kill A 9/9, B 13/13, controls 0 failures, killers
+    unchanged; prepush 5396 passed, 5 skipped, 57 deselected, 1 xfailed;
+    R-SYN moves as D-220; no other pinned value moves.
+
 ### D-66 pre-registered prediction
 
 ```
