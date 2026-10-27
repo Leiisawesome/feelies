@@ -35288,3 +35288,143 @@ OWNER:       campaign 15.
   FILES:         14 declared, 14 touched, plus this
                  ledger. SPEC 4, FAILFIRST 1, IMPL 7,
                  baselines 2.
+
+## P-50 Position cell to stage D
+
+  VERDICT:       passed
+  DECISIONS:     D-214, D-215, D-216, D-217, D-218,
+                 D-219, D-220, D-221
+  E0:            FAILFIRST
+                 7bf41e81dfdcdb80e92c0ad582195d51ff469780.
+                 7 failed, 1 warning in 20.39s.
+                 E   AssertionError: assert ('MarkRailUpd...te', 'Signal') == ('MarkRailUpd...', 'OrderAck')
+                 E   AttributeError: 'PositionEngine' object has no attribute 'finalize'
+                 E   AssertionError: CAP:birth_touch: move_now_cents -125 != -entry_spread_ticks × size (0)
+                 E   AssertionError: NONVACUOUS: no HORIZON requirement for SYN|sig_position_fixture_v1|1774533630100000000|LONG
+                 E   AssertionError: NONVACUOUS: no HORIZON close
+                 E   AssertionError: NONVACUOUS: no requirement with a rail while EXITING
+                 E   AssertionError: NONVACUOUS: no requirement whose cell has no exit fill by tape end
+  TREE:          P-50-probe3.diff SHA256
+                 E5E0EA18DF205B8092A1F2D189FF136D58A9C2DB3703342A89C073E8C7BEC9EB,
+                 22086 bytes. P-50-impl-check.diff
+                 reproduces it, same SHA256.
+  SPEC:          a057b11c62e524c6c39851b733b6a82bc6562595
+                 and
+                 dbcbb050fe56678143fdc875360bf77d8ec0c967.
+                 D-214 to D-221 and the spec edits.
+  FAILFIRST:     7bf41e81dfdcdb80e92c0ad582195d51ff469780.
+                 stage.txt D and the tests the stub
+                 pinned. The seven failure lines are
+                 in E0.
+  IMPL:          a53a62e911810348a73dba31dbe650e6215e160f.
+                 Position cell to stage D (D-214 to
+                 D-219, F-P50-3). Probe diff
+                 E5E0EA18DF205B8092A1F2D189FF136D58A9C2DB3703342A89C073E8C7BEC9EB.
+  PIN:           93eadd49964a0911aebede2793bce1ab3e4937bf.
+                 D-220: ECONOMIC_TRADE_HASH_RSYN
+                 3b795e551574d0f56e5c2319acaef921137396f80baba52868434bb07201060c
+                 ->
+                 b62b42d2dcc8e7315ca4d75de9b6748af605a6d280ed424dac0edd9cacfd4535.
+                 Record count stays 29.
+  BASE:          0c2c6d26107b84f174982128204dfe09d6849b0a.
+                 pre baseline_pre-P-50.json on
+                 dbcbb050fe56678143fdc875360bf77d8ec0c967,
+                 git.dirty false, captured_at
+                 2026-10-27T04:56:35.866765+00:00.
+                 Full suite 5412 passed, 0 failed, 44
+                 skipped, 3 xfailed, exit 0. Determinism
+                 148 passed, exit 0. Parity constants 64.
+                 BASELINE GREEN. tools_fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. Evidence: alphaleak n 0;
+                 available true; imports n_cycles 1,
+                 n_edges 713, n_modules 208; modules
+                 public_symbols 626, total_files 257,
+                 total_sloc 49749. post
+                 baseline_post-P-50.json on
+                 93eadd49964a0911aebede2793bce1ab3e4937bf,
+                 git.dirty false, captured_at
+                 2026-10-27T06:16:50.704120+00:00. The
+                 untracked pre JSON was moved aside for
+                 that snapshot and restored after. Full
+                 suite 5413 passed, 0 failed, 44 skipped,
+                 2 xfailed, exit 0. Determinism 148
+                 passed, exit 0. compare parity-only,
+                 exit 0: constants 64 -> 64, changed 0.
+                 VERDICT: parity HOLDS -- no constant
+                 moved. No fingerprint warning.
+                 tools_fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. Evidence: alphaleak n 0;
+                 available true; imports n_cycles 1,
+                 n_edges 714, n_modules 208; modules
+                 public_symbols 626, total_files 257,
+                 total_sloc 49978. Baselines recorded in
+                 ea7127e36849a7b4e381df520a327cd186a22eb2.
+                 Predicted 5413 passed, 0 failed, 44
+                 skipped, 2 xfailed; determinism 148;
+                 64 -> 64, changed 0; no fingerprint
+                 warning. MATCH.
+  GATES:         Hot-path profile before the post
+                 capture, exit 0, seconds 75.64, wrote
+                 tools/arch/evidence/hotpath_executed.json.
+                 1. Universe check: 1 passed in 166.78s
+                 (0:02:46). Exit 0.
+                 2. Battery. Production stage D synthetic:
+                 107 passed, 9 deselected, 1 warning in
+                 494.35s (0:08:14). Reference stage E
+                 synthetic: 107 passed, 9 deselected, 1
+                 warning in 340.42s (0:05:40). Production
+                 stage D real: 12 passed, 5447 deselected,
+                 1 warning in 424.39s (0:07:04). Reference
+                 stage E real: 12 passed, 5447 deselected,
+                 1 warning in 474.37s (0:07:54). All exit 0.
+                 3. Fourteen D-213 ids at stage D: 14
+                 passed, each accepted red
+                 CAP:gate_fire: no ADVERSE GateDecision
+                 with drawn_level_ticks > 0. Exit 0.
+                 4. kill.py. Shard A exit 0, 9 of 9 KILLED:
+                 B1, B4, B10, B12, B15, B16, B17, B18, B19.
+                 Shard B exit 0, 13 of 13 KILLED: B2, B3,
+                 B5, B6, B7, B8, B9, B11, B13, B14, B20,
+                 B21, B22. B9 by
+                 test_m10_one_live_requirement_in_exiting.
+                 Full KILLED lines match the T-7 exec
+                 kill logs. Shard A control CONTROL 0
+                 failures, exit 0. Shard B control
+                 CONTROL 0 failures, exit 0.
+                 5. Prepush: prepush: ok (ruff check, ruff
+                 format, mypy, lint-imports, pytest).
+                 ruff check: All checks passed! ruff
+                 format: 809 files already formatted.
+                 mypy: Success: no issues found in 257
+                 source files. lint-imports: Contracts:
+                 2 kept, 0 broken. Serial pytest: 5396
+                 passed, 5 skipped, 57 deselected, 1
+                 xfailed, 49 warnings in 1370.40s
+                 (0:22:50). pytest -n 4: 5396 passed, 5
+                 skipped, 1 xfailed, 53 warnings in
+                 573.78s (0:09:33). Marker: not functional
+                 and not paper_rth and not battery_real
+                 and not universe_check. Both exit 0.
+                 Predicted 5396 passed, 5 skipped, 57
+                 deselected, 1 xfailed, both modes.
+                 Serial matches. The -n 4 summary does
+                 not print deselected. MATCH on the
+                 counts that summary prints.
+  CI:            pending
+  MERGE:
+  BUGBOT:        pending
+  DEVIATIONS:    none
+  STANDING:      the contract is version 4 (T-6a, D-211);
+                 stage D
+  EVIDENCE:      P-50-probe3.diff; exec-*.log under the
+                 P-50 probe directory
+  FILES:         13 declared, 13 touched, plus this
+                 ledger. SPEC 4, FAILFIRST 3, IMPL 3,
+                 PIN 1, baselines 2.
+  FINDINGS:      F-P50-1 and F-P50-3 resolved (D-221,
+                 D-219). F-P50-2 open (the reference has
+                 no deadline cap; before stage E).
+  NOTES:         trial runs P-50-probe1..3 in
+                 feelies-probes.
