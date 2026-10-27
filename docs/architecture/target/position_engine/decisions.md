@@ -778,6 +778,43 @@ D-213 — Engine seam and stage-proofing for P-50 (T-7).
   - Rejected: requiring a firing gate (six under-limit A5 ids fail on the
     reference at E; T-7-probe1).
 
+D-214 — P-50 horizon deadline (F-P49-3).
+  - Operator decision 2026-10-25 (chat 7), option A.
+  - horizon_deadline_ns = min(birth_fill_ts + T, session_close_ns −
+    cutoff_before_close_ns) (contracts.md §2:202) with session_close_ns =
+    TradingSessionBounds.resolve_for_timestamp(birth_fill_ts).rth_close_ns,
+    frozen at birth. No bounds: birth_fill_ts + T (D-45). Bootstrap passes
+    the bounds it resolved (D-213 seam).
+  - Rejected: always birth_fill_ts + T (near the close the platform
+    flatten would record exits as EXTERNAL:SAFETY, not HORIZON); the
+    fallback alone now and the cap later.
+
+D-215 — Entry spread at birth.
+  - entry_spread_ticks = s × (paying − valuation) on the cell side's
+    orientation of the first MarkRailUpdate for the symbol at or after the
+    birth fill (the rail of the cell's first snapshot), fixed before that
+    snapshot. A None mark there gives 0 (operator 2026-10-27). A cell
+    closed before any rail has 0 and closed_on_stale_data True.
+  - Why: battery member 4's birth-touch identity holds by construction
+    only when the spread and the first move share a rail (P-50-probe1:
+    -816 against -288 with the rail before the fill).
+
+D-216 — Resolve at stage D.
+  - Only HORIZON resolves (contracts.md §2:264-265, unconditional on data
+    quality). The gates stay the stage-B stubs until stage E. An
+    invalidation latches and does not act until P-52. triggered_paths
+    lists HORIZON only.
+
+D-217 — Exit requirement, exit legs and re-emission (G11).
+  - On the deciding rail engine 13 publishes a DeRiskRequirement:
+    order_id cell_id|EXIT|attempt (from 1), the side that reduces the cell,
+    quantity the remaining size, reason HORIZON, source_layer POSITION.
+    The cell goes EXITING. A fill whose order_id starts cell_id|EXIT| is an
+    exit leg (D-76), never SIGN_FLIP; size 0 closes with the winning reason.
+  - Engine 13 subscribes OrderAck (contracts.md §0 and §2 amended at
+    P-50). REJECTED on the live order re-emits with attempt + 1 at the next
+    rail whose valuation side is present. One live requirement at a time.
+
 ### D-66 pre-registered prediction
 
 ```
