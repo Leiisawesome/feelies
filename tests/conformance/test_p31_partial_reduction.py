@@ -7,10 +7,7 @@ contract: the episode's extremes are not reset. A zero move still updates
 
 from __future__ import annotations
 
-import os
 from decimal import Decimal
-
-import pytest
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
@@ -348,22 +345,9 @@ def test_t7b_sign_flip_correlation_id_births_the_new_cell() -> None:
     assert snaps[-1].size == 15
 
 
-def _production_engine() -> bool:
-    selected = os.environ.get("FEELIES_ENGINE", "").strip()
-    return selected in ("", "feelies.position.engine.PositionEngine")
-
-
-@pytest.mark.xfail(
-    _production_engine(),
-    strict=True,
-    reason="END_OF_TAPE close lands at P-50 (D-84, D-197)",
-)
+# D-84. Production finalize closes END_OF_TAPE on the last usable rail.
 def test_t7c_end_of_tape_last_usable_rail() -> None:
-    """END_OF_TAPE uses the last rail whose exit side is usable, not a later absent one.
-
-    Production has no finalize until P-50, so this xfail is strict there.
-    The reference engine closes the cell and must pass.
-    """
+    """END_OF_TAPE uses the last rail whose exit side is usable, not a later absent one."""
     seen, engine = _drive(
         [
             _fill(
