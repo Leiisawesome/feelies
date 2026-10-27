@@ -81,6 +81,7 @@ SUBSCRIPTIONS: tuple[Subscription, ...] = (
     Subscription(39, "GateDecision", "PositionRecordSink", "_on_gate_decision"),
     Subscription(40, "PositionClosed", "PositionRecordSink", "_on_closed"),
     Subscription(41, "Signal", "PositionEngine", "_on_signal"),
+    Subscription(42, "OrderAck", "PositionEngine", "_on_ack"),
 )
 
 ZERO_SUBSCRIBER_RESOLUTIONS: tuple[tuple[str, str], ...] = (

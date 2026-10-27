@@ -750,6 +750,7 @@ def build_platform(
             SequenceGenerator(stream="position", thread_safe=_seq_thread_safe),
             policies=exit_policies,
             clock=clock,
+            session_bounds=trading_session_bounds,
         )
         position_sink = PositionRecordSink(bus)
         position_engine.attach()
