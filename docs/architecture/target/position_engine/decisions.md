@@ -778,6 +778,83 @@ D-213 — Engine seam and stage-proofing for P-50 (T-7).
   - Rejected: requiring a firing gate (six under-limit A5 ids fail on the
     reference at E; T-7-probe1).
 
+D-214 — P-50 horizon deadline (F-P49-3).
+  - Operator decision 2026-10-25 (chat 7), option A.
+  - horizon_deadline_ns = min(birth_fill_ts + T, session_close_ns −
+    cutoff_before_close_ns) (contracts.md §2:202) with session_close_ns =
+    TradingSessionBounds.resolve_for_timestamp(birth_fill_ts).rth_close_ns,
+    frozen at birth. No bounds: birth_fill_ts + T (D-45). Bootstrap passes
+    the bounds it resolved (D-213 seam).
+  - Rejected: always birth_fill_ts + T (near the close the platform
+    flatten would record exits as EXTERNAL:SAFETY, not HORIZON); the
+    fallback alone now and the cap later.
+
+D-215 — Entry spread at birth.
+  - entry_spread_ticks = s × (paying − valuation) on the cell side's
+    orientation of the first MarkRailUpdate for the symbol at or after the
+    birth fill (the rail of the cell's first snapshot), fixed before that
+    snapshot. A None mark there gives 0 (operator 2026-10-27). A cell
+    closed before any rail has 0 and closed_on_stale_data True.
+  - Why: battery member 4's birth-touch identity holds by construction
+    only when the spread and the first move share a rail (P-50-probe1:
+    -816 against -288 with the rail before the fill).
+
+D-216 — Resolve at stage D.
+  - Only HORIZON resolves (contracts.md §2:264-265, unconditional on data
+    quality). The gates stay the stage-B stubs until stage E. An
+    invalidation latches and does not act until P-52. triggered_paths
+    lists HORIZON only.
+
+D-217 — Exit requirement, exit legs and re-emission (G11).
+  - On the deciding rail engine 13 publishes a DeRiskRequirement:
+    order_id cell_id|EXIT|attempt (from 1), the side that reduces the cell,
+    quantity the remaining size, reason HORIZON, source_layer POSITION.
+    The cell goes EXITING. A fill whose order_id starts cell_id|EXIT| is an
+    exit leg (D-76), never SIGN_FLIP; size 0 closes with the winning reason.
+  - Engine 13 subscribes OrderAck (contracts.md §0 and §2 amended at
+    P-50). REJECTED on the live order re-emits with attempt + 1 at the next
+    rail whose valuation side is present. One live requirement at a time.
+
+D-218 — Closing record at stage D.
+  - Filled at P-50: exit_reason; triggered_paths (HORIZON, the
+    forced_exit_mark at the deciding rail, trigger DEADLINE);
+    proposed_price_cents (the same mark); horizon_deadline_ns;
+    entry_spread_ticks; exit legs; extremes; lived_through_feed_gap;
+    closed_on_stale_data (contracts.md §9:461, Q = favorable.quiet_limit_ns)
+    and first_event_exit, both at the deciding rail. A None mark there
+    gives no path and price None (operator 2026-10-27, as D-102).
+  - Left at stage-B values until stage E: drawn_level_ticks,
+    exited_on_unusable_data, stop_inside_round_trip, target_inside_round_trip.
+
+D-219 — End of tape and extremes.
+  - finalize() closes OPEN and EXITING cells END_OF_TAPE (D-84, D-102).
+    Price: the valuation mark of the last rail whose valuation side was
+    present; flags and correlation_id from that rail. None ever: price
+    None, closed_on_stale_data True, the last rail's correlation_id. No
+    requirement.
+  - Extremes seed at the first CLEAN rail after birth whatever the move
+    (D-79); the stub skipped a zero move (F-P50-3).
+
+D-220 — R-SYN re-pin (P-50).
+  - Operator decision 2026-10-27 (AskUserQuestion): ECONOMIC_TRADE_HASH_RSYN
+    3b795e551574d0f56e5c2319acaef921137396f80baba52868434bb07201060c ->
+    b62b42d2dcc8e7315ca4d75de9b6748af605a6d280ed424dac0edd9cacfd4535; the
+    record count stays 29. Cause: HORIZON exits on the production
+    engine's synthetic run. Its own commit, after IMPL.
+
+D-221 — Stage D's gate (F-P50-1) and P-50's prediction.
+  - battery.md's stage table and plan row P-50 named member 11 green at
+    D; its nodes are green_from E with NONVACUOUS
+    (test_battery_m11_audit.py:33). Stage D's gate is member 4's birth
+    nodes and member 10's four nodes.
+  - Prediction: full 5413 passed, 0 failed, 44 skipped, 2 xfailed (T7c
+    turns from xfail to pass); determinism 148; parity constants 64 -> 64,
+    changed 0; universe 1 passed; battery 107 passed, 9 deselected and 12
+    passed at D and at E; the 14 D-213 ids accepted red at D with
+    CAP:gate_fire; kill A 9/9, B 13/13, controls 0 failures, killers
+    unchanged; prepush 5396 passed, 5 skipped, 57 deselected, 1 xfailed;
+    R-SYN moves as D-220; no other pinned value moves.
+
 ### D-66 pre-registered prediction
 
 ```

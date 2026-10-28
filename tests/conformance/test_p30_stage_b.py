@@ -26,7 +26,8 @@ from feelies.position.engine import PositionEngine, PositionRecordSink
 _ROOT = Path(__file__).resolve().parents[2]
 _PRODUCTION = _ROOT / "src" / "feelies" / "position" / "engine.py"
 _REFERENCE = _ROOT / "tests" / "position_engine" / "reference" / "engine.py"
-_CONTRACT_SUBS = ("MarkRailUpdate", "SlicePositionUpdate", "Signal")
+# D-217. A REJECTED live exit ack is re-armed at the next present-side rail.
+_CONTRACT_SUBS = ("MarkRailUpdate", "SlicePositionUpdate", "Signal", "OrderAck")
 _CONTRACT_PUBS = ("PositionSnapshot", "GateDecision", "PositionClosed", "DeRiskRequirement")
 _CONTRACT_GATES = ("ADVERSE", "FAVORABLE")
 
