@@ -35412,9 +35412,31 @@ OWNER:       campaign 15.
                  Serial matches. The -n 4 summary does
                  not print deselected. MATCH on the
                  counts that summary prints.
-  CI:            pending
-  MERGE:
-  BUGBOT:        pending
+  CI:            PR head 40612848584 pull_request success,
+                 check 835 s, Tests 724.76 s, Determinism
+                 9.91 s, ratio 73.13; reference battery 107
+                 passed, 9 deselected in 345.68s (0:05:45);
+                 mutant kill A 9 KILLED, CONTROL 0 failures,
+                 291 s; B 13 KILLED, CONTROL 0 failures, 117
+                 s. Merge 40615169910 pull_request success,
+                 check 512 s, Tests 438.04 s, Determinism
+                 6.67 s, ratio 65.67; reference battery 107
+                 passed, 9 deselected in 199.55s (0:03:19);
+                 mutant kill A 9 KILLED, CONTROL 0 failures,
+                 236 s; B 13 KILLED, CONTROL 0 failures, 169
+                 s. Two-run geometric mean 69.30; D-209
+                 fired no.
+  MERGE:         b25425d59608b8fd698ad91584a8aaf3a975b259,
+                 parents
+                 0c2c6d26107b84f174982128204dfe09d6849b0a
+                 and
+                 6217d17b92d376bdf7e6fdf5a84e722f0d88df39,
+                 tree 5a43ab55 = PR head. PR #300. Operator
+                 go 2026-10-28 (AskUserQuestion).
+  BUGBOT:        completed, no findings.
+  CI WATCH:      head ratio 73.13 (check 835 s); merge
+                 ratio 65.67 (check 512 s). Two-run
+                 geometric mean 69.30; D-209 fired no.
   DEVIATIONS:    none
   STANDING:      the contract is version 4 (T-6a, D-211);
                  stage D
