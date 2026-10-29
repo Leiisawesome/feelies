@@ -855,6 +855,39 @@ D-221 — Stage D's gate (F-P50-1) and P-50's prediction.
     unchanged; prepush 5396 passed, 5 skipped, 57 deselected, 1 xfailed;
     R-SYN moves as D-220; no other pinned value moves.
 
+D-222 — Refusal record for entry admission (F-P49-2).
+  - Operator decision 2026-10-28 (AskUserQuestion): an owned alpha's refused
+    entry is recorded as an Alert, severity WARNING, alert_name
+    position_entry_refused. Context: symbol, strategy_id, side, intent,
+    refusal_reason, rail_quote_sequence (None when the name has no rail
+    yet), slice_quantity. The four reasons are tokens in
+    src/feelies/core/order_admission.py beside BLOCK_*, spelled as
+    contracts.md §6 names them. The no-order trace row carries the reason.
+  - Evidence at 5f4f8503: the PORTFOLIO admission block records refusals
+    this way (orchestrator.py:2191-2205); Alerts there are per-gate forensic
+    markers, not part of the decision (:4704); backtest_report.py:272-276
+    selects Alerts by name. The alert taxonomy pin replays a standalone
+    fixture (test_alert_taxonomy_replay.py:28-75), so a kernel alert
+    cannot move it.
+  - Rejected: a new typed event (moves PINNED_PAYLOAD and the manifest
+    fingerprint); RiskVerdict REJECT (engine 8's record; contracts.md §0:26
+    places admission in engine 9); OrderAck REJECTED (claims a broker
+    reply; corrupts backtest_report.py:182-183).
+
+D-223 — NO_SCALE_IN basis.
+  - Operator decision 2026-10-28 (AskUserQuestion): admission refuses an
+    owned alpha's same-side increase when the slice quantity is non-zero on
+    the order's side, or when an _active_orders entry with the same
+    strategy_id, symbol and side is not terminal (FILLED, CANCELLED,
+    REJECTED, EXPIRED are terminal).
+  - Reason: engine 13 keeps a cell only while it is OPEN or EXITING, and
+    branches on a slice update of quantity 0 (position/engine.py:63, :232 at
+    5f4f8503); the kernel holds the same slice quantity. A second working
+    entry order would add a fill the cell cannot refuse (D-77, A-04).
+  - Rejected: slice quantity only (two working entries double an episode);
+    a kernel subscription mirroring the cell; refusing SCALE_UP by intent
+    (misses an ENTRY while the slice is not flat).
+
 ### D-66 pre-registered prediction
 
 ```
