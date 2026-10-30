@@ -35585,10 +35585,34 @@ OWNER:       campaign 15.
                  B 13/13, controls 0 failures; real config
                  CUTOFF_ALREADY_PASSED 1, NO_SCALE_IN 12,
                  journal 100, PositionClosed 44. MATCH.
-  CI:            unknown
-  MERGE:         unknown
-  BUGBOT:        unknown
-  CI WATCH:      unknown
+  CI:            PR head 41044030611 success at 40505ef5
+                 (check 874 s, parity oracle 513 s,
+                 reference battery 280 s, kill A 280 s,
+                 kill B 177 s, reference battery (real)
+                 skipped); Tests 5402 passed, 5 skipped,
+                 1 xfailed; determinism 148 passed.
+                 Earlier head run 41031492899 at 2e45b967
+                 superseded by the universe-check push,
+                 not read. Merge run 41047411473 success
+                 (check 504 s, parity oracle 306 s,
+                 reference battery 391 s, kill A 164 s,
+                 kill B 180 s, real skipped); Tests 5402
+                 passed, 5 skipped, 1 xfailed;
+                 determinism 148 passed.
+  MERGE:         29a94c36b0f9ae2786f8a19ff494f303e5389394,
+                 parents
+                 5f4f8503d12147db84668d3dd5b4d782a74b1dbb
+                 and
+                 40505ef5aa80ad2502a28fcdd9c9f74fc61a1678,
+                 tree
+                 25ce7359a700ed9612c52eeadaa937bd2e71e0ce
+                 = PR head tree. PR #301. Merged
+                 2026-10-30T11:20:33Z.
+  BUGBOT:        pass; no comments, no reviews.
+  CI WATCH:      head 874 s, ratio 763.15 / 10.86 = 70.27;
+                 merge 504 s, ratio 427.39 / 6.14 = 69.61.
+                 Two-run geometric mean 69.94; D-209
+                 fired no.
   DEVIATIONS:    the universe check was missing from
                  D-224's prediction and from the gate
                  run; run before merge on 2e45b967
