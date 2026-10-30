@@ -60,6 +60,7 @@ from feelies.core.events import (
     HorizonTick,
     KillSwitchActivation,
     LatencyBreach,
+    MarkRailUpdate,
     MetricEvent,
     NBBOQuote,
     OrderAck,
@@ -97,6 +98,7 @@ from feelies.core.intent import (
     SignalPositionTranslator,
     TradingIntent,
 )
+from feelies.core.exit_policy import ExitPolicy
 from feelies.core.order_admission import (
     BLOCK_BELOW_MIN_ORDER_SHARES,
     BLOCK_EDGE_BELOW_COST,
@@ -3089,6 +3091,7 @@ class Orchestrator:
         halt_tradeability: _HaltTradeability | None = None,
         mark_rail: MarkRailProtocol | None = None,
         boundary_state: BoundaryStateCapture | None = None,
+        exit_policies: Mapping[str, ExitPolicy] | None = None,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -3149,6 +3152,8 @@ class Orchestrator:
         _seq_kw = {"thread_safe": thread_safe_sequences}
         self._seq = SequenceGenerator(stream="orchestrator", **_seq_kw)
         self._mark_rail = mark_rail
+        self._latest_mark_rail: dict[str, MarkRailUpdate] = {}
+        self._exit_policies = exit_policies
         self._slice_seq: SequenceGenerator | None = None
         if mark_rail is not None:
             self._slice_seq = SequenceGenerator(
@@ -4396,7 +4401,10 @@ class Orchestrator:
                 self._strategy_positions.mark_stale(quote.symbol)
 
         if self._mark_rail is not None:
-            self._bus.publish(self._mark_rail.on_quote(quote, quality=quality))
+            # D-222, D-223, D-224: keep this symbol's update, then publish it.
+            rail_update = self._mark_rail.on_quote(quote, quality=quality)
+            self._latest_mark_rail[quote.symbol] = rail_update
+            self._bus.publish(rail_update)
 
         # Sensor fan-out (+ router on_quote) runs synchronously inside
         # publish; time the call for hot-path attribution.
@@ -5428,6 +5436,8 @@ class Orchestrator:
         self._regime_bus_published_symbols.clear()
         self._realized_cost_breach_streak.clear()
         self._active_orders.clear()
+        # D-224: a new run clears the retained rail.
+        self._latest_mark_rail.clear()
         self._order_trading_intent.clear()
         self._forced_exit_announced_quantity.clear()
         self._last_signal_mechanism.clear()
