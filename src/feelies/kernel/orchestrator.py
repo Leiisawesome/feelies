@@ -105,6 +105,10 @@ from feelies.core.order_admission import (
     BLOCK_EDGE_UNPRICEABLE,
     BLOCK_LOCATE_UNAVAILABLE,
     BLOCK_SSR,
+    CROSSED_AT_BIRTH,
+    CUTOFF_ALREADY_PASSED,
+    NO_PAYING_PRICE,
+    NO_SCALE_IN,
     ExposureDelta,
     admission_block_reason,
     blocks_for_min_size,
@@ -3036,6 +3040,81 @@ def _record_size_shadow(self: Any, signal: Signal, quote: NBBOQuote) -> None:
     )
 
 
+def _slice_quantity(self: Any, strategy_id: str, symbol: str) -> int:
+    store = self._strategy_positions
+    if store is None:
+        return 0
+    return int(store.get(strategy_id, symbol).quantity)
+
+
+def _paying_side_absent(rail: MarkRailUpdate, side: Side) -> bool:
+    orientation = rail.long if side is Side.BUY else rail.short
+    return orientation.paying_side_absent
+
+
+def _quantity_on_order_side(quantity: int, side: Side) -> bool:
+    if side is Side.BUY:
+        return quantity > 0
+    return quantity < 0
+
+
+def _cutoff_already_passed(self: Any, quote: NBBOQuote, policy: ExitPolicy) -> bool:
+    bounds: TradingSessionBounds | None = self._trading_session_bounds
+    if bounds is None:
+        return False
+    effective = bounds.resolve_for_timestamp(quote.exchange_timestamp_ns)
+    deadline = effective.rth_close_ns - policy.horizon.cutoff_before_close_ns
+    return quote.exchange_timestamp_ns >= deadline
+
+
+def _same_side_order_live(self: Any, strategy_id: str, symbol: str, side: Side) -> bool:
+    # Not terminal: the order state is outside _TERMINAL_ORDER_STATES.
+    for sm, order_side, order in self._active_orders.values():
+        if sm.state in _TERMINAL_ORDER_STATES:
+            continue
+        if order.strategy_id == strategy_id and order.symbol == symbol and order_side == side:
+            return True
+    return False
+
+
+def _position_entry_refusal(
+    self: Any,
+    *,
+    signal: Signal,
+    intent: OrderIntent,
+    quote: NBBOQuote,
+    opens_exposure: bool,
+) -> tuple[str, Side, int | None, int] | None:
+    """First owned-entry refusal, or none. D-222, D-223, D-224."""
+    policies: Mapping[str, ExitPolicy] | None = self._exit_policies
+    if not opens_exposure or policies is None:
+        return None
+    policy = policies.get(signal.strategy_id)
+    if policy is None:
+        return None
+    symbol = intent.symbol
+    side = side_for_intent(intent)
+    slice_quantity = _slice_quantity(self, signal.strategy_id, symbol)
+    rail = self._latest_mark_rail.get(symbol)
+    rail_quote_sequence = None if rail is None else rail.quote_sequence
+    if rail is not None and rail.crossed:
+        reason = CROSSED_AT_BIRTH
+    elif rail is None or _paying_side_absent(rail, side):
+        reason = NO_PAYING_PRICE
+    elif _cutoff_already_passed(self, quote, policy):
+        reason = CUTOFF_ALREADY_PASSED
+    elif _quantity_on_order_side(slice_quantity, side) or _same_side_order_live(
+        self,
+        signal.strategy_id,
+        symbol,
+        side,
+    ):
+        reason = NO_SCALE_IN
+    else:
+        return None
+    return reason, side, rail_quote_sequence, slice_quantity
+
+
 class Orchestrator:
     """Coordinate lifecycle state and the deterministic tick pipeline.
 
@@ -4722,6 +4801,47 @@ class Orchestrator:
                 cid,
                 (block, f"symbol={intent.symbol}"),
                 block,
+            )
+            return
+
+        # D-222, D-223, D-224: refuse an owned opening order on the first reason.
+        refusal = _position_entry_refusal(
+            self,
+            signal=signal,
+            intent=intent,
+            quote=quote,
+            opens_exposure=delta.opens_or_increases_exposure,
+        )
+        if refusal is not None:
+            reason, side, rail_quote_sequence, slice_quantity = refusal
+            symbol = intent.symbol
+            self._publish_alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=cid,
+                severity=AlertSeverity.WARNING,
+                alert_name="position_entry_refused",
+                message=(
+                    f"Entry refused: {reason} "
+                    f"(strategy_id={signal.strategy_id!r}, symbol={symbol!r})."
+                ),
+                context={
+                    "symbol": symbol,
+                    "strategy_id": signal.strategy_id,
+                    "side": side.name,
+                    "intent": intent.intent.name,
+                    "refusal_reason": reason,
+                    "rail_quote_sequence": rail_quote_sequence,
+                    "slice_quantity": slice_quantity,
+                },
+            )
+            self._finish_no_order(
+                quote,
+                signal,
+                intent,
+                t_wall_start,
+                cid,
+                (reason, f"symbol={symbol}"),
+                reason,
             )
             return
 
