@@ -35450,3 +35450,166 @@ OWNER:       campaign 15.
                  no deadline cap; before stage E).
   NOTES:         trial runs P-50-probe1..3 in
                  feelies-probes.
+
+## P-51 Entry admission refusals and no-scale-in
+
+  VERDICT:       passed
+  DECISIONS:     D-222, D-223, D-224.
+                 Closes F-P49-2.
+  E0:            FAILFIRST
+                 612fa6f663c639c697fd2465aa05aa977fceb504.
+                 4 failed, 2 passed, 1 warning in 0.53s.
+                 The four reason tests fail on
+                 assert orders == []
+                 (test_p51_entry_admission.py:262).
+                 The two controls pass
+                 (exec-failfirst.log).
+  TREE:          P-51-probe4.diff SHA256
+                 CCBC8571F440BFC8BBEC08247B5B3127129110ADB3C8AD5E052D036043723ADF,
+                 19788 bytes. P-51-impl-check.diff
+                 reproduces it, same SHA256.
+  SPEC:          64fc9157b01df969c5f15a004928f8131e0f13de,
+                 1e89cd6466948409eda0f46816fb25a6a5a689e1
+                 and
+                 969f58ef8a2b04f67ec4f89b3e77cd2a432d9b81.
+                 D-222, D-223, D-224 and the spec edits.
+  FAILFIRST:     612fa6f663c639c697fd2465aa05aa977fceb504.
+                 Engine-9 refusal tests. The four
+                 failures are in E0. The two controls
+                 pass.
+  IMPL:          bef7760cd7706d1d1d485e24a3c2ddfd5f63f5ba
+                 and
+                 679b84d18b96d1fbea0eb86d78aac65d73046057.
+                 Owned policies, rail map, refusal
+                 tokens, then the check (D-222, D-223,
+                 D-224). Probe diff
+                 CCBC8571F440BFC8BBEC08247B5B3127129110ADB3C8AD5E052D036043723ADF.
+  PIN:           no pinned value moves. R-SYN
+                 b62b42d2dcc8e7315ca4d75de9b6748af605a6d280ed424dac0edd9cacfd4535,
+                 29 records, 0 refusals.
+  BASE:          0043f2427060d9e1948b758144ee711daaae378e.
+                 pre baseline_pre-P-51.json on
+                 5f4f8503d12147db84668d3dd5b4d782a74b1dbb,
+                 git.dirty false, captured_at
+                 2026-10-29T04:20:28.108360+00:00.
+                 Full suite 5413 passed, 0 failed, 44
+                 skipped, 2 xfailed, exit 0. Determinism
+                 148 passed, exit 0. Parity constants 64.
+                 BASELINE GREEN. tools_fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. Evidence: alphaleak n 0;
+                 available true; imports n_cycles 1,
+                 n_edges 714, n_modules 208; modules
+                 public_symbols 626, total_files 257,
+                 total_sloc 49978. post
+                 baseline_post-P-51.json on
+                 679b84d18b96d1fbea0eb86d78aac65d73046057,
+                 git.dirty false, captured_at
+                 2026-10-30T02:21:56.496550+00:00. The
+                 untracked pre JSON was moved aside for
+                 that snapshot and restored after,
+                 SHA256
+                 385BC5F56FA167441C4DE477DE3677FA3C9A3402E0A6918005447ADEC77BF65D
+                 unchanged. Full suite 5419 passed, 0
+                 failed, 44 skipped, 2 xfailed, exit 0.
+                 Determinism 148 passed, exit 0. compare
+                 parity-only, exit 0: constants 64 -> 64,
+                 changed 0. VERDICT: parity HOLDS -- no
+                 constant moved. No fingerprint warning.
+                 tools_fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1, unchanged. Evidence: alphaleak
+                 n 0; available true; imports n_cycles 1,
+                 n_edges 715, n_modules 208; modules
+                 public_symbols 626, total_files 257,
+                 total_sloc 50096. Baselines recorded in
+                 0043f2427060d9e1948b758144ee711daaae378e.
+                 Predicted full 5413 -> 5419 passed, 0
+                 failed, 44 skipped, 2 xfailed;
+                 determinism 148; constants 64 -> 64,
+                 changed 0; R-SYN b62b42d2, 29 records,
+                 0 refused; no fingerprint warning.
+                 MATCH.
+  GATES:         Hot-path profile before the green post
+                 capture, exit 0, seconds 101.87, wrote
+                 tools/arch/evidence/hotpath_executed.json
+                 (exec-progress.txt). exec-profile.log is
+                 a later run, exit 0, seconds 46.27.
+                 1. Universe check: unknown.
+                 2. Battery. Production stage D synthetic:
+                 107 passed, 9 deselected, 1 warning in
+                 509.51s (0:08:29). Reference stage E
+                 synthetic: 107 passed, 9 deselected, 1
+                 warning in 338.95s (0:05:38). Production
+                 stage D real: 12 passed, 5453 deselected,
+                 1 warning in 564.83s (0:09:24). Reference
+                 stage E real: 12 passed, 5453 deselected,
+                 1 warning in 487.73s (0:08:07). All exit 0.
+                 3. Fourteen D-213 ids at stage D: 14
+                 passed, each accepted red
+                 CAP:gate_fire: no ADVERSE GateDecision
+                 with drawn_level_ticks > 0. Exit 0.
+                 4. kill.py. Shard A exit 0, 9 of 9 KILLED:
+                 B1, B4, B10, B12, B15, B16, B17, B18, B19.
+                 Shard B exit 0, 13 of 13 KILLED: B2, B3,
+                 B5, B6, B7, B8, B9, B11, B13, B14, B20,
+                 B21, B22. B9 by
+                 test_m10_one_live_requirement_in_exiting.
+                 Shard A control CONTROL 0 failures,
+                 exit 0. Shard B control CONTROL 0
+                 failures, exit 0.
+                 5. Prepush: prepush: ok (ruff check, ruff
+                 format, mypy, lint-imports, pytest).
+                 ruff check: All checks passed! ruff
+                 format: 810 files already formatted.
+                 mypy: Success: no issues found in 257
+                 source files. lint-imports: Contracts:
+                 2 kept, 0 broken. Serial pytest: 5402
+                 passed, 5 skipped, 57 deselected, 1
+                 xfailed, 49 warnings in 1078.30s
+                 (0:17:58). pytest -n 4: 5402 passed, 5
+                 skipped, 1 xfailed, 53 warnings in
+                 452.90s (0:07:32). Marker: not functional
+                 and not paper_rth and not battery_real
+                 and not universe_check. Both exit 0.
+                 6. Real config refused
+                 CUTOFF_ALREADY_PASSED 1, NO_SCALE_IN 12;
+                 journal 100; PositionClosed 44.
+                 Predicted serial 5402 passed, 5 skipped,
+                 57 deselected, 1 xfailed, and -n 4 5402
+                 passed, 5 skipped, 1 xfailed; battery
+                 107 passed, 9 deselected and 12 passed,
+                 at D and at E; the 14 D-213 ids accepted
+                 red at D with CAP:gate_fire; kill A 9/9,
+                 B 13/13, controls 0 failures; real config
+                 CUTOFF_ALREADY_PASSED 1, NO_SCALE_IN 12,
+                 journal 100, PositionClosed 44. MATCH.
+  CI:            unknown
+  MERGE:         unknown
+  BUGBOT:        unknown
+  CI WATCH:      unknown
+  DEVIATIONS:    none
+  STANDING:      the contract is version 4 (T-6a, D-211);
+                 stage D
+  EVIDENCE:      P-51-probe4.diff; exec-*.log under the
+                 P-51 probe directory
+  FILES:         8 touched, plus this ledger. SPEC
+                 decisions.md (A, B) and contracts.md
+                 (C). FAILFIRST 1. IMPL bootstrap.py,
+                 order_admission.py, orchestrator.py.
+                 Baselines 2. No PIN commit.
+  FINDINGS:      F-P49-2 closed. F-P51-1 open: 13
+                 refusals, base fate of those orders
+                 untraced. Destination: P-52's census.
+  NOTES:         trial runs: probe1
+                 5A90E8588DD4D2914333EA1DA24621815DB3BF507DD2E3B391D93E61F56BFCB0
+                 (fail-first died on the constructor:
+                 rejected); probe2
+                 F07721AA2C2BCB1787B8A902B2DC7EE19E4EC11D9AF23D16312AE9F6F5856A92
+                 (split, reset clear); probe3 measurement
+                 (mypy no-any-return at the cutoff read:
+                 fixed); probe4
+                 CCBC8571F440BFC8BBEC08247B5B3127129110ADB3C8AD5E052D036043723ADF
+                 applied. A stale hot-path profile turned
+                 the first capture red; green after the
+                 profile (contract).
