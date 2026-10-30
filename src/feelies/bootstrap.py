@@ -808,6 +808,7 @@ def build_platform(
         net_shadow_portfolio_max_abs_qty=config.risk_max_position_per_symbol,
         mark_rail=mark_rail,
         boundary_state=boundary_state,
+        exit_policies=exit_policies,
     )
     _attach_notification_observer(bus, _NotificationObserver(alert_manager))
 

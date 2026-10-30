@@ -404,6 +404,13 @@ OPEN or EXITING (`NO_SCALE_IN`). Refusals are counted by reason and reported wit
 *Reason:* the entry price is the origin every later number counts from; refusals cluster in
 stress, so a silent refusal is survivorship.
 
+Order and record (D-222, D-223, D-224): `CROSSED_AT_BIRTH`, then
+`NO_PAYING_PRICE` (also when the name has no rail update yet), then
+`CUTOFF_ALREADY_PASSED`, then `NO_SCALE_IN`. A crossed book is absent on both
+sides (D-62), so crossed is checked first. A refusal is an `Alert` named
+`position_entry_refused` that carries the reason (D-222). The same-side test
+reads the slice quantity and the working orders, not the cell (D-223).
+
 ## 7. Sink
 
 An object that reads engine outputs and cannot affect any engine output is a sink, not a
