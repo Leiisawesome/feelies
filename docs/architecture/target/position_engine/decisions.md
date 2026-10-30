@@ -888,6 +888,40 @@ D-223 — NO_SCALE_IN basis.
     a kernel subscription mirroring the cell; refusing SCALE_UP by intent
     (misses an ENTRY while the slice is not flat).
 
+D-224 — P-51 interpretations, commit order and prediction.
+  - Plan approved 2026-10-28 (AskUserQuestion). Owned: a strategy_id that is
+    a key of bootstrap's exit_policies map, passed to the orchestrator as one
+    keyword-only input. The kernel keeps the latest MarkRailUpdate per
+    symbol where it publishes it, and clears that map on reset.
+  - The check runs on the SIGNAL path after admission_block_reason and
+    before the reversal branch, only for an order that opens or increases
+    exposure: ENTRY, SCALE_UP and a reversal's entry leg. The PORTFOLIO leg
+    path is unchanged.
+  - Order: CROSSED_AT_BIRTH; NO_PAYING_PRICE (no rail yet for the name, or
+    the order side's orientation, BUY long and SELL short, has its paying
+    side absent); CUTOFF_ALREADY_PASSED; NO_SCALE_IN. Crossed is first
+    because a crossed book is absent on both sides (D-62).
+  - Cutoff: quote.exchange_timestamp_ns at or past the effective session
+    rth_close_ns minus the policy's cutoff_before_close_ns; skipped when the
+    kernel has no session bounds (synthetic runs; F-P50-2).
+  - The per-reason report line stays with P-95 and P-99 (plan row P-99).
+  - Commits: SPEC A, B, C; IMPL-a (tokens, input, rail map; nothing reads
+    them); FAILFIRST (four reason tests fail on an assertion, two controls
+    pass); IMPL-b (the check); baselines; ledger.
+  - F-P51-1: on configs/bt_position_arbitrary_not_calibrated.yaml the check
+    refuses 13 entries (CUTOFF_ALREADY_PASSED 1, NO_SCALE_IN 12) while
+    trade-journal records (100) and PositionClosed (44) equal the base. The
+    13 orders' fate at base is not traced. Destination: P-52's census.
+  - Prediction (pre-registered; trial runs 1-4; P-51-probe4.diff SHA256
+    CCBC8571F440BFC8BBEC08247B5B3127129110ADB3C8AD5E052D036043723ADF, 19788
+    bytes): full 5413 -> 5419 passed, 0 failed, 44 skipped, 2 xfailed;
+    determinism 148; parity constants 64 -> 64, changed 0; R-SYN b62b42d2
+    with 29 records and 0 refusals; prepush serial 5402 passed, 5 skipped,
+    57 deselected, 1 xfailed, and -n 4 5402 passed, 5 skipped, 1 xfailed;
+    battery 107 passed, 9 deselected and 12 passed, at D and at E; the 14
+    D-213 ids accepted red at D with CAP:gate_fire; kill A 9/9, B 13/13,
+    controls 0 failures; no pinned value moves.
+
 ### D-66 pre-registered prediction
 
 ```
