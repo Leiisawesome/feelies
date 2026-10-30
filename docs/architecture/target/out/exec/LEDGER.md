@@ -35535,7 +35535,8 @@ OWNER:       campaign 15.
                  tools/arch/evidence/hotpath_executed.json
                  (exec-progress.txt). exec-profile.log is
                  a later run, exit 0, seconds 46.27.
-                 1. Universe check: unknown.
+                 1. Universe check: 1 passed in 116.99s
+                 (0:01:56)
                  2. Battery. Production stage D synthetic:
                  107 passed, 9 deselected, 1 warning in
                  509.51s (0:08:29). Reference stage E
@@ -35588,7 +35589,10 @@ OWNER:       campaign 15.
   MERGE:         unknown
   BUGBOT:        unknown
   CI WATCH:      unknown
-  DEVIATIONS:    none
+  DEVIATIONS:    the universe check was missing from
+                 D-224's prediction and from the gate
+                 run; run before merge on 2e45b967
+                 (exec-universe.log).
   STANDING:      the contract is version 4 (T-6a, D-211);
                  stage D
   EVIDENCE:      P-51-probe4.diff; exec-*.log under the
