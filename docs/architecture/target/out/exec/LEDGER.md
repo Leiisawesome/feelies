@@ -35641,3 +35641,66 @@ OWNER:       campaign 15.
                  applied. A stale hot-path profile turned
                  the first capture red; green after the
                  profile (contract).
+
+## T-8 Stage-proofing for P-52
+
+  VERDICT:       passed
+  DECISIONS:     D-225
+  E0:            Stage hook, measured in an outside-repo copy of
+                 c62acd6614efd58c9213c9f90856cc134ce42862 (no
+                 FAILFIRST commit, D-225). With P-52-gate.diff:
+                 test_m5_invalidation_at_take_profit and
+                 test_m5_gap_through_trail_and_stop "M5: no close
+                 carries FAVORABLE and <path>"; test_m6_a2_v5 "A2:
+                 no suppression record on the injected run"; each
+                 red for the wrong reason. With T-8 and the gate:
+                 CAP:gate_fire for all three.
+  TREE:          T-8-probe1.diff SHA256
+                 E2B88D8414A5751576D1C3F41F8DA487C8F4C166448605C4AD756F0EAB99CA77,
+                 1803 bytes. Full-index form SHA256
+                 DF2EFA2D0C5A824BC2CBFFB6B159418DB683763CD6B2A4F188D8423398234B4F,
+                 1935 bytes; T-8-impl-check.full.diff reproduces
+                 it, same SHA256.
+  SPEC:          83e602b40504719257e4ae71820f34e6cd9d4ec6.
+                 D-225, the T-8 plan row, the battery.md line.
+  IMPL:          803db729de4b733a9fd1eb5fc2aec685cfa69add.
+                 Three nodes call require_adverse_level first.
+  BASE:          6bcdf1154e3db161cc1ff6f752f72e237a171ee1. pre
+                 baseline_pre-T-8.json on 83e602b4, git.dirty
+                 false; post baseline_post-T-8.json on 803db729,
+                 git.dirty false, the untracked pre JSON moved
+                 aside and restored (SHA256 unchanged). Both: full
+                 suite 5419 passed, 0 failed, 44 skipped, 2
+                 xfailed; determinism 148; parity constants 64;
+                 tools_fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1; evidence alphaleak n 0, imports
+                 n_cycles 1, n_edges 715, n_modules 208, modules
+                 public_symbols 626, total_files 257, total_sloc
+                 50096. compare parity-only: 64 -> 64, changed 0,
+                 parity HOLDS. Predicted (D-225) MATCH.
+  GATES:         Hot-path profile before each capture and the
+                 prepush. Prepush serial 5402 passed, 5 skipped,
+                 57 deselected, 1 xfailed; -n 4 5402 passed, 5
+                 skipped, 1 xfailed. Battery synthetic 107 passed,
+                 9 deselected, and real 12 passed, at D and at E.
+                 Accepted reds at D: CAP:gate_fire 17 (14 -> 17,
+                 the three nodes named). Kill A 9/9, B 13/13 with
+                 B8 by test_m6_a2_v5, controls 0 failures.
+                 Universe 1 passed (PYTHONHASHSEED 0). MATCH.
+  CI:            pending
+  MERGE:         pending
+  BUGBOT:        pending
+  DEVIATIONS:    1. E0 is the stage hook's verdict, not a
+                 FAILFIRST commit (D-225, operator 2026-10-31).
+                 2. The byte-compare uses --full-index diffs: the
+                 abbreviated forms differ only in index
+                 abbreviation length between repos (7 vs 8).
+                 3. Trials ran in outside-repo copies (operator,
+                 chat 9).
+  STANDING:      PYTHONHASHSEED unset in local runs (operator
+                 decision pending); the universe check runs at 0.
+  EVIDENCE:      T-8-probe1.diff, T-8-probe1.full.diff, t8-*.xml
+                 under feelies-probes\P-52; logs under
+                 feelies-probes\T-8.
+  FINDINGS:      none
