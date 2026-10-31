@@ -35688,9 +35688,31 @@ OWNER:       campaign 15.
                  the three nodes named). Kill A 9/9, B 13/13 with
                  B8 by test_m6_a2_v5, controls 0 failures.
                  Universe 1 passed (PYTHONHASHSEED 0). MATCH.
-  CI:            pending
-  MERGE:         pending
-  BUGBOT:        pending
+  CI:            PR head 41184071896 success at 9e5def5c
+                 (check 454 s, parity oracle 321 s,
+                 reference battery 386 s, kill A 201 s,
+                 kill B 184 s, reference battery (real)
+                 skipped); Tests 5402 passed, 5 skipped,
+                 1 xfailed; determinism 148 passed.
+                 Merge run 41185141787 success (check 737 s,
+                 parity oracle 504 s, reference battery
+                 336 s, kill A 194 s, kill B 192 s, real
+                 skipped); Tests 5402 passed, 5 skipped,
+                 1 xfailed; determinism 148 passed.
+  MERGE:         e7265e6a9cc8b760afacd51a05840ad19ee0665e,
+                 parents
+                 c62acd6614efd58c9213c9f90856cc134ce42862
+                 and
+                 9e5def5cbb0957b8a1cb16aa4612dba39bb4588c,
+                 tree
+                 85896cc21c57b12a9daf3ce9edbf9e1cdb6c8784
+                 = PR head tree. PR #302. Merged
+                 2026-10-31T08:34:06Z.
+  BUGBOT:        pass (2m9s); no comments, no reviews.
+  CI WATCH:      head 454 s, ratio 385.51 / 5.55 = 69.46;
+                 merge 737 s, ratio 633.84 / 8.77 = 72.27.
+                 Two-run geometric mean 70.85; D-209
+                 fired no.
   DEVIATIONS:    1. E0 is the stage hook's verdict, not a
                  FAILFIRST commit (D-225, operator 2026-10-31).
                  2. The byte-compare uses --full-index diffs: the
