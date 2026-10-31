@@ -22,6 +22,11 @@ BLOCK_LOCATE_UNAVAILABLE: str = "locate_unavailable"
 BLOCK_BELOW_MIN_ORDER_SHARES: str = "quantity_below_platform_min_order_shares"
 BLOCK_EDGE_BELOW_COST: str = "portfolio_leg_edge_below_min_edge_cost_ratio"
 BLOCK_EDGE_UNPRICEABLE: str = "portfolio_leg_edge_unpriceable_no_quote"
+# D-222, D-223, D-224: entry-admission refusals. Each string equals its name.
+NO_PAYING_PRICE: str = "NO_PAYING_PRICE"
+CROSSED_AT_BIRTH: str = "CROSSED_AT_BIRTH"
+CUTOFF_ALREADY_PASSED: str = "CUTOFF_ALREADY_PASSED"
+NO_SCALE_IN: str = "NO_SCALE_IN"
 
 
 @dataclass(frozen=True, kw_only=True)

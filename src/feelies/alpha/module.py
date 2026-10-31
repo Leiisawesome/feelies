@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from feelies.core.alpha_risk_budget import AlphaRiskBudget as AlphaRiskBudget
+from feelies.core.exit_policy import ExitPolicy
 from feelies.features.definition import FeatureDefinition
 
 _TYPE_MAP: dict[str, type] = {
@@ -121,6 +122,7 @@ class AlphaManifest:
     trend_mechanism: dict[str, Any] | None = None
     hazard_exit: dict[str, Any] | None = None
     safety_exit_policy: dict[str, Any] | None = None
+    exit_policy: ExitPolicy | None = None
     gate_thresholds_overrides: dict[str, Any] | None = None
     lifecycle_cap: str | None = None
     manifest_hash: str = ""

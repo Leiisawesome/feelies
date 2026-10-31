@@ -167,6 +167,7 @@ class TestDeferredMarketAntiLookahead:
             OrderAckStatus.ACKNOWLEDGED,
         ]
 
+        clock.set_time(2000)
         router.on_quote(_bt_quote("AAPL", "100.00", "100.10", 3000))
         fills = router.poll_acks()
         assert len(fills) == 1 and fills[0].status == OrderAckStatus.FILLED
@@ -208,6 +209,7 @@ class TestPassiveDrainAntiLookahead:
                 limit_price=Decimal("100.00"),
             ),
         )
+        clock.set_time(1000)
         prefix = [q1, q2, q3]
         fp_a = _ack_fingerprint(_collect_router_acks(router_a, prefix))
 
@@ -231,6 +233,7 @@ class TestPassiveDrainAntiLookahead:
                 limit_price=Decimal("100.00"),
             ),
         )
+        clock_b.set_time(1000)
         acks_b: list[OrderAck] = []
         for i, q in enumerate([q1, q2, q3, q_future]):
             router_b.on_quote(q)

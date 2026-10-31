@@ -69,7 +69,7 @@ def _hash_snapshot_stream(snapshots: list[HorizonFeatureSnapshot]) -> str:
 
 
 # Locked snapshot stream from the active horizon-window aggregator.
-EXPECTED_LEVEL3_SNAPSHOT_HASH = "251cc109c25a4c1124c3dab32b7168c09b6a9126f4092d977df08a740c59d04b"
+EXPECTED_LEVEL3_SNAPSHOT_HASH = "f8824e5a288d64a3922c333a51416ce4b2db1251e6b2d8c815102fd81e6840ce"
 EXPECTED_LEVEL3_SNAPSHOT_COUNT = 14
 
 

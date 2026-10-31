@@ -31,6 +31,8 @@ from feelies.execution.market_fill import (
     DeferredFill,
     append_market_fill_acks,
     append_reject_ack,
+    release_fill_reports,
+    require_fill_live,
     to_decimal,
 )
 from feelies.execution.moc_fill import MocFillController
@@ -82,9 +84,13 @@ class BacktestOrderRouter:
         moc_bounds: MocSessionBounds | None = None,
         moc_penalty_bps: Decimal | int | str | float = Decimal("0"),
         trading_session_bounds: TradingSessionBounds | None = None,
+        fill_report_latency_ms: int | None = None,
     ) -> None:
         self._clock = clock
         self._latency_ns = latency_ns
+        self._fill_report_delay_ns = (
+            None if fill_report_latency_ms is None else int(fill_report_latency_ms) * 1_000_000
+        )
         self._cost_model: CostModel = cost_model or ZeroCostModel()
         self._market_impact_factor = to_decimal(market_impact_factor, "market_impact_factor")
         self._max_impact_half_spreads = to_decimal(
@@ -104,7 +110,9 @@ class BacktestOrderRouter:
         )
         self._max_resting_ticks = max_resting_ticks
         self._last_quotes: dict[str, NBBOQuote] = {}
+        self._prev_quotes: dict[str, NBBOQuote] = {}
         self._pending_acks: list[OrderAck] = []
+        self._held_fill_reports: list[tuple[int, OrderAck]] = []
         self._submitted_order_ids: set[str] = set()
         self._ack_seq = SequenceGenerator(stream="backtest_ack", thread_safe=True)
         self.locked_quote_reject_count: int = 0
@@ -128,7 +136,9 @@ class BacktestOrderRouter:
     def reset(self) -> None:
         """Clear quotes, deferred fills, and ack counters; keep RTH wiring."""
         self._last_quotes.clear()
+        self._prev_quotes.clear()
         self._pending_acks.clear()
+        self._held_fill_reports.clear()
         self._submitted_order_ids.clear()
         self._deferred_markets.clear()
         self.locked_quote_reject_count = 0
@@ -146,13 +156,13 @@ class BacktestOrderRouter:
     def on_quote(self, quote: NBBOQuote) -> None:
         """Update the latest quote and drain any mature pending orders.
 
-        Orders submitted with ``latency_ns > 0`` are
-        queued in ``_pending_submits`` and only fill against a quote
-        whose ``timestamp_ns >= eligible_at_ns``.  This is the
-        realistic behavior — a market order submitted at T sees
-        additional ticks during the latency window and fills against
-        a (possibly worse) post-latency quote.
+        Orders submitted with ``latency_ns > 0`` stay queued until a quote
+        whose exchange time reaches the arrival deadline. The fill is priced
+        on the quote prevailing at that deadline.
         """
+        previous = self._last_quotes.get(quote.symbol)
+        if previous is not None:
+            self._prev_quotes[quote.symbol] = previous
         self._last_quotes[quote.symbol] = quote
         if self._moc is not None:
             self._moc.on_quote(quote)
@@ -222,10 +232,12 @@ class BacktestOrderRouter:
             return
 
         # Emit ACKNOWLEDGED before terminal fill states.
-        ack_ts = self._clock.now_ns() + self._latency_ns
+        # T2: the published stamp is the clock. ack_ts stays the eligibility time.
+        published_ts = self._clock.now_ns()
+        ack_ts = published_ts + self._latency_ns
         self._pending_acks.append(
             OrderAck(
-                timestamp_ns=ack_ts,
+                timestamp_ns=published_ts,
                 correlation_id=request.correlation_id,
                 sequence=self._ack_seq.next(),
                 order_id=request.order_id,
@@ -245,14 +257,15 @@ class BacktestOrderRouter:
                     f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
                 )
                 return
-            fill_ts = ack_ts
+            fill_ts = self._clock.now_ns()
+            require_fill_live(fill_ts, ack_ts, order_id=request.order_id)
             self._execute_market_fill(request, quote, fill_ts)
         else:
-            # Deferred fills: depth is validated in ``_flush_deferred_market_fills``
-            # against the first latency-eligible quote (not the submission quote).
+            # Deferred fills: depth is validated on the quote prevailing at arrival.
             self._deferred_markets.append(
                 _DeferredMarketFill(
                     request=request,
+                    # T3: physical-time latency model; not a raw cross-class compare.
                     fill_deadline_exchange_ns=(
                         max(self._clock.now_ns(), quote.exchange_timestamp_ns) + self._latency_ns
                     ),
@@ -262,9 +275,12 @@ class BacktestOrderRouter:
             )
 
     def _flush_deferred_market_fills(self, quote: NBBOQuote) -> None:
-        """Fill queued MARKET orders once ``latency_ns`` of exchange time has
-        elapsed — prices come from the first qualifying quote, not the signal
-        quote (causal fill model).
+        """Fill queued MARKET orders once exchange time reaches arrival.
+
+        Eligibility, the fill stamp, and the RTH check use this quote. The
+        touch, depth, and crossed-or-locked checks use the quote prevailing
+        at arrival: this quote when its exchange time equals the deadline,
+        otherwise the previous quote of the same symbol.
         """
         if not self._deferred_markets:
             return
@@ -274,33 +290,35 @@ class BacktestOrderRouter:
                 remaining.append(dm)
                 continue
             ticks_for_symbol = dm.ticks_for_symbol + 1
+            # T3: physical-time latency model; not a raw cross-class compare.
             if quote.exchange_timestamp_ns < dm.fill_deadline_exchange_ns:
                 if ticks_for_symbol >= self._max_resting_ticks:
                     self._reject(
                         dm.request,
                         f"deferred market timeout after "
                         f"{ticks_for_symbol} ticks (no latency-eligible quote)",
-                        timestamp_ns=max(self._clock.now_ns(), dm.ack_timestamp_ns),
                     )
                     continue
                 remaining.append(replace(dm, ticks_for_symbol=ticks_for_symbol))
                 continue
-            reject_ts = max(self._clock.now_ns(), dm.ack_timestamp_ns)
-            if quote.bid >= quote.ask:
+            pricing = (
+                quote
+                if quote.exchange_timestamp_ns == dm.fill_deadline_exchange_ns
+                else self._prev_quotes.get(quote.symbol, quote)
+            )
+            if pricing.bid >= pricing.ask:
                 self._reject(
                     dm.request,
-                    f"crossed or locked quote bid={quote.bid} ask={quote.ask}",
-                    timestamp_ns=reject_ts,
+                    f"crossed or locked quote bid={pricing.bid} ask={pricing.ask}",
                 )
                 continue
-            depth = quote.ask_size if dm.request.side == Side.BUY else quote.bid_size
+            depth = pricing.ask_size if dm.request.side == Side.BUY else pricing.bid_size
             if depth <= 0:
                 self.zero_depth_reject_count += 1
                 self._reject(
                     dm.request,
                     f"zero depth on {dm.request.side.name} side "
-                    f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
-                    timestamp_ns=reject_ts,
+                    f"(bid_size={pricing.bid_size}, ask_size={pricing.ask_size})",
                 )
                 continue
             if self._rth_reject_entry_if_needed(
@@ -308,8 +326,9 @@ class BacktestOrderRouter:
                 quote.exchange_timestamp_ns,
             ):
                 continue
-            fill_ts = max(self._clock.now_ns(), dm.ack_timestamp_ns)
-            self._execute_market_fill(dm.request, quote, fill_ts)
+            fill_ts = self._clock.now_ns()
+            require_fill_live(fill_ts, dm.ack_timestamp_ns, order_id=dm.request.order_id)
+            self._execute_market_fill(dm.request, pricing, fill_ts)
         self._deferred_markets = remaining
 
     def _execute_market_fill(
@@ -335,9 +354,29 @@ class BacktestOrderRouter:
         )
 
     def poll_acks(self) -> list[OrderAck]:
-        acks = list(self._pending_acks)
-        self._pending_acks.clear()
-        return acks
+        delay_ns = self._fill_report_delay_ns
+        return release_fill_reports(
+            self._pending_acks,
+            self._held_fill_reports,
+            now_ns=0 if delay_ns is None else self._clock.now_ns(),
+            delay_ns=delay_ns,
+        )
+
+    def release_due_fill_reports(self) -> list[OrderAck]:
+        """Release fill reports that are already due. L=None returns nothing.
+
+        Does not change the pending queue when latency is unset, so a
+        tick-start call leaves today's poll for ``poll_acks``.
+        """
+        delay_ns = self._fill_report_delay_ns
+        if delay_ns is None:
+            return []
+        return release_fill_reports(
+            self._pending_acks,
+            self._held_fill_reports,
+            now_ns=self._clock.now_ns(),
+            delay_ns=delay_ns,
+        )
 
     def cancel_order(self, order_id: str) -> bool:
         """Cancel an acknowledged-but-unfilled MOC order by id.
@@ -375,7 +414,6 @@ class BacktestOrderRouter:
         request: OrderRequest,
         reason: str,
         *,
-        timestamp_ns: int | None = None,
         release_submitted_id: bool = True,
     ) -> None:
         append_reject_ack(
@@ -385,6 +423,5 @@ class BacktestOrderRouter:
             self._clock.now_ns(),
             request,
             reason,
-            timestamp_ns=timestamp_ns,
             release_submitted_id=release_submitted_id,
         )
