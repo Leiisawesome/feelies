@@ -922,6 +922,38 @@ D-224 — P-51 interpretations, commit order and prediction.
     D-213 ids accepted red at D with CAP:gate_fire; kill A 9/9, B 13/13,
     controls 0 failures; no pinned value moves.
 
+D-225 — Stage-proofing for P-52 (T-8).
+  - Operator decisions 2026-10-31 (AskUserQuestion, chat 9): T-8, tests
+    only, lands before P-52 (D-213 pattern); plan approved; E0 is the stage
+    hook's verdict, not a FAILFIRST commit (no helper or seam is added).
+  - Why. With P-52's trial gate (P-52-gate.diff SHA256
+    0F1261A8EAE83CF5192460E238FE0069285E395BB5BBE55A24736CFAE9F71D65) a
+    latched invalidation acts at stage D, and three nodes reach stage-E
+    assertions: test_m5_invalidation_at_take_profit and
+    test_m5_gap_through_trail_and_stop fail "M5: no close carries FAVORABLE
+    and <path>"; test_m6_a2_v5 fails "A2: no suppression record on the
+    injected run". The stage hook calls each red for the wrong reason
+    (tests/position_engine/conftest.py:30-40, :144-146).
+  - Change. Each calls require_adverse_level first, immediately after its
+    run (m6: the clean run), as T-7 did (battery.md amendment rule).
+  - E0 (trial in an outside-repo copy of c62acd66). Accepted reds at D:
+    base, the m5 pair NONVACUOUS and test_m6_a2_v5 CAP:exit_accounting;
+    with T-8, CAP:gate_fire for all three; with T-8 and P-52's plumb and
+    gate diffs, CAP:gate_fire for all three; on the reference at E, 3
+    passed.
+  - Prediction (pre-registered; T-8-probe1.diff SHA256
+    E2B88D8414A5751576D1C3F41F8DA487C8F4C166448605C4AD756F0EAB99CA77, 1803
+    bytes): full 5419 passed, 0 failed, 44 skipped, 2 xfailed; determinism
+    148; parity constants 64 -> 64, changed 0; universe 1 passed; prepush
+    serial 5402 passed, 5 skipped, 57 deselected, 1 xfailed, and -n 4 5402
+    passed, 5 skipped, 1 xfailed; battery 107 passed, 9 deselected and 12
+    passed, at D and at E; accepted reds at D with CAP:gate_fire 14 -> 17;
+    kill A 9/9, B 13/13 with B8 by test_m6_a2_v5, controls 0 failures; the
+    battery.md blob moves (one line after :516); no pinned value moves.
+  - Rejected: stage-proofing inside P-52 (a larger rung); a wider
+    red_reason regex (it widens every node of the member); a FAVORABLE-only
+    CAP helper (gate_fire is the stage-E capability, D-213).
+
 ### D-66 pre-registered prediction
 
 ```
