@@ -161,6 +161,7 @@ def test_m6_a2_v5() -> None:
     tape = make_tape(seed=11, n=2_000, symbol="SYN", start_ns=T0, size=1000)
     variant = _v5()
     clean = run_synthetic(tape, symbols=("SYN",), variant=variant)
+    require_adverse_level(clean)
     _ready(clean, "m6_a2_v5")
     injected = run_synthetic(cross(tape, 400, 10_040, 10_030), symbols=("SYN",), variant=variant)
     require_entry_fills(injected)
