@@ -515,6 +515,7 @@ Member 10's entry-refusal clause moved to engine-9 tests at P-51 (D-210): engine
 outside the kill runner's seams, and P-51 is not the rung that moves the stage.
 T-7 (D-213): fourteen node ids written before D-210 call `require_adverse_level` first, so before stage E they fail as `CAP:gate_fire`.
 T-8 (D-225): three more nodes call `require_adverse_level` first (`test_m5_invalidation_at_take_profit`, `test_m5_gap_through_trail_and_stop`, `test_m6_a2_v5`), so once P-52 acts on invalidation at stage D they still fail as `CAP:gate_fire` before stage E.
+T-9 (D-226; F-T8-1): `test_m5_real` calls `require_adverse_level` first, so once P-52 acts on invalidation at stage D it still fails as `CAP:gate_fire` before stage E.
 
 ## Running locally
 

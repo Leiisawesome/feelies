@@ -161,6 +161,7 @@ def test_m5_gap_through_trail_and_stop() -> None:
 @_REAL
 def test_m5_real() -> None:
     records = run_real()
+    require_adverse_level(records)
     require_entry_fills(records)
     nonvacuous(records, PositionClosed, scenario="m5_real")
     exit_reason_at_collision(records)

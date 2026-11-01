@@ -35726,3 +35726,76 @@ OWNER:       campaign 15.
                  under feelies-probes\P-52; logs under
                  feelies-probes\T-8.
   FINDINGS:      none
+
+## T-9 Stage-proofing test_m5_real for P-52
+
+  VERDICT:       passed
+  DECISIONS:     D-226
+  E0:            Stage hook, measured in an outside-repo copy of
+                 3cde1484de986b3204d8fa9a1fd2f2cc9dfb286f (no
+                 FAILFIRST commit, D-226). Base: test_m5_real an
+                 accepted red, NONVACUOUS. With P-52's plumb2 and
+                 gate2 diffs: "battery member 5 passed before its
+                 stage E (current stage D)". With T-9 and the
+                 gate: CAP:gate_fire. Every battery list,
+                 synthetic and real, at D and at E, with and
+                 without the gate.
+  TREE:          T-9-probe1.diff (full index) SHA256
+                 5CEAF657C5C005EFE9ECA18F6880E7D5D9B6BD9723502B8ACDD89C27660028F1,
+                 634 bytes; T-9-impl-check.diff reproduces it,
+                 same SHA256.
+  SPEC:          a9dd7f3d025776c7204c5d5286c9414a18e0935b.
+                 D-226, the T-9 plan row, the battery.md line.
+  IMPL:          26fce6123683d7063aeaccab746cf9835ffe46fe.
+                 test_m5_real calls require_adverse_level first.
+  BASE:          b469441dcd48ede3a46ad508e3e89d83b447d1e8. pre
+                 baseline_pre-T-9.json on a9dd7f3d, SHA256
+                 D2FE117508432E8BF58BB5ED81858962631ABC6535B526F9264676D780751869,
+                 git.dirty false; post baseline_post-T-9.json on
+                 26fce612, SHA256
+                 80AC28A968934C13B80904A1612E30772BE45A79BF9186DEB4D6530BD7C27EE9,
+                 git.dirty false; the pre JSON moved aside and
+                 restored, SHA256 unchanged. Both: full suite 5419
+                 passed, 0 failed, 44 skipped, 2 xfailed;
+                 determinism 148; parity constants 64;
+                 tools_fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1; evidence alphaleak n 0, imports
+                 n_cycles 1, n_edges 715, n_modules 208, modules
+                 public_symbols 626, total_files 257, total_sloc
+                 50096. compare parity-only: 64 -> 64, changed 0,
+                 parity HOLDS. Predicted (D-226) MATCH.
+  GATES:         Hot-path profile before each capture and the
+                 prepush. Prepush serial 5402 passed, 5 skipped,
+                 57 deselected, 1 xfailed; -n 4 5402 passed, 5
+                 skipped, 1 xfailed. Battery synthetic 107 passed,
+                 9 deselected, and real 12 passed, at D and at E.
+                 Accepted CAP:gate_fire reds at D: synthetic 17,
+                 real 2 (test_m5_real named). Kill A 9/9, B 13/13
+                 with B8 by test_m6_a2_v5, controls 0 failures.
+                 Universe 1 passed (PYTHONHASHSEED 0). MATCH.
+  CI:            pending
+  MERGE:         pending
+  BUGBOT:        pending
+  DEVIATIONS:    1. E0 is the stage hook's verdict, not a
+                 FAILFIRST commit (D-226, as D-225).
+                 2. Three capture launches (one pre, two post)
+                 were cut off by the runner before writing a
+                 baseline; the reruns completed. A read-only check
+                 found no held file, no stray baseline JSON, no
+                 live pytest, baseline.py or perfmeasure process,
+                 and the pre JSON hash equal to the one recorded
+                 before the move.
+                 3. The G1 profile was rerun after a runner
+                 abort; kill shard A is the first complete run
+                 (exit 0) after a driver exit-code bug.
+                 4. Trials ran in outside-repo copies (operator,
+                 chat 9).
+  STANDING:      PYTHONHASHSEED unset in local runs (operator
+                 decision pending); the universe check runs at 0.
+  EVIDENCE:      T-9-probe1.diff and trial-t9 logs under
+                 feelies-probes\P-52; logs under
+                 feelies-probes\T-9.
+  F-T8-1:        D-225's trial ran the real battery list without
+                 P-52's gate, so test_m5_real's move was missed.
+                 Closed here (D-226).
