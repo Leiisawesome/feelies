@@ -35774,9 +35774,31 @@ OWNER:       campaign 15.
                  real 2 (test_m5_real named). Kill A 9/9, B 13/13
                  with B8 by test_m6_a2_v5, controls 0 failures.
                  Universe 1 passed (PYTHONHASHSEED 0). MATCH.
-  CI:            pending
-  MERGE:         pending
-  BUGBOT:        pending
+  CI:            PR head 41294564188 success at c3ea7df3
+                 (check 512 s, parity oracle 487 s,
+                 reference battery 385 s, kill A 286 s,
+                 kill B 116 s, reference battery (real)
+                 skipped); Tests 5402 passed, 5 skipped,
+                 1 xfailed; determinism 148 passed.
+                 Merge run 41295621845 success (check 612 s,
+                 parity oracle 418 s, reference battery
+                 386 s, kill A 239 s, kill B 194 s, real
+                 skipped); Tests 5402 passed, 5 skipped,
+                 1 xfailed; determinism 148 passed.
+  MERGE:         4dbf7c9f2df6dc62b527dd716ebe3cba820e7e91,
+                 parents
+                 3cde1484de986b3204d8fa9a1fd2f2cc9dfb286f
+                 and
+                 c3ea7df319e80e585d6f76c11eb288c0d859c73f,
+                 tree
+                 c1f359f091dc94c3979d87d97e1baaa97d4d8d00
+                 = PR head tree. PR #303. Merged
+                 2026-11-01T10:01:26Z.
+  BUGBOT:        pass (2m25s); no comments, no reviews.
+  CI WATCH:      head 512 s, ratio 435.80 / 6.12 = 71.21;
+                 merge 612 s, ratio 522.70 / 7.69 = 67.97.
+                 Two-run geometric mean 69.57; D-209
+                 fired no.
   DEVIATIONS:    1. E0 is the stage hook's verdict, not a
                  FAILFIRST commit (D-226, as D-225).
                  2. Three capture launches (one pre, two post)
