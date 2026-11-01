@@ -954,6 +954,39 @@ D-225 — Stage-proofing for P-52 (T-8).
     red_reason regex (it widens every node of the member); a FAVORABLE-only
     CAP helper (gate_fire is the stage-E capability, D-213).
 
+D-226 — Stage-proofing test_m5_real for P-52 (T-9).
+  - Operator decision 2026-11-01 (AskUserQuestion, chat 9): a separate
+    tests-only rung before P-52, as T-7 and T-8 (D-213, D-225).
+  - Why (F-T8-1). D-225 stage-proofed three synthetic nodes but its trial
+    ran the real battery list without P-52's gate. With P-52's gate
+    (P-52-gate2.diff SHA256
+    83A65581C9D4FD960BBAC46F0F63268512AA8CD814443E1D1A30F68D5BAD4163),
+    test_m5_real passes at stage D and the stage hook fails it: "battery
+    member 5 passed before its stage E (current stage D)".
+  - Change. test_m5_real calls require_adverse_level first, immediately
+    after run_real() (battery.md amendment rule).
+  - E0 (trial in an outside-repo copy of
+    3cde1484de986b3204d8fa9a1fd2f2cc9dfb286f; the stage hook's verdict, as
+    D-225). Real list at D: base, test_m5_real accepted as NONVACUOUS; with
+    T-9, CAP:gate_fire; with T-9 and P-52's plumb2 and gate2 diffs,
+    CAP:gate_fire; on the reference at E it passes in every case. Every
+    battery list, synthetic and real, at D and at E, ran with and without
+    the gate.
+  - Prediction (pre-registered; T-9-probe1.diff, full index, SHA256
+    5CEAF657C5C005EFE9ECA18F6880E7D5D9B6BD9723502B8ACDD89C27660028F1, 634
+    bytes): full 5419 passed, 0 failed, 44 skipped, 2 xfailed; determinism
+    148; parity constants 64 -> 64, changed 0; universe 1 passed; prepush
+    serial 5402 passed, 5 skipped, 57 deselected, 1 xfailed, and -n 4 5402
+    passed, 5 skipped, 1 xfailed; battery 107 passed, 9 deselected and 12
+    passed, at D and at E; accepted CAP:gate_fire reds at D, synthetic 17
+    and real 1 -> 2; kill A 9/9, B 13/13 with B8 by test_m6_a2_v5, controls
+    0 failures; the battery.md blob moves (one line after the T-8 line); no
+    pinned value moves.
+  - Rule added: stage-proofing for a later rung runs every battery list,
+    synthetic and real, with that rung's gate applied.
+  - Rejected: folding the change into P-52 (mixes stage-proofing into a
+    platform-wide engine rung).
+
 ### D-66 pre-registered prediction
 
 ```
