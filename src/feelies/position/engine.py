@@ -70,6 +70,8 @@ class _Cell:
     last_rail: MarkRailUpdate | None = None
     last_present_rail: MarkRailUpdate | None = None
     last_present_was_first: bool = False
+    exit_reason: str = ""
+    triggered_path_names: tuple[str, ...] = ()
 
 
 def _cents(price: Decimal) -> int:
@@ -558,7 +560,7 @@ class PositionEngine:
         event: SlicePositionUpdate,
         shares: int,
     ) -> None:
-        """D-76. An exit-order fill is an exit leg, never SIGN_FLIP. Size 0 closes HORIZON."""
+        """D-76. An exit-order fill is an exit leg, never SIGN_FLIP. Size 0 closes."""
         overlap = shares if shares < cell.size else cell.size
         if overlap <= 0:
             return
@@ -578,7 +580,7 @@ class PositionEngine:
         self._open.pop(key, None)
         self._publish_closed(
             cell,
-            "HORIZON",
+            cell.exit_reason,
             event.correlation_id,
             triggered=triggered,
             proposed=proposed,
@@ -587,15 +589,26 @@ class PositionEngine:
         )
 
     def _resolve(self, cell: _Cell, event: MarkRailUpdate) -> _Cell | None:
-        """D-216. HORIZON only. Gates stay stubs; a latched invalidation never acts."""
+        """OPEN: deadline and a latched invalidation. HORIZON wins. EXITING ignores the latch."""
         orient = _orientation(cell, event)
-        if cell.state == "OPEN" and event.event_timestamp_ns >= cell.horizon_deadline_ns:
-            armed = replace(
-                cell,
-                deciding_rail=event,
-                deciding_first=cell.rails_seen == 1,
-            )
-            return self._emit_exit(armed, event, 1)
+        if cell.state == "OPEN":
+            horizon = event.event_timestamp_ns >= cell.horizon_deadline_ns
+            invalidation = cell.invalidation_sequence is not None
+            if horizon or invalidation:
+                names: list[str] = []
+                if horizon:
+                    names.append("HORIZON")
+                if invalidation:
+                    names.append("INVALIDATION")
+                armed = replace(
+                    cell,
+                    deciding_rail=event,
+                    deciding_first=cell.rails_seen == 1,
+                    invalidation_sequence=None,
+                    exit_reason="HORIZON" if horizon else "INVALIDATION",
+                    triggered_path_names=tuple(names),
+                )
+                return self._emit_exit(armed, event, 1)
         if (
             cell.state == "EXITING"
             and cell.reemit
@@ -628,7 +641,7 @@ class PositionEngine:
                 side=side,
                 quantity=cell.size,
                 strategy_id=cell.strategy_id,
-                reason="HORIZON",
+                reason=cell.exit_reason,
             )
         )
         return self._current((cell.strategy_id, cell.symbol), cell.cell_id)
@@ -666,8 +679,15 @@ class PositionEngine:
         stale = _stale(cell, rail)
         if mark is None:
             return (), None, stale, cell.deciding_first
-        path = ExitTriggeredPath(path="HORIZON", proposed_price_cents=mark, trigger="DEADLINE")
-        return (path,), mark, stale, cell.deciding_first
+        paths = tuple(
+            ExitTriggeredPath(
+                path=name,
+                proposed_price_cents=mark,
+                trigger={"HORIZON": "DEADLINE", "INVALIDATION": "INVALIDATION"}[name],
+            )
+            for name in cell.triggered_path_names
+        )
+        return paths, mark, stale, cell.deciding_first
 
     def _deadline(self, fill_ts: int, policy: ExitPolicy) -> int:
         """D-214. No session close resolves to fill_ts + T."""
