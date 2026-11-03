@@ -35821,3 +35821,118 @@ OWNER:       campaign 15.
   F-T8-1:        D-225's trial ran the real battery list without
                  P-52's gate, so test_m5_real's move was missed.
                  Closed here (D-226).
+
+## P-52 Invalidation intake; kernel emits no order for owned exit or reverse
+
+  VERDICT:       passed
+  DECISIONS:     D-227, D-228, D-229, D-230, D-231.
+  E0:            FAIL-FIRST f63182d2b9030c11bf954628512a7f8180bc378b. 6
+                 failed, 8 passed before IMPL-b; 14 passed after. The six
+                 FAILFIRST nodes, all AssertionError:
+                 test_opposite_signal_exits_invalidation_before_deadline;
+                 test_flat_signal_exits_invalidation_before_deadline;
+                 test_latch_and_deadline_on_one_rail_prefer_horizon;
+                 test_owned_flat_records_owned_exit;
+                 test_owned_reverse_submits_nothing;
+                 test_owned_reduction_is_admitted.
+  TREE:          Byte-identical apply from feelies-probes\P-52.
+                 P-52-plumb2.diff SHA256
+                 C9BD9E1EDC24E8D6C59EEBA3484C9F8747DF9937829D05B679A4F2B9C07BF663.
+                 P-52-tests2.diff SHA256
+                 B4D6DF9AD0A9DFABA7E38B444FA42479BE6095CEDBEA861ED849C2DFEFFFA809.
+                 P-52-gate2.diff SHA256
+                 83A65581C9D4FD960BBAC46F0F63268512AA8CD814443E1D1A30F68D5BAD4163.
+  SPEC:          8525a6aff8cadccbad047fe32b73faf15ec3ffe6. D-227..D-231 and
+                 the P-52 plan row.
+  IMPL:          IMPL-a 4d90c4e17f9c2efba6108617fbef5becae488235
+                 (OWNED_EXIT_BY_ENGINE token, D-227). FAILFIRST
+                 f63182d2b9030c11bf954628512a7f8180bc378b. IMPL-b
+                 d2782c99e9eff08a34a637c64e8cb1d0e851ea95. Engine resolves
+                 INVALIDATION at stage D; kernel emits no order for an
+                 owned EXIT or REVERSE (D-229).
+  BASE:          cfa2bb503f1d1e9c07e81d578b5a6db03d6c213c. Branch base
+                 1c21a7a33797bf68433b1134344e43492240ac72. pre
+                 baseline_pre-P-52.json on
+                 8525a6aff8cadccbad047fe32b73faf15ec3ffe6, captured_at
+                 2026-11-02T06:06:18.212399+00:00, git.dirty false. Full
+                 suite 5419 passed, 0 failed, 44 skipped, 2 xfailed;
+                 determinism 148; parity constants 64; tools_fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1; evidence alphaleak n 0, imports n_cycles 1,
+                 n_edges 715, n_modules 208, modules public_symbols 626,
+                 total_files 257, total_sloc 50096. post
+                 baseline_post-P-52.json on
+                 d2782c99e9eff08a34a637c64e8cb1d0e851ea95, captured_at
+                 2026-11-02T09:09:08.769499+00:00, git.dirty false. Full
+                 suite 5427 passed, 0 failed, 44 skipped, 2 xfailed (5427
+                 passed, 44 skipped, 2 xfailed, 49 warnings in 1368.34s);
+                 determinism 148; evidence total_sloc 50138; same
+                 fingerprint, files 1. compare parity-only: 64 -> 64,
+                 changed 0, parity HOLDS. Predicted (D-231): full 5419 ->
+                 5427 passed, 0 failed, 44 skipped, 2 xfailed; determinism
+                 148; constants 64, 0 changed; fingerprint unchanged, files
+                 1. MATCH.
+  GATES:         TESTS, predicted against actual. Full pytest M1: 5427
+                 passed, 44 skipped, 2 xfailed, 49 warnings in 1406.75s,
+                 exit 0 (predicted 5419 -> 5427). tests/position_engine 291
+                 passed in 638.27s (predicted 286 -> 291). Determinism 148
+                 passed in 10.15s. Prepush: ruff check passed, ruff format
+                 812 files, mypy 257 files, lint-imports 2 kept, 0 broken.
+                 Serial 5410 passed, 5 skipped, 57 deselected, 1 xfailed,
+                 49 warnings in 833.71s, exit 0. -n 4: 5410 passed, 5
+                 skipped, 1 xfailed, 53 warnings in 402.31s, exit 0
+                 (predicted 5402 -> 5410). Battery synthetic 107 passed, 9
+                 deselected, at D (296.75s) and at E (223.86s); real 12
+                 passed, 5461 deselected, at D (285.27s) and at E
+                 (311.72s). All exit 0. Synthetic D reds 23, prefixes
+                 CAP:gate_fire 17, CAP:conservation 3, CAP:audit 1,
+                 CAP:favorable_fire 1, NONVACUOUS 1. Messages change on
+                 exactly four: test_m3_barriers_only,
+                 test_m3_barriers_swapped, test_m3_band_draw,
+                 test_m11_synthetic. Real D reds 2, messages unchanged
+                 (test_m5_real, test_m6_real). Reds at E: 0. Kill A 9/9, B
+                 13/13, controls 0 failures. Universe 1 passed in 111.88s
+                 (PYTHONHASHSEED 0). R-SYN A_HASH
+                 b62b42d2dcc8e7315ca4d75de9b6748af605a6d280ed424dac0edd9cacfd4535,
+                 29 records, 15 closed (HORIZON 14, END_OF_TAPE 1), no
+                 refusals, no owned-exit. Real B_HASH
+                 b00583c1b54cfd0b5aa33380f18d1cc17c3a65a0f26b19365f5713b58c55784f,
+                 100 records, 44 closed (HORIZON 37, INVALIDATION 7);
+                 CUTOFF_ALREADY_PASSED 1, NO_SCALE_IN 12;
+                 OWNED_EXIT_BY_ENGINE 0 -> 7. Predicted (D-231) MATCH.
+  CI:            pending
+  MERGE:         filled at the merge
+  BUGBOT:        read only after CI
+  CI WATCH:      pending until the merge
+  DEVIATIONS:    1. The first pre capture recorded dirty true (porcelain
+                 the new json) and was discarded. The committed pre is the
+                 recapture, dirty false, sha
+                 8525a6aff8cadccbad047fe32b73faf15ec3ffe6. 2. A post json
+                 captured_at 2026-11-02T08:42:58Z was already on disk and
+                 was not produced by the recorded command. It was deleted.
+                 The committed post is the recapture, dirty false, sha
+                 d2782c99e9eff08a34a637c64e8cb1d0e851ea95, captured_at
+                 2026-11-02T09:09:08.769499+00:00.
+  STANDING:      PYTHONHASHSEED unset in local runs (operator decision
+                 pending); the universe check ran at 0. Stage D.
+  EVIDENCE:      P-52-plumb2.diff, P-52-tests2.diff, P-52-gate2.diff under
+                 feelies-probes\P-52.
+  FILES:         declared 11, touched 11 (LEDGER.md included).
+  NET DELTA:     git diff --stat 1c21a7a3..HEAD: 11 files changed, 1103 insertions(+), 16 deletions(-).
+  F-P52-3:       check_m11_proposed falls back to the quote after the deciding rail
+                 for exits with no fire and no path rail_sequence (D-231 item 4);
+                 apparatus rung before stage E, with F-P50-2.
+  F-P52-4:       assumption: m3's 200-close floor at stage E with the production
+                 engine under engine-owned reversals (D-231 item 5).
+  F-P52-5:       src/feelies/core/order_admission.py comment "Nothing reads this
+                 token yet." is false from IMPL-b (orchestrator.py:112,
+                 :4824-4825 read it); inside the byte-identical diff, not fixed here.
+  F-P52-1:       unchanged: refusal counts overlap existing no-order reasons;
+                 unscheduled.
+  NOTES:         operator decision A (2026-11-02): an owned REVERSE opens
+                 no opposite position (D-229); on the m3 fixture closes 200
+                 -> 100. Code and tests applied byte-identically from
+                 feelies-probes\P-52 plumb2/tests2/gate2 (SHA256 as in P2).
+                 Re-emit path engine.py:618 inherits exit_reason from the
+                 stored EXITING cell (step 1 evidence). The handoff's
+                 "FILES 12" was a miscount of an 11-path list.
