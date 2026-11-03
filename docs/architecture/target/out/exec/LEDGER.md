@@ -35900,10 +35900,31 @@ OWNER:       campaign 15.
                  100 records, 44 closed (HORIZON 37, INVALIDATION 7);
                  CUTOFF_ALREADY_PASSED 1, NO_SCALE_IN 12;
                  OWNED_EXIT_BY_ENGINE 0 -> 7. Predicted (D-231) MATCH.
-  CI:            pending
-  MERGE:         filled at the merge
-  BUGBOT:        read only after CI
-  CI WATCH:      pending until the merge
+  CI:            PR head 41558275388 success at 700520ba
+                 (check 825 s, parity oracle 334 s,
+                 reference battery 400 s, kill A 279 s,
+                 kill B 181 s, reference battery (real)
+                 skipped); Tests 5410 passed, 5 skipped,
+                 1 xfailed; determinism 148 passed.
+                 Merge run 41562158684 success (check 583 s,
+                 parity oracle 492 s, reference battery
+                 393 s, kill A 165 s, kill B 190 s, real
+                 skipped); Tests 5410 passed, 5 skipped,
+                 1 xfailed; determinism 148 passed.
+  MERGE:         213b53ab7cdbc2cb66b13951c8c0e6e7d4c15c93,
+                 parents
+                 1c21a7a33797bf68433b1134344e43492240ac72
+                 and
+                 700520ba3d6b068e89cf5cbb76e72a5c9589d457,
+                 tree
+                 8059f58e9202b3f9ba82cf75852662c97be1bc75
+                 = PR head tree. PR #304. Merged
+                 2026-11-03T01:48:44Z.
+  BUGBOT:        pass (2m58s); no comments, no reviews.
+  CI WATCH:      head 825 s, ratio 716.62 / 11.06 = 64.79;
+                 merge 583 s, ratio 490.17 / 7.71 = 63.58.
+                 Two-run geometric mean 64.18; D-209
+                 fired no.
   DEVIATIONS:    1. The first pre capture recorded dirty true (porcelain
                  the new json) and was discarded. The committed pre is the
                  recapture, dirty false, sha
