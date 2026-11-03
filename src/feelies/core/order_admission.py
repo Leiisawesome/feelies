@@ -27,6 +27,8 @@ NO_PAYING_PRICE: str = "NO_PAYING_PRICE"
 CROSSED_AT_BIRTH: str = "CROSSED_AT_BIRTH"
 CUTOFF_ALREADY_PASSED: str = "CUTOFF_ALREADY_PASSED"
 NO_SCALE_IN: str = "NO_SCALE_IN"
+# D-227: owned exit belongs to the position engine. Nothing reads this token yet.
+OWNED_EXIT_BY_ENGINE: str = "OWNED_EXIT_BY_ENGINE"
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -26,12 +26,14 @@ from feelies.core.events import (
     SignalDirection,
 )
 from feelies.core.exit_policy import AdversePolicy, ExitPolicy, FavorablePolicy, HorizonPolicy
+from feelies.core.order_admission import OWNED_EXIT_BY_ENGINE
 from feelies.core.quote_quality import QuoteQuality
 from feelies.core.trading_session import TradingSessionBounds, et_clock_to_ns
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
+from feelies.kernel.signal_order_trace import SignalOrderTraceRow
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
@@ -194,6 +196,7 @@ def _drive(
     symbol_qty: int,
     slice_qty: int,
     at_cutoff: bool,
+    trace: list[SignalOrderTraceRow] | None = None,
 ) -> tuple[list[OrderRequest], list[Alert]]:
     clock = SimulatedClock(start_ns=1000)
     bus = EventBus()
@@ -225,6 +228,7 @@ def _drive(
         trading_session_bounds=_bounds() if at_cutoff else None,
         mark_rail=_FixedRail(crossed=crossed, paying_absent=paying_absent),
         exit_policies={_OWNED: _policy()},
+        signal_order_trace_sink=trace,
     )
     _boot(orch)
 
@@ -328,6 +332,7 @@ def test_no_scale_in_refuses_owned_entry() -> None:
 
 
 def test_owned_reduction_is_admitted() -> None:
+    trace: list[SignalOrderTraceRow] = []
     orders, alerts = _drive(
         strategy_id=_OWNED,
         direction=SignalDirection.FLAT,
@@ -336,9 +341,15 @@ def test_owned_reduction_is_admitted() -> None:
         symbol_qty=100,
         slice_qty=100,
         at_cutoff=True,
+        trace=trace,
     )
-    assert len(orders) == 1
-    assert [a for a in alerts if a.alert_name == "position_entry_refused"] == []
+    assert orders == []
+    assert [
+        alert.alert_name for alert in alerts if alert.alert_name == "position_entry_refused"
+    ] == []
+    assert [(row.outcome, row.reasons) for row in trace] == [
+        ("NO_ORDER", (OWNED_EXIT_BY_ENGINE, "symbol=AAPL"))
+    ]
 
 
 def test_non_owned_entry_under_crossed_rail_is_admitted() -> None:

@@ -987,6 +987,114 @@ D-226 — Stage-proofing test_m5_real for P-52 (T-9).
   - Rejected: folding the change into P-52 (mixes stage-proofing into a
     platform-wide engine rung).
 
+D-227 — Outside-repo probes; F-P51-1 closed; P-52 census.
+  - Decided by: operator, phase 14 chat 9.
+  - Answer: Outside-repo probe trials are authorised (git archive into
+    %USERPROFILE%\feelies-probes\P-52, scratch git, no repo writes).
+    F-P51-1 closed: at base 5f4f8503 none of the 13 refused decisions became
+    an order (12 resting-order guard, 1 edge-cost gate). Census: engine 13
+    already latches invalidation (src/feelies/position/engine.py:198-208 at
+    c62acd66); _resolve acted on HORIZON only (D-216). Real config
+    bt_position_arbitrary_not_calibrated: 141 owned Signals, 7 opposite while
+    OPEN, 0 FLAT, 0 while EXITING; the kernel's only owned-slice exits were 7
+    reversal flatten-only legs (fcf4e335, c82c2c7b, 9540abae, 4212b780,
+    8ee004dd, 57b0e938, 335e03d3). R-SYN: 0 opposite or FLAT owned Signals.
+  - Evidence: P-52 census (chat 9); P-52 trial 3 (chat 10).
+  - Supersedes: none.
+
+D-228 — How P-52 is validated.
+  - Decided by: operator, phase 14 chat 9.
+  - Answer: fail-first engine-13 intake and kernel no-order tests outside the
+    battery (tests/position_engine/test_p52_invalidation_intake.py,
+    tests/kernel/test_p52_owned_exit.py). Member 5 stays green_from E
+    (battery.md :195, :201); member 10 stays green.
+  - Evidence: plan row P-52.
+  - Supersedes: none.
+
+D-229 — Owned exit and reverse intents at the kernel.
+  - Decided by: operator, phase 14 chat 9; reversal clause 2026-11-02.
+  - Answer: owned EXIT, REVERSE_LONG_TO_SHORT and REVERSE_SHORT_TO_LONG intents
+    go to _finish_no_order with token OWNED_EXIT_BY_ENGINE
+    (src/feelies/core/order_admission.py), trace reason only, no Alert, placed
+    immediately before the D-222/D-223/D-224 refusal block. An owned REVERSE
+    opens no opposite position; the next Signal from FLAT opens (on the
+    alternating-signal fixture this halves closed cells, m3 200 -> 100).
+  - Evidence: P-52 trial 3 E0, E1, E2.
+  - Supersedes: none.
+
+D-230 — P-51's test_owned_reduction_is_admitted under P-52.
+  - Decided by: operator, phase 14 chat 9.
+  - Answer: amended to P-52's rule (no order, OWNED_EXIT_BY_ENGINE trace); name
+    kept for ledger traceability; _drive gained an optional trace sink.
+  - Evidence: P-52 trial 3 T2.
+  - Supersedes: none.
+
+D-231 — P-52 interpretations, commit order, prediction.
+  - Decided by: operator, 2026-11-02.
+  - Answer: (1) The engine resolves a latched invalidation on the next OPEN
+    rail; when the deadline and the latch meet on one rail HORIZON wins; the
+    latch clears when acted on; EXITING ignores it; exit_reason and the
+    requirement reason follow the winner; triggered_paths lists every path that
+    triggered. (2) Commit order: SPEC, IMPL-a (token), FAILFIRST (tests),
+    IMPL-b (engine and kernel gate), baselines, ledger. (3) Prediction:
+
+```
+PREDICTION (already recorded in D-231 by S1; never change it)
+Changes:
+- tests: full 5419 -> 5427 passed (0 failed, 44 skipped, 2 xfailed);
+  prepush 5402 -> 5410 serial and -n 4 (5 skipped, 1 xfailed);
+  tests/position_engine 286 -> 291.
+- battery synthetic D, same 23 red ids and same prefix tally; messages change
+  on exactly four:
+  test_m3_barriers_only "CAP:conservation: m3_barriers closed cells 100 < 200"
+  test_m3_barriers_swapped "CAP:conservation: m3_barriers_swapped closed cells 100 < 200"
+  test_m3_band_draw "CAP:conservation: m3_band closed cells 100 < 200"
+  test_m11_synthetic "CAP:audit: proposed 10028 != executable 10029 of quote 2103"
+- real config (unpinned): B_HASH c78284b5… ->
+  b00583c1b54cfd0b5aa33380f18d1cc17c3a65a0f26b19365f5713b58c55784f;
+  100 records; 44 closed, EXTERNAL:SIGN_FLIP 7 -> INVALIDATION 7 (HORIZON 37
+  unchanged); refusals CUTOFF_ALREADY_PASSED 1, NO_SCALE_IN 12 unchanged;
+  OWNED_EXIT_BY_ENGINE 0 -> 7.
+Holds:
+- determinism 148; parity 64 constants, 0 changed; fingerprint 261f203f…,
+  files 1.
+- battery synthetic 107 passed / 9 deselected at D and E; real 12 at D and E;
+  0 reds at E.
+- synthetic D red ids and prefixes (23): CAP:gate_fire 17
+  (test_m3_barriers_and_deadline, test_m5_invalidation_at_take_profit,
+  test_m5_deadline_beyond_stop, test_m5_gap_through_trail_and_stop,
+  test_m6_a4_gap_through, test_m6_a5_quiet[298|299|300],
+  test_m6_a5_valuation_absent[299|300|301],
+  test_m6_a5_paying_absent[299|300|301], test_m6_a6_short, test_m6_a6_long,
+  test_m6_a2_v5); CAP:conservation 3 (the three m3 above); CAP:audit 1
+  (test_m11_synthetic); CAP:favorable_fire 1
+  (test_m2_dwell_favorable_ignores_stale_cross, message unchanged apart from
+  a generator address); NONVACUOUS 1 (test_m11_gap_through, message
+  unchanged).
+- real D reds 2, messages unchanged: test_m5_real "5:CAP:gate_fire: no
+  ADVERSE GateDecision with drawn_level_ticks > 0"; test_m6_real
+  "6:CAP:gate_fire: A2: placement rule P found no eligible cell".
+- kill A 9/9, B 13/13, controls 0; universe 1.
+- R-SYN: A_HASH b62b42d2dcc8e7315ca4d75de9b6748af605a6d280ed424dac0edd9cacfd4535,
+  29 records, 15 closed (HORIZON 14, END_OF_TAPE 1), no refusals, no
+  owned-exit.
+Mechanism: an owned opposite or FLAT Signal latches invalidation; the next
+OPEN rail resolves it (HORIZON wins on a shared rail) and the engine places
+the exit; the kernel finishes owned EXIT and REVERSE intents with no order,
+so a reversal no longer opens the opposite cell and the kernel's own exit
+legs disappear.
+```
+
+    (4) F-P52-3: check_m11_proposed falls back to the last gate outcome when an
+    exit has no fire and no path rail_sequence, which names the quote after the
+    deciding rail (trial 3 E3: proposed 10028 is the bid of deciding quote
+    2102; the check prices 2103). Scheduled with F-P50-2 in the apparatus rung
+    before stage E. (5) Assumption F-P52-4: m3's 200-close floor at stage E
+    with the production engine under engine-owned reversals; stage E passes
+    with the reference engine; expires when stage E is proofed.
+  - Evidence: P-52 trial 3 (T2, M1-M7, E0-E3).
+  - Supersedes: none.
+
 ### D-66 pre-registered prediction
 
 ```

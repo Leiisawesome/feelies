@@ -109,6 +109,7 @@ from feelies.core.order_admission import (
     CUTOFF_ALREADY_PASSED,
     NO_PAYING_PRICE,
     NO_SCALE_IN,
+    OWNED_EXIT_BY_ENGINE,
     ExposureDelta,
     admission_block_reason,
     blocks_for_min_size,
@@ -4801,6 +4802,27 @@ class Orchestrator:
                 cid,
                 (block, f"symbol={intent.symbol}"),
                 block,
+            )
+            return
+
+        if (
+            self._exit_policies is not None
+            and signal.strategy_id in self._exit_policies
+            and intent.intent
+            in (
+                TradingIntent.EXIT,
+                TradingIntent.REVERSE_LONG_TO_SHORT,
+                TradingIntent.REVERSE_SHORT_TO_LONG,
+            )
+        ):
+            self._finish_no_order(
+                quote,
+                signal,
+                intent,
+                t_wall_start,
+                cid,
+                (OWNED_EXIT_BY_ENGINE, f"symbol={intent.symbol}"),
+                OWNED_EXIT_BY_ENGINE,
             )
             return
 
