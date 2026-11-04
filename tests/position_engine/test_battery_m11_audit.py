@@ -24,6 +24,7 @@ from tests.position_engine.scenarios import (
     check_m11_proposed,
     fixture_variant,
     nonvacuous,
+    require_adverse_level,
     require_barrier_differs,
     require_entry_fills,
     run_synthetic,
@@ -170,6 +171,7 @@ def test_m11_synthetic() -> None:
     """
     tape = make_tape(seed=11, n=2200, symbol="SYN", start_ns=T0, size=1000)
     records = run_synthetic(tape, symbols=("SYN",), variant=_v3a())
+    require_adverse_level(records)
     require_entry_fills(records)
     nonvacuous(records, "PositionClosed", scenario="m11")
     audit_m11(records)
