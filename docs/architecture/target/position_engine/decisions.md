@@ -1095,6 +1095,70 @@ legs disappear.
   - Evidence: P-52 trial 3 (T2, M1-M7, E0-E3).
   - Supersedes: none.
 
+D-232 — Apparatus rungs before P-59; T-10 probes.
+  - Decided by: operator, 2026-11-03 (decision A); split carried by the
+    operator's go on the T-10 trials (2026-11-03, 2026-11-04).
+  - Answer: The apparatus findings land before P-59 as two rungs: T-10 closes
+    F-P52-3 (member 11's deciding rail for resolve exits, tests only); T-11
+    closes F-P50-2 (the reference engine's deadline cap, D-214; reference,
+    trace and tests). Outside-repo probe trials for T-10 are authorised under
+    %USERPROFILE%\feelies-probes\T-10 (git archive, scratch git, no repo
+    writes).
+  - Evidence: census C10-NEXT, T-10-C, T-10-C2 (chat 10).
+  - Supersedes: none.
+
+D-233 — T-10 interpretations, amendment, stage hook, commit order, prediction.
+  - Decided by: operator, 2026-11-04.
+  - Answer: (1) Amendment under battery.md's amendment rule, stated without
+    results: a step publishes its snapshot before resolve and a cell leaves
+    OPEN only in resolve (contracts.md §2:258-268), and gate outcomes while
+    EXITING can be hold (§2:157, §2:167-168); so for a HORIZON or INVALIDATION
+    close whose paths carry no rail_sequence the deciding rail is the last
+    snapshot taken while OPEN. scenarios.py gains _last_open_snapshot_sequence;
+    _first_triggering_gate keeps gate exits only (its last_live branch goes).
+    (2) Stage hook: test_m11_synthetic claims ADVERSE among its exit reasons
+    once an engine finalizes; no gate fires at stage D, so it calls
+    require_adverse_level first and fails as CAP:gate_fire until stage E
+    (as D-225, D-226). (3) Commit order: SPEC, FAILFIRST, HOOK, FIX,
+    baselines, ledger. Diffs from feelies-probes\T-10: T-10-tests1.diff SHA256
+    70A347F91EFD4AB30280150F9B86ECC3880D342F22739CD170E88CB795985ECC,
+    T-10-hook2.diff F5768581E11001D4B39F836E756F72A688B76271D0708BA0F5A74EB6C90294BA,
+    T-10-fix1.diff 0AC3AD0807857753F7E9F3FF885388ACEC2F41440DD90C2005D496129731BABD.
+    (4) Prediction: the PREDICTION block of the T-10 EXEC prompt, verbatim:
+
+```
+PREDICTION (recorded in D-233 by S1; never change it)
+Changes:
+- tests: full 5427 -> 5429 passed (0 failed, 44 skipped, 2 xfailed);
+  prepush 5410 -> 5412 serial and -n 4 (5 skipped, 1 xfailed);
+  tests/position_engine 291 -> 293.
+- battery synthetic 107 -> 109 passed, 9 deselected, at D and E; real 12
+  passed at D and E, deselected 5461 -> 5463.
+- synthetic D: test_m11_synthetic red changes from
+  "11:CAP:audit: proposed 10028 != executable 10029 of quote 2103" to
+  "11:CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0";
+  tally CAP:audit 1 -> 0, CAP:gate_fire 17 -> 18.
+Holds:
+- synthetic D reds 23 in total; the other 22 ids and messages unchanged
+  (CAP:gate_fire 17 as in D-231, CAP:conservation 3 "closed cells 100 < 200",
+  CAP:favorable_fire 1, NONVACUOUS 1 test_m11_gap_through
+  "no ADVERSE close in m11_gap"); passed-before-stage none.
+- real D reds 2 unchanged (test_m5_real, test_m6_real, CAP:gate_fire);
+  E reds 0 synthetic and real.
+- determinism 148; parity 64 -> 64, 0 changed; fingerprint
+  261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97, files 1.
+- kill A 9/9, B 13/13 (B5 and B6 by test_m11_synthetic), controls 0;
+  universe 1.
+- no src/ file changes; position-record hashes not re-measured.
+Mechanism: the check now prices a resolve exit at the last OPEN snapshot,
+which is the deciding rail; at stage D the production engine's INVALIDATION
+closes then audit cleanly, so the hook makes the node fail on the stage-E
+capability it needs (gate_fire) instead of passing early.
+```
+
+  - Evidence: T-10 trials 1 and 2 (chat 10). Closes F-P52-3.
+  - Supersedes: none.
+
 ### D-66 pre-registered prediction
 
 ```
