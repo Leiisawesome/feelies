@@ -447,6 +447,26 @@ def _path_rail_sequence(closed: Mapping[str, object]) -> int | None:
     return fallback
 
 
+def _last_open_snapshot_sequence(
+    snapshots: Sequence[Mapping[str, object]],
+) -> int | None:
+    """Rail of the last snapshot taken while OPEN.
+
+    contracts.md §2:258-268: a step publishes its snapshot before resolve, and
+    a cell leaves OPEN only in resolve, so this is the deciding rail of a
+    resolve exit.
+    """
+    found: int | None = None
+    for snapshot in snapshots:
+        if snapshot.get("state") != "OPEN":
+            continue
+        sequence = snapshot.get("rail_sequence")
+        if not isinstance(sequence, int):
+            continue
+        found = int(sequence)
+    return found
+
+
 def _first_triggering_gate(
     closed: Mapping[str, object],
     decisions: Sequence[Mapping[str, object]] | None,
@@ -455,8 +475,7 @@ def _first_triggering_gate(
 
     contracts.md §2:287 and §2:294-295. A re-emission does not move the
     deciding event, and a later gate outcome while EXITING is ESCALATION_NOOP.
-    HORIZON and INVALIDATION are resolve predicates (§2:259-263), not gate
-    fires; their deciding rail is the last outcome that is not ESCALATION_NOOP.
+    Gate exits only; resolve exits use the last OPEN snapshot.
     """
     if not decisions:
         return None
@@ -464,7 +483,6 @@ def _first_triggering_gate(
     reason = str(closed.get("exit_reason"))
     wanted = _EXIT_GATE.get(reason)
     first_fire: int | None = None
-    last_live: int | None = None
     for body in decisions:
         if str(body.get("cell_id")) != cell:
             continue
@@ -472,8 +490,6 @@ def _first_triggering_gate(
         if not isinstance(sequence, int):
             continue
         outcome = str(body.get("outcome"))
-        if outcome != "ESCALATION_NOOP":
-            last_live = sequence
         if outcome != "fire":
             continue
         if wanted in ("ADVERSE", "FAVORABLE") and str(body.get("gate")) != wanted:
@@ -482,8 +498,6 @@ def _first_triggering_gate(
             first_fire = sequence
     if first_fire is not None:
         return first_fire
-    if reason in ("HORIZON", "INVALIDATION"):
-        return last_live
     return None
 
 
@@ -519,6 +533,8 @@ def check_m11_proposed(
             raise AssertionError(f"CAP:audit: proposed {got} != last usable executable {expected}")
         return
     sequence = _path_rail_sequence(closed)
+    if sequence is None and str(closed.get("exit_reason")) in ("HORIZON", "INVALIDATION"):
+        sequence = _last_open_snapshot_sequence(snapshots)
     if sequence is None:
         sequence = _first_triggering_gate(closed, decisions)
     if sequence is None:
