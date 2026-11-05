@@ -35957,3 +35957,110 @@ OWNER:       campaign 15.
                  Re-emit path engine.py:618 inherits exit_reason from the
                  stored EXITING cell (step 1 evidence). The handoff's
                  "FILES 12" was a miscount of an 11-path list.
+
+## T-10 Member 11 deciding rail for resolve exits; stage hook on test_m11_synthetic
+
+  VERDICT:       passed
+  DECISIONS:     D-232, D-233.
+  E0:            FAILFIRST 38db4ae849eaaf09d852a1dfee49914d8fc5808c. 2 failed,
+                 8 passed.
+                 test_m11_resolve_exit_deciding_rail_is_last_open_snapshot
+                 AssertionError: CAP:audit: proposed 10028 != executable 10029
+                 of quote 21. test_m11_resolve_exit_priced_at_later_rail_fails
+                 Failed: DID NOT RAISE. Same 2 failed, 8 passed at HOOK
+                 a2f441e5c800523f16c691daa91becc407b9f9ca. HOOK effect: at
+                 stage D, test_m11_synthetic red "11:CAP:gate_fire: no ADVERSE
+                 GateDecision with drawn_level_ticks > 0". FIX
+                 9f642f52280850eff176924f803b3d0bebaa4730: 10 passed.
+  TREE:          Byte-identical apply from feelies-probes\T-10.
+                 T-10-tests1.diff SHA256
+                 70A347F91EFD4AB30280150F9B86ECC3880D342F22739CD170E88CB795985ECC.
+                 T-10-hook2.diff SHA256
+                 F5768581E11001D4B39F836E756F72A688B76271D0708BA0F5A74EB6C90294BA.
+                 T-10-fix1.diff SHA256
+                 0AC3AD0807857753F7E9F3FF885388ACEC2F41440DD90C2005D496129731BABD.
+  SPEC:          ff06fe142e5bd547180e69b21b1ef37e25567a89. D-232, D-233, the
+                 T-10 plan row, the battery.md line.
+  IMPL:          FAILFIRST 38db4ae849eaaf09d852a1dfee49914d8fc5808c. HOOK
+                 a2f441e5c800523f16c691daa91becc407b9f9ca. FIX
+                 9f642f52280850eff176924f803b3d0bebaa4730.
+  BASE:          cd14e813afce59732e0aeaeb6f42fbb262463b96. Branch base
+                 ab308658c50f79a8a2ea322e868cf6da231ffe9f. pre
+                 baseline_pre-T-10.json on
+                 ff06fe142e5bd547180e69b21b1ef37e25567a89, captured_at
+                 2026-11-04T06:16:42.815385+00:00, git.dirty false. Full suite
+                 5427 passed, 0 failed, 44 skipped, 2 xfailed (5427 passed, 44
+                 skipped, 2 xfailed, 49 warnings in 1353.84s); determinism 148
+                 (148 passed, 1 warning in 9.98s); parity constants 64;
+                 tools_fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1; evidence alphaleak n 0, imports n_cycles 1, n_edges
+                 715, n_modules 208, modules public_symbols 626, total_files
+                 257, total_sloc 50138. post baseline_post-T-10.json on
+                 9f642f52280850eff176924f803b3d0bebaa4730, captured_at
+                 2026-11-04T11:50:11.997570+00:00, git.dirty false. Full suite
+                 5429 passed, 0 failed, 44 skipped, 2 xfailed (5429 passed, 44
+                 skipped, 2 xfailed, 49 warnings in 2595.15s); determinism 148
+                 (148 passed, 1 warning in 17.35s); evidence total_sloc 50138;
+                 same fingerprint, files 1. compare parity-only: 64 -> 64,
+                 changed 0, parity HOLDS. Predicted (D-233): full 5427 -> 5429
+                 passed, 0 failed, 44 skipped, 2 xfailed; determinism 148;
+                 constants 64, 0 changed; fingerprint unchanged, files 1.
+                 MATCH.
+  GATES:         TESTS, predicted against actual. Full pytest: 5429 passed, 44
+                 skipped, 2 xfailed, 49 warnings in 2501.63s, exit 0
+                 (predicted 5427 -> 5429). tests/position_engine 293 passed, 1
+                 warning in 1166.82s (predicted 291 -> 293). Determinism 148
+                 passed, 1 warning in 16.24s. Prepush: ruff check All checks
+                 passed; ruff format 812 files already formatted; mypy
+                 Success: no issues found in 257 source files; lint-imports
+                 Contracts: 2 kept, 0 broken. Serial 5412 passed, 5 skipped,
+                 57 deselected, 1 xfailed, 49 warnings in 1519.71s, exit 0. -n
+                 4: 5412 passed, 5 skipped, 1 xfailed, 53 warnings in 615.47s,
+                 exit 0 (predicted 5410 -> 5412). Battery synthetic 109
+                 passed, 9 deselected, at D (573.95s) and at E (431.01s); real
+                 12 passed, 5463 deselected, at D (546.44s) and at E
+                 (602.74s). All exit 0. Synthetic D reds 23, prefixes
+                 CAP:gate_fire 18, CAP:conservation 3, CAP:favorable_fire 1,
+                 NONVACUOUS 1. Changed message test_m11_synthetic
+                 "11:CAP:gate_fire: no ADVERSE GateDecision with
+                 drawn_level_ticks > 0". Real D reds 2, messages unchanged:
+                 test_m5_real "5:CAP:gate_fire: no ADVERSE GateDecision with
+                 drawn_level_ticks > 0"; test_m6_real "6:CAP:gate_fire: A2:
+                 placement rule P found no eligible cell". Reds at E: 0.
+                 passed-before-stage none. Kill A 9/9, B 13/13 (B5 and B6 by
+                 test_m11_synthetic), controls 0 failures. Universe 1 passed
+                 in 214.25s (PYTHONHASHSEED 0). Predicted (D-233) MATCH.
+  CI:            pending
+  MERGE:         filled at the merge
+  BUGBOT:        read only after CI
+  CI WATCH:      pending until the merge
+  DEVIATIONS:    1. First pre capture git.dirty true (porcelain listed the new
+                 json); discarded; committed pre is the recapture, dirty
+                 false. 2. baseline_post-T-10.json was on disk before S8
+                 (captured_at 2026-11-04T11:50:11.997570+00:00, git.sha
+                 9f642f52280850eff176924f803b3d0bebaa4730, git.dirty false,
+                 LastWriteTime 11/4/2026 8:34:29 PM); verified and compared,
+                 not overwritten.
+  STANDING:      PYTHONHASHSEED unset in local runs (conftest warning
+                 PYTHONHASHSEED=None); the universe check ran at 0. Stage D.
+  EVIDENCE:      T-10-tests1.diff, T-10-hook2.diff, T-10-fix1.diff under
+                 feelies-probes\T-10. node_report.py SHA256
+                 72FE8C206AD0243C843D980EBF76A294D6EA8C11A8B670716E867CCA892EBA88,
+                 outside the repo.
+  FILES:         declared 8, touched 8 (LEDGER.md included).
+  NET DELTA:     git diff --stat ab308658c5..HEAD: 8 files changed, 524 insertions(+), 7 deletions(-).
+  F-P52-3:       closed (D-233).
+  F-T10-1:       a baseline_post-<id>.json existed before its S8 capture in
+                 P-52 and T-10; provenance per step 1b; tooling census before
+                 the next EXEC.
+  F-T10-2:       tests/position_engine/scenarios.py _first_triggering_gate
+                 docstring still states "a later gate outcome while EXITING is
+                 ESCALATION_NOOP", contradicted by D-233; inside the
+                 byte-identical diff, not fixed here.
+  F-P50-2:       open; T-11 (D-232).
+  NOTES:         decision A and the T-10/T-11 split (D-232). Diffs applied
+                 byte-identically from feelies-probes\T-10. node_report.py
+                 SHA256
+                 72FE8C206AD0243C843D980EBF76A294D6EA8C11A8B670716E867CCA892EBA88,
+                 outside the repo, used for battery red ids.
