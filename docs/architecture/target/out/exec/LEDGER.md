@@ -36031,10 +36031,31 @@ OWNER:       campaign 15.
                  passed-before-stage none. Kill A 9/9, B 13/13 (B5 and B6 by
                  test_m11_synthetic), controls 0 failures. Universe 1 passed
                  in 214.25s (PYTHONHASHSEED 0). Predicted (D-233) MATCH.
-  CI:            pending
-  MERGE:         filled at the merge
-  BUGBOT:        read only after CI
-  CI WATCH:      pending until the merge
+  CI:            PR head 41946454831 success at d083b8df
+                 (check 814 s, parity oracle 310 s,
+                 reference battery 401 s, kill A 171 s,
+                 kill B 182 s, reference battery (real)
+                 skipped); Tests 5412 passed, 5 skipped,
+                 1 xfailed; determinism 148 passed.
+                 Merge run 41951808405 success (check 822 s,
+                 parity oracle 501 s, reference battery
+                 395 s, kill A 203 s, kill B 187 s, real
+                 skipped); Tests 5412 passed, 5 skipped,
+                 1 xfailed; determinism 148 passed.
+  MERGE:         91bfb35f2c7d34ccc15cc1880770f37e0a8400f1,
+                 parents
+                 ab308658c50f79a8a2ea322e868cf6da231ffe9f
+                 and
+                 d083b8df2c3ea30af2f2ef49af2f5e14bd48e1ba,
+                 tree
+                 40e33eacd3203de7c6dfd6af780e4cdaeca748d3
+                 = PR head tree. PR #305. Merged
+                 2026-11-05T01:55:51Z.
+  BUGBOT:        pass (2m36s); no issues found; no comments, no reviews.
+  CI WATCH:      head 814 s, ratio 703.99 / 10.85 = 64.88;
+                 merge 822 s, ratio 710.98 / 10.92 = 65.11.
+                 Two-run geometric mean 65.00; D-209
+                 fired no.
   DEVIATIONS:    1. First pre capture git.dirty true (porcelain listed the new
                  json); discarded; committed pre is the recapture, dirty
                  false. 2. baseline_post-T-10.json was on disk before S8
