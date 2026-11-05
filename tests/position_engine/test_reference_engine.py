@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 from decimal import Decimal
 from fractions import Fraction
 
@@ -688,6 +689,50 @@ def test_precondition_later_entry_births_a_new_cell() -> None:
 def test_deadline_is_birth_plus_horizon() -> None:
     """contracts.md §9:448-449. With no session close, the deadline is birth ts + T (D-45)."""
     bus, _engine_obj, log = _engine(_policy(t_ns=5_000))
+    bus.publish(_rail(1, 1_000))
+    bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=1, quantity=1))
+    bus.publish(_rail(3, 2_000))
+    snap = _of(log, PositionSnapshot)[-1]
+    assert isinstance(snap, PositionSnapshot)
+    assert snap.horizon_deadline_ns == 6_000
+
+
+@dataclass(frozen=True)
+class _Bounds:
+    """Minimal session bounds: one close for every timestamp."""
+
+    rth_close_ns: int
+
+    def resolve_for_timestamp(self, ts_ns: int) -> "_Bounds":
+        return self
+
+
+def _bounded_engine(policy: ExitPolicy, close_ns: int) -> tuple[EventBus, _Log]:
+    bus = EventBus()
+    engine = PositionEngine(
+        bus,
+        SequenceGenerator(stream="position", thread_safe=False),
+        policies={"sig": policy},
+        session_bounds=_Bounds(rth_close_ns=close_ns),
+    )
+    engine.attach()
+    return bus, _Log(bus)
+
+
+def test_deadline_capped_at_session_close() -> None:
+    """contracts.md §2:202, D-214. A binding close caps the deadline."""
+    bus, log = _bounded_engine(_policy(t_ns=5_000), close_ns=3_001)
+    bus.publish(_rail(1, 1_000))
+    bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=1, quantity=1))
+    bus.publish(_rail(3, 2_000))
+    snap = _of(log, PositionSnapshot)[-1]
+    assert isinstance(snap, PositionSnapshot)
+    assert snap.horizon_deadline_ns == 3_000
+
+
+def test_deadline_cap_not_binding_keeps_birth_plus_horizon() -> None:
+    """D-214. A close past birth + T leaves the deadline at birth + T."""
+    bus, log = _bounded_engine(_policy(t_ns=5_000), close_ns=1_000_000)
     bus.publish(_rail(1, 1_000))
     bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=1, quantity=1))
     bus.publish(_rail(3, 2_000))
