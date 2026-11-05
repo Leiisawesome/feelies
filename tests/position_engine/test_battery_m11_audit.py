@@ -24,6 +24,7 @@ from tests.position_engine.scenarios import (
     check_m11_proposed,
     fixture_variant,
     nonvacuous,
+    require_adverse_level,
     require_barrier_differs,
     require_entry_fills,
     run_synthetic,
@@ -170,6 +171,7 @@ def test_m11_synthetic() -> None:
     """
     tape = make_tape(seed=11, n=2200, symbol="SYN", start_ns=T0, size=1000)
     records = run_synthetic(tape, symbols=("SYN",), variant=_v3a())
+    require_adverse_level(records)
     require_entry_fills(records)
     nonvacuous(records, "PositionClosed", scenario="m11")
     audit_m11(records)
@@ -223,6 +225,98 @@ def test_m11_later_exiting_snapshot_is_not_the_deciding_quote() -> None:
         later: _quote(later, 9_979, 9_980),
     }
     check_m11_proposed(close, snapshots, quotes)
+
+
+def test_m11_resolve_exit_deciding_rail_is_last_open_snapshot() -> None:
+    """Resolve exit prices the last snapshot taken while OPEN.
+
+    contracts.md §2:157, §2:167-168, §2:258-268.
+    """
+    deciding = 20
+    later = deciding + 1
+    close = _closed(proposed=10_028)
+    close["exit_reason"] = "INVALIDATION"
+    close["triggered_paths"] = [
+        {
+            "path": "INVALIDATION",
+            "proposed_price_cents": 10_028,
+            "trigger": "INVALIDATION",
+        }
+    ]
+    snapshots = [
+        _snapshot(move_now=100, move_worst=50, move_forced=50, best=100, rail_sequence=deciding),
+        _snapshot(move_now=90, move_worst=50, move_forced=50, best=100, rail_sequence=later),
+    ]
+    snapshots[0]["state"] = "OPEN"
+    snapshots[1]["state"] = "EXITING"
+    quotes = {
+        deciding: _quote(deciding, 10_028, 10_029),
+        later: _quote(later, 10_029, 10_030),
+    }
+    decisions = []
+    for sequence in (deciding, later):
+        decisions.append(
+            {
+                "cell_id": close["cell_id"],
+                "rail_sequence": sequence,
+                "gate": "ADVERSE",
+                "outcome": "hold",
+            }
+        )
+        decisions.append(
+            {
+                "cell_id": close["cell_id"],
+                "rail_sequence": sequence,
+                "gate": "FAVORABLE",
+                "outcome": "none",
+            }
+        )
+    check_m11_proposed(close, snapshots, quotes, decisions)
+
+
+def test_m11_resolve_exit_priced_at_later_rail_fails() -> None:
+    """A resolve exit priced at the later rail is not the deciding quote."""
+    deciding = 20
+    later = deciding + 1
+    close = _closed(proposed=10_029)
+    close["exit_reason"] = "INVALIDATION"
+    close["triggered_paths"] = [
+        {
+            "path": "INVALIDATION",
+            "proposed_price_cents": 10_029,
+            "trigger": "INVALIDATION",
+        }
+    ]
+    snapshots = [
+        _snapshot(move_now=100, move_worst=50, move_forced=50, best=100, rail_sequence=deciding),
+        _snapshot(move_now=90, move_worst=50, move_forced=50, best=100, rail_sequence=later),
+    ]
+    snapshots[0]["state"] = "OPEN"
+    snapshots[1]["state"] = "EXITING"
+    quotes = {
+        deciding: _quote(deciding, 10_028, 10_029),
+        later: _quote(later, 10_029, 10_030),
+    }
+    decisions = []
+    for sequence in (deciding, later):
+        decisions.append(
+            {
+                "cell_id": close["cell_id"],
+                "rail_sequence": sequence,
+                "gate": "ADVERSE",
+                "outcome": "hold",
+            }
+        )
+        decisions.append(
+            {
+                "cell_id": close["cell_id"],
+                "rail_sequence": sequence,
+                "gate": "FAVORABLE",
+                "outcome": "none",
+            }
+        )
+    with pytest.raises(AssertionError, match=r"^CAP:audit:"):
+        check_m11_proposed(close, snapshots, quotes, decisions)
 
 
 def _golden_records() -> Records:
