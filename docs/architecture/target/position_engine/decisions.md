@@ -1159,6 +1159,61 @@ capability it needs (gate_fire) instead of passing early.
   - Evidence: T-10 trials 1 and 2 (chat 10). Closes F-P52-3.
   - Supersedes: none.
 
+D-234 — T-11 probes.
+  - Decided by: operator, 2026-11-05.
+  - Answer: Outside-repo probe trials for T-11 are authorised under
+    %USERPROFILE%\feelies-probes\T-11 (git archive, scratch git, no repo
+    writes).
+  - Evidence: T-11 trial 1 (chat 10).
+  - Supersedes: none.
+
+D-235 — T-11 interpretations, commit order, prediction.
+  - Decided by: operator, 2026-11-05.
+  - Answer: (1) The reference engine keeps session_bounds and freezes
+    horizon_deadline_ns at birth as min(birth_fill_ts + T,
+    resolve_for_timestamp(birth_fill_ts).rth_close_ns −
+    cutoff_before_close_ns); without bounds birth_fill_ts + T (D-214, D-45).
+    This replaces D-213's "the reference ... accept it and ignore it" for the
+    reference only; broken engines and ProbeEngine still ignore it.
+    (2) Synthetic runs resolve no bounds; on the real tape (APP 2026-03-26,
+    T 120 s, cutoff 300 s) no reference cell is capped (trial 1 M7: 34 closes,
+    0 capped), so battery outcomes do not move; the cap is proved by the
+    reference contract test, not by the battery. (3) Commit order: SPEC,
+    FAILFIRST, FIX, baselines, ledger. Diffs from feelies-probes\T-11:
+    T-11-tests1.diff SHA256
+    1961E090799C7EFF302994032A199F65C78BC9B79E5A9CC0410DD0E22B036A37,
+    T-11-fix1.diff
+    2CBABDF496E990B773A14745923042333600851FCC26331C25EAAAE7B68449DD.
+    (4) Prediction: the PREDICTION block of the T-11 EXEC prompt, verbatim:
+
+```
+PREDICTION (recorded in D-235 by S1; never change it)
+Changes:
+- tests: full 5429 -> 5431 passed (0 failed, 44 skipped, 2 xfailed);
+  prepush 5412 -> 5414 serial and -n 4 (5 skipped, 1 xfailed);
+  tests/position_engine 293 -> 295.
+- battery synthetic 109 -> 111 passed, 9 deselected, at D and E; real 12
+  passed at D and E, deselected 5463 -> 5465.
+Holds:
+- synthetic D reds 23, same ids and messages (CAP:gate_fire 18,
+  CAP:conservation 3, CAP:favorable_fire 1, NONVACUOUS 1); real D reds 2
+  (test_m5_real, test_m6_real, CAP:gate_fire); E reds 0; passed-before-stage
+  none.
+- determinism 148; parity 64 -> 64, 0 changed; fingerprint
+  261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97, files 1.
+- kill A 9/9, B 13/13, controls 0, killed-by lines unchanged; universe 1.
+- M7 reference real E: 34 PositionClosed (ADVERSE 32, HORIZON 2); 0 capped
+  cells.
+- no src/ file changes.
+Mechanism: the reference now applies D-214's cap only when session bounds
+resolve; synthetic runs have none, and on the real tape no entry fills late
+enough for the cap to bind, so only the two new reference tests change any
+count.
+```
+
+  - Evidence: T-11 trial 1 (chat 10). Closes F-P50-2.
+  - Supersedes: D-213 (the reference's session_bounds clause only).
+
 ### D-66 pre-registered prediction
 
 ```
