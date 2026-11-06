@@ -36152,10 +36152,31 @@ OWNER:       campaign 15.
                  test_m11_synthetic), controls 0 failures. Universe 1
                  passed in 217.79s (PYTHONHASHSEED 0). Predicted
                  (D-235) MATCH.
-  CI:            pending.
-  MERGE:         filled at the merge.
-  BUGBOT:        read only after CI.
-  CI WATCH:      pending until the merge.
+  CI:            PR head 42184427934 success at 34d31ba9
+                 (check 798 s, parity oracle 485 s,
+                 reference battery 225 s, kill A 280 s,
+                 kill B 132 s, reference battery (real)
+                 skipped); Tests 5414 passed, 5 skipped,
+                 1 xfailed; determinism 148 passed.
+                 Merge run 42204140944 success (check 871 s,
+                 parity oracle 446 s, reference battery
+                 280 s, kill A 286 s, kill B 186 s, real
+                 skipped); Tests 5414 passed, 5 skipped,
+                 1 xfailed; determinism 148 passed.
+  MERGE:         b482d764b58dcf2184790284c96ecd461bd15dde,
+                 parents
+                 57f522be057605ae6444a4b38774fe5f8bb55555
+                 and
+                 34d31ba969a40da840b7e7c4f51b2bfc2ebdc8b9,
+                 tree
+                 de81a56947cdfcf852e2272fd55205e749a36086
+                 = PR head tree. PR #306. Merged
+                 2026-11-06T10:37:47Z.
+  BUGBOT:        pass (1m44s); no issues found; no comments, no reviews.
+  CI WATCH:      head 798 s, ratio 689.51 / 10.84 = 63.61;
+                 merge 871 s, ratio 756.51 / 11.98 = 63.15.
+                 Two-run geometric mean 63.38; D-209
+                 fired no.
   DEVIATIONS:    1. The S3 expected pass count in the prompt was 30;
                  trial 1 printed 29; corrected by the operator's
                  CONTINUE before S4 (prompt transcription error); the
