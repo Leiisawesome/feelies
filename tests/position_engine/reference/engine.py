@@ -57,7 +57,7 @@ class PositionEngine:
         clock: _Clock | None = None,
         session_bounds: object | None = None,
     ) -> None:
-        del session_bounds  # D-203
+        self._session_bounds = session_bounds  # D-214 (T-11)
         self._bus = bus
         self._seq = sequence_generator
         self._clock = clock
@@ -331,7 +331,7 @@ class PositionEngine:
             policy=policy,
             entry_order_id=event.order_id,
             spread=entry_spread_ticks(paying, valuation, side=side),
-            deadline_ns=event.fill_timestamp_ns + policy.horizon.T_ns,
+            deadline_ns=self._deadline(event.fill_timestamp_ns, policy),
             price_cents=price,
             quantity=quantity,
             leg=_leg(event, price, sequence, quantity=quantity),
@@ -340,6 +340,15 @@ class PositionEngine:
             if orient.valuation_mark_cents is not None and not orient.valuation_side_absent:
                 cell.last_usable = rail
         self._open[self._open_key(event.strategy_id, event.symbol)] = cell
+
+    def _deadline(self, fill_ts: int, policy: ExitPolicy) -> int:
+        """§2:202, D-214. min(birth + T, close - cutoff); no close: birth + T (D-45)."""
+        horizon = fill_ts + policy.horizon.T_ns
+        bounds = self._session_bounds
+        if bounds is None:
+            return horizon
+        close = bounds.resolve_for_timestamp(fill_ts).rth_close_ns  # type: ignore[attr-defined]
+        return min(horizon, close - policy.horizon.cutoff_before_close_ns)
 
     def _birth_id(self, event: SlicePositionUpdate, side: str) -> str:
         """D-191. The stamp is the fill's fill_timestamp_ns; the ordinal counts prior births."""

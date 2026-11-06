@@ -36085,3 +36085,118 @@ OWNER:       campaign 15.
                  SHA256
                  72FE8C206AD0243C843D980EBF76A294D6EA8C11A8B670716E867CCA892EBA88,
                  outside the repo, used for battery red ids.
+
+## T-11 Reference engine deadline cap
+
+  VERDICT:       passed
+  DECISIONS:     D-234, D-235.
+  E0:            FAILFIRST 96b143a062c60c91e8302a547fada884910ae211.
+                 test_deadline_capped_at_session_close failed before:
+                 AssertionError: assert 6000 == 3000 (1 failed, 29 passed,
+                 1 warning in 0.38s). Control
+                 test_deadline_cap_not_binding_keeps_birth_plus_horizon
+                 passed. FIX ca9763de5318e7faf86afa8ec89b45796066b4dc:
+                 32 passed, 1 warning in 0.26s.
+  TREE:          Byte-identical apply from feelies-probes\T-11.
+                 T-11-tests1.diff SHA256
+                 1961E090799C7EFF302994032A199F65C78BC9B79E5A9CC0410DD0E22B036A37.
+                 T-11-fix1.diff SHA256
+                 2CBABDF496E990B773A14745923042333600851FCC26331C25EAAAE7B68449DD.
+  SPEC:          278bf2de0541b1713aa5c37e62cf0f7e7264ae47. D-234, D-235,
+                 the T-11 plan row.
+  IMPL:          FAILFIRST 96b143a062c60c91e8302a547fada884910ae211. FIX
+                 ca9763de5318e7faf86afa8ec89b45796066b4dc.
+  BASE:          631996161b8dd52eb06630bf28d3774d1509c618. Branch base
+                 57f522be057605ae6444a4b38774fe5f8bb55555. pre
+                 baseline_pre-T-11.json on
+                 278bf2de0541b1713aa5c37e62cf0f7e7264ae47, captured_at
+                 2026-11-05T07:52:10.346717+00:00, git.dirty false. Full
+                 suite 5429 passed, 0 failed, 44 skipped, 2 xfailed
+                 (5429 passed, 44 skipped, 2 xfailed, 49 warnings in
+                 2531.84s); determinism 148 (148 passed, 1 warning in
+                 17.95s); parity constants 64; tools_fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. post baseline_post-T-11.json on
+                 ca9763de5318e7faf86afa8ec89b45796066b4dc, captured_at
+                 2026-11-06T04:40:46.305392+00:00, git.dirty false. Full
+                 suite 5431 passed, 0 failed, 44 skipped, 2 xfailed
+                 (5431 passed, 44 skipped, 2 xfailed, 49 warnings in
+                 1990.40s); determinism 148 (148 passed, 1 warning in
+                 15.15s); same fingerprint, files 1. compare
+                 parity-only: 64 -> 64, changed 0, parity HOLDS.
+                 Predicted (D-235) MATCH. M7 reference real E: 34
+                 closes, ADVERSE 32, HORIZON 2, 0 capped.
+  GATES:         TESTS, predicted against actual. Full pytest: 5431
+                 passed, 44 skipped, 2 xfailed, 49 warnings in 1675.74s
+                 (0:27:55), exit 0 (predicted 5429 -> 5431).
+                 tests/position_engine 295 passed, 1 warning in 939.40s
+                 (predicted 293 -> 295). Determinism 148 passed, 1
+                 warning in 13.74s. Prepush: ruff check All checks
+                 passed; ruff format 812 files already formatted; mypy
+                 Success: no issues found in 257 source files;
+                 lint-imports Contracts: 2 kept, 0 broken. Serial 5414
+                 passed, 5 skipped, 57 deselected, 1 xfailed, 49
+                 warnings in 931.95s (0:15:31), exit 0. -n 4: 5414
+                 passed, 5 skipped, 1 xfailed, 53 warnings in 555.40s
+                 (0:09:15), exit 0 (predicted 5412 -> 5414). Battery
+                 synthetic 111 passed, 9 deselected, at D (532.94s) and
+                 at E (384.31s); real 12 passed, 5465 deselected, at D
+                 (509.43s) and at E (582.96s). All exit 0. Synthetic D
+                 reds 23, prefixes CAP:gate_fire 18, CAP:conservation
+                 3, CAP:favorable_fire 1, NONVACUOUS 1. Real D reds 2:
+                 test_m5_real "5:CAP:gate_fire: no ADVERSE GateDecision
+                 with drawn_level_ticks > 0"; test_m6_real
+                 "6:CAP:gate_fire: A2: placement rule P found no
+                 eligible cell". Reds at E: 0. passed-before-stage
+                 none. Kill A 9/9, B 13/13 (B5 and B6 by
+                 test_m11_synthetic), controls 0 failures. Universe 1
+                 passed in 217.79s (PYTHONHASHSEED 0). Predicted
+                 (D-235) MATCH.
+  CI:            pending.
+  MERGE:         filled at the merge.
+  BUGBOT:        read only after CI.
+  CI WATCH:      pending until the merge.
+  DEVIATIONS:    1. The S3 expected pass count in the prompt was 30;
+                 trial 1 printed 29; corrected by the operator's
+                 CONTINUE before S4 (prompt transcription error); the
+                 PREDICTION block was unchanged. 2. The first pre
+                 capture shell was aborted at the runner limit with no
+                 file; a second launch wrote the pre file; C1 found no
+                 live capture; C2 verified it (captured_at
+                 2026-11-05T07:52:10.346717+00:00, sha 278bf2de, dirty
+                 false). 3. An untracked baseline_post-T-11.json
+                 (captured_at 2026-11-06T04:14:31.394491+00:00, sha
+                 ca9763de, dirty false) was present before the post
+                 capture; C1 none; deleted and recaptured; the
+                 committed post is captured_at
+                 2026-11-06T04:40:46.305392+00:00. 4. The pre file was
+                 moved aside for the post capture and restored (step
+                 1b SHA256).
+  STANDING:      PYTHONHASHSEED unset in local runs (conftest warning
+                 PYTHONHASHSEED=None); the universe check ran at 0.
+                 Stage D.
+  EVIDENCE:      T-11-tests1.diff, T-11-fix1.diff under
+                 feelies-probes\T-11. node_report.py SHA256
+                 72FE8C206AD0243C843D980EBF76A294D6EA8C11A8B670716E867CCA892EBA88,
+                 outside the repo.
+  FILES:         declared 8, touched 8 (LEDGER.md included).
+  NET DELTA:     git diff --stat 57f522be05..HEAD: 8 files changed, 462 insertions(+), 2 deletions(-).
+  F-P50-2:       closed (D-235).
+  F-T10-1:       recurred in T-11 (deviations 2 and 3): a capture
+                 launched earlier in the session completes outside the
+                 runner's view. INFERRED cause: runner timeouts detach
+                 the capture child. Contract rule pending an operator
+                 decision.
+  F-T10-2:       open (stale _first_triggering_gate docstring
+                 sentence).
+  F-P52-4:       open (m3 200-close floor at stage E with the
+                 production engine).
+  NOTES:         the cap is proved by
+                 test_deadline_capped_at_session_close; on the real
+                 tape no reference cell is capped, so battery outcomes
+                 do not move (D-235 item 2). D-213's reference
+                 session_bounds clause is superseded for the reference
+                 only. Diffs applied byte-identically from
+                 feelies-probes\T-11. node_report.py outside the repo
+                 (SHA256
+                 72FE8C206AD0243C843D980EBF76A294D6EA8C11A8B670716E867CCA892EBA88).

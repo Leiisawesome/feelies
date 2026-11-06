@@ -49,6 +49,7 @@ under `tests/position_engine`. Rail rows are P-22a1. Engine rows are P-22a2.
 | Exit reasons are the closed set, mapped onto requirement reasons (D-47) | §9:450–453 | engine.py:PositionEngine._resolve | test_precedence_picks_adverse_and_the_worst_price |
 | Closing flags are taken at the deciding event, or at the last usable update for END_OF_TAPE (D-47) | §9:454–461 | engine.py:PositionEngine._emit_close | test_end_of_tape_and_missing_exit_side |
 | With no session close the deadline is the birth timestamp plus T (D-45) | §9:448–449 | engine.py:PositionEngine._birth | test_deadline_is_birth_plus_horizon |
+| With a session close the deadline is min(birth timestamp plus T, close minus cutoff_before_close), frozen at birth (D-214) | §2:202 | engine.py:PositionEngine._deadline | test_deadline_capped_at_session_close |
 | Reversed gate order publishes the same events | §8:413–414 | engine.py:PositionEngine._evaluate | test_gate_order_does_not_change_published_events |
 | At most one snapshot per cell and rail event (D-86, D-103) | §2:255–256 | engine.py:PositionEngine._publish_snapshot | test_one_snapshot_per_rail_event |
 | A FLAT or opposite signal latches invalidation for the next rail event | §2:247–251 | engine.py:PositionEngine._on_signal | test_precedence_picks_adverse_and_the_worst_price |
