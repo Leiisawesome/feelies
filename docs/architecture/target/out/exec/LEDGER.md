@@ -36221,3 +36221,150 @@ OWNER:       campaign 15.
                  feelies-probes\T-11. node_report.py outside the repo
                  (SHA256
                  72FE8C206AD0243C843D980EBF76A294D6EA8C11A8B670716E867CCA892EBA88).
+
+## P-59 Members 7 and 8 authored
+
+  VERDICT:       passed
+  DECISIONS:     D-236..D-239, operator chat 11
+                 (AskUserQuestion), on P-59 censuses
+                 1-8 and trials t1-t2c.
+  E0:            FAILFIRST
+                 8af95a613da5b0fb76db79a7f45ae07f0cec12f8.
+                 ================================== FAILURES ===================================
+                 _______________________ test_registry_names_the_mutants _______________________
+                     def test_registry_names_the_mutants() -> None:
+                 >       assert list(REGISTRY) == [f"B{index}" for index in range(1, 26)]
+                 E       AssertionError: assert ['B1', 'B2', ...5', 'B6', ...] == ['B1', 'B2', ...5', 'B6', ...]
+                 E         
+                 E         Right contains 3 more items, first extra item: 'B23'
+                 E         Use -v to get more diff
+                 tests\position_engine\test_kill_runner.py:116: AssertionError
+                 1 failed, 7 passed, 1 warning in 8.65s.
+  TREE:          P-59-t2c.diff SHA256
+                 E75E1782611D542E63DB337A12D8701A2CD2FCC193C82BF25BDFFD7CD81FDA64,
+                 38914 bytes, applied byte-identically less
+                 the pin hunk, S2 hashes MATCH.
+  SPEC:          87a5b7cbb6e780925395e81259117ee201ebab8c.
+  PIN:           8af95a613da5b0fb76db79a7f45ae07f0cec12f8.
+                 test_kill_runner.py:116 range(1, 23) ->
+                 range(1, 26).
+  IMPL:          601e37a79bffe1c08c70f95e752a4e22fa4c586d.
+                 Members 7 and 8 nodes and B23-B25.
+  BASE:          f1c77c33b905804ec5a654272758dfbb49654c53.
+                 Branch base
+                 329e4930952f502d41fa843e5e6f24bdec7bfe94. pre
+                 baseline_pre-P-59.json on
+                 87a5b7cbb6e780925395e81259117ee201ebab8c,
+                 captured_at
+                 2026-11-07T03:12:43.248351+00:00, git.dirty
+                 false. Full suite 5431 passed, 0 failed,
+                 44 skipped, 2 xfailed (5431 passed, 44
+                 skipped, 2 xfailed, 49 warnings in
+                 2306.80s); determinism 148 (148 passed, 1
+                 warning in 14.20s); parity constants 64;
+                 tools_fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. post baseline_post-P-59.json on
+                 601e37a79bffe1c08c70f95e752a4e22fa4c586d,
+                 captured_at
+                 2026-11-07T07:01:41.642398+00:00, git.dirty
+                 false. Full suite 5439 passed, 0 failed,
+                 44 skipped, 2 xfailed (5439 passed, 44
+                 skipped, 2 xfailed, 49 warnings in
+                 2238.71s); determinism 148 (148 passed, 1
+                 warning in 13.84s); same fingerprint,
+                 files 1. compare parity-only: 64 -> 64,
+                 changed 0, parity HOLDS. Predicted MATCH.
+  GATES:         TESTS, predicted against actual. Full
+                 pytest: uv run pytest -q, exit 0. 5439
+                 passed, 44 skipped, 2 xfailed, 49
+                 warnings in 2363.62s (0:39:23). Predicted
+                 5439 passed, 44 skipped, 2 xfailed
+                 (5431 + 8). MATCH.
+                 tests/position_engine: uv run pytest
+                 tests/position_engine -q, exit 0. 303
+                 passed, 1 warning in 962.16s (0:16:02).
+                 Predicted 303 (295 + 8). MATCH.
+                 Determinism: uv run pytest
+                 tests/determinism -q, exit 0. 148 passed,
+                 1 warning in 10.18s. Predicted 148. MATCH.
+                 Prepush: uv run python
+                 scripts/prepush.py, exit 0. ruff check All
+                 checks passed; ruff format 815 files
+                 already formatted; mypy Success: no issues
+                 found in 257 source files; lint-imports
+                 Contracts: 2 kept, 0 broken. Serial 5420
+                 passed, 5 skipped, 59 deselected, 1
+                 xfailed, 49 warnings in 897.13s (0:14:57).
+                 -n 4: uv run pytest -m "not functional and
+                 not paper_rth and not battery_real and
+                 not universe_check" -q -n 4, exit 0. 5420
+                 passed, 5 skipped, 1 xfailed, 53 warnings
+                 in 442.06s (0:07:22). Predicted serial
+                 5420 passed, 5 skipped, 59 deselected, 1
+                 xfailed; -n 4 5420 passed, 5 skipped, 1
+                 xfailed. MATCH.
+                 Battery, globs as ci.yml, -p node_report.
+                 node_report.py SHA256
+                 72FE8C206AD0243C843D980EBF76A294D6EA8C11A8B670716E867CCA892EBA88.
+                 Synthetic at D: 117 passed, 11 deselected,
+                 1 warning in 486.12s (0:08:06), exit 0.
+                 Reds 29: CAP:gate_fire 23, NONVACUOUS 2,
+                 CAP:conservation 3, CAP:favorable_fire 1.
+                 Synthetic at E: 117 passed, 11 deselected,
+                 1 warning in 607.95s (0:10:07), exit 0.
+                 Reds 0. Real at D: 14 passed, 5471
+                 deselected, 1 warning in 457.70s
+                 (0:07:37), exit 0. Reds 4, CAP:gate_fire:
+                 test_m5_real, test_m6_real,
+                 test_m8_adverse_record_real,
+                 test_m8_favorable_reasons_real. Real at E:
+                 14 passed, 5471 deselected, 1 warning in
+                 605.25s (0:10:05), exit 0. Reds 0.
+                 Passed-before-stage none. Predicted MATCH.
+                 Kill: uv run python
+                 tests/position_engine/kill.py --shard A,
+                 exit 0, 9 of 9 KILLED. --shard B, exit 0,
+                 16 of 16 KILLED. B23 by
+                 test_m8_adverse_record, B24 by
+                 test_m8_favorable_reasons, B25 by
+                 test_m7_giveback; the other thirteen as
+                 at T-11. --control, exit 0, CONTROL 0
+                 failures. Predicted MATCH.
+                 Universe check: PYTHONHASHSEED 0, uv run
+                 pytest
+                 tests/conformance/test_cap_neutral_universe.py
+                 -q -m universe_check, exit 0. 1 passed in
+                 168.52s (0:02:48). Predicted 1 passed.
+                 MATCH.
+  CI:            pending
+  MERGE:         filled at the merge
+  BUGBOT:        read only after CI
+  CI WATCH:      pending until the merge
+  DEVIATIONS:    1. The first pre capture launched while
+                 baseline_pre-P-59.json existed
+                 (captured_at
+                 2026-11-07T02:36:26.271821Z, git.dirty
+                 true), after background starts reported
+                 aborted at 2026-11-07T02:05:48.455Z (523
+                 ms) and 02:06:13.793Z (503 ms); discarded
+                 to feelies-probes\P-59\discarded (SHA256
+                 5FCE7FF9AE5793D28F23E70D4270D39BEF0970B4D1A8D224AE541E226A57EA09);
+                 the committed pre is the foreground
+                 recapture, git.dirty false. No further
+                 deviation in this session.
+  STANDING:      PYTHONHASHSEED unset in local runs
+                 (conftest warning PYTHONHASHSEED=None);
+                 the universe check ran at 0. Stage D.
+                 members 7 and 8 authored (D-237, D-238).
+  EVIDENCE:      P-59 censuses 1-8, trials t1-t2c at
+                 329e4930952f502d41fa843e5e6f24bdec7bfe94.
+  F-P59-1:       no rung row writes stage.txt E, and
+                 require_adverse_level stops guarding once
+                 P-60 lands drawn levels. Destination:
+                 P-60 opening design.
+  F-P59-2:       tests/position_engine/mutants.py:1 says "B1–B14" (stale).
+                 Not in FILES; unscheduled.
+  F-T10-1:       evidence: deviation 1's timeline.
+                 INFERRED: a reported-aborted background
+                 start ran the capture detached.

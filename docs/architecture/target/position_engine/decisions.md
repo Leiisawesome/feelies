@@ -1214,6 +1214,126 @@ count.
   - Evidence: T-11 trial 1 (chat 10). Closes F-P50-2.
   - Supersedes: D-213 (the reference's session_bounds clause only).
 
+D-236 — Outside-repo probes for P-59.
+  - Decided by: operator, phase 14 chat 11 (AskUserQuestion, 2026-11-06).
+  - Answer: Outside-repo probe trials are authorised for P-59 (git archive
+    of 329e4930 into %USERPROFILE%\feelies-probes\P-59, scratch git, the
+    repo's .venv interpreter with PYTHONPATH on the probe, the real-data
+    cache read-only, no repo writes). Trials: t1 (member 8, B23, B24), t1b
+    (injected definition; member-10 run dropped), t2 (member 7, B25, full
+    kill, battery gates), t2b (first-run guard order), t2c (shared guard
+    run). The IMPL tree is P-59-t2c.diff, SHA256
+    E75E1782611D542E63DB337A12D8701A2CD2FCC193C82BF25BDFFD7CD81FDA64,
+    38914 bytes.
+  - Evidence: P-59 censuses 1-8 and trials t1-t2c, all at 329e4930.
+  - Supersedes: none.
+
+D-237 — Member 8 authored (P-59). Supersedes D-91 for member 8.
+  - Decided by: operator, phase 14 chat 11 (AskUserQuestion), on P-59
+    censuses 3-5 and trials t1 and t1b.
+  - Battery wording unchanged. Interpretations, each stated without
+    reference to results: (1) An open cell is one not CLOSED, so OPEN or
+    EXITING (contracts.md §2:157, §2:172, §4:360). A cell's events are the
+    rail events for its symbol from the first after its birth fill to the
+    last before its PositionClosed, both inclusive, taken from the rail
+    stream, not from snapshots. (2) "fire or hold" includes ESCALATION_NOOP
+    while EXITING, the contract's recorded form of a fire there (§2:167-168,
+    D-95). Each event needs at least one ADVERSE GateDecision. (3) A blocked
+    favorable comparison is a FAVORABLE GateDecision with outcome
+    suppressed; its reason is one of the six (§9:453-455). Their order and
+    reason = suppressions[0] stay contract facts, not member 8's. (4) An
+    injected tape is a run edited by a Fixtures injection helper
+    (battery.md:19-23): hold, remove_side, remove_side_run, cross,
+    force_class to a non-VALID class, or the feed-gap rail seam. excise and
+    shift_from are constructions (battery.md:216). Both counts must be
+    non-zero on every injected run; a zero count is NONVACUOUS.
+  - Runs: member 6's synthetic runs; its real clean run and three copies.
+  - Nodes, green_from E: test_m8_adverse_record and
+    test_m8_favorable_reasons in test_battery_m8_records_syn.py, and their
+    _real twins in test_battery_m8_records_real.py (battery_real). The
+    adverse half calls require_adverse_level first (CAP:gate_fire, as
+    D-213, D-225, D-226, D-233). The favorable half has no guard: the
+    stage-D production stub publishes only outcome none (trial t1), so it
+    fails NONVACUOUS; its real twin fails CAP:gate_fire first through member
+    6's placement rule P.
+  - Broken engines, shard B: B23 (the adverse gate is not evaluated while
+    EXITING; its decision records outcome none) and B24 (a suppressed
+    favorable decision carries a reason outside the six). B7 stays member
+    6's. Member 6's synthetic runs carry 16 EXITING rail events, so member
+    10's tape is not added.
+  - Finding F-P59-1: no rung row writes stage.txt E, and
+    require_adverse_level stops guarding once P-60 lands drawn levels.
+    Destination: P-60 opening design.
+  - Rejected: B23 as unpublished hold decisions (member 1's gate count also
+    catches it); reusing B7 (drops member 6's A5 kill); synthetic runs only;
+    rewording the battery for ESCALATION_NOOP; any edited tape counting as
+    injected.
+  - Supersedes: D-91 for member 8.
+
+D-238 — Member 7 authored (P-59). Supersedes D-91 for member 7.
+  - Decided by: operator, phase 14 chat 11 (AskUserQuestion), on P-59
+    censuses 5-7 and trials t2, t2b and t2c.
+  - Battery wording unchanged. Comparison unit: a population-stable
+    configuration. Signals every 60 s (horizon_seconds 30, odd boundaries,
+    alternating), T 50 s, fees 0, each tape ending at least 55 s after its
+    last signal. Every cell closes FAVORABLE, ADVERSE or HORIZON before the
+    next signal, so every setting has the same cells; the population is
+    checked.
+  - Clauses: D, the FAVORABLE count is non-increasing (a longer window
+    contains the shorter). Give-back, the FAVORABLE count is
+    non-increasing, the total is constant and every other exit is ADVERSE
+    or HORIZON. S, the integer sum of §9 results is non-increasing from
+    S 0. Band, d = result(B) - result(0) per matched cell; it fails if
+    mean(d) > 4 SE (member 3's constant), with at least 200 cells.
+  - S: no decision and no fill reads S in this campaign. forced_exit_mark
+    is a proposed price (contracts.md §2:276-278); MARKET fills price at the
+    touch (market_fill.py:254-285); stop slippage is a fee (:256-260); §9
+    results exclude fees. The S results are therefore equal. Stated limit:
+    an S leak into a decision is caught only when it improves the result.
+  - Vacuity: NONVACUOUS unless the knob reaches its first consumer (S: the
+    forced mark by the S step; D: dwell_window_clean or warmed_up;
+    give-back: reference_ticks; band: drawn_level_ticks); also at least one
+    FAVORABLE exit at D 0 and at k 0.5, and 200 closed cells per band run.
+  - Settings and seeds, fixed before any run: S {0, 1, 2, 4}; D {0, 1, 3,
+    10} s, on a seed-29 tape of 30 300 quotes with a crossed quote at each
+    index i >= 25 with i mod 50 = 25; give-back k {0.5, 1, 1.5, 2}, trailing
+    form, archetype informed_flow_following (loader L5), seed 31, 2-tick
+    spread; band B {0, 2, 4, 8}, centre 11, lo 7, hi 15, seed 37, 120 300
+    quotes. A vacuous sweep is reported, never re-seeded.
+  - Guard: every node first builds the shared S 0 / D 0 run and calls
+    require_adverse_level (CAP:gate_fire), so at stage D the file costs one
+    run (trial t2c 15.49 s; before, 315.48 s).
+  - Broken engine B25, shard B: the trailing give-back inverted,
+    R = max(1, floor(spread / k)). Killed by test_m7_giveback (FAVORABLE
+    30 -> 34).
+  - Observation (trial t2, reference at E): band d at B 2, 4, 8 is +0.98,
+    -0.36, +2.71 SE; inside the bound; not acted on.
+  - Rejected: aggregate statistics on the unchanged fixture; the band clause
+    as a diagnostic; a flat sweep as NONVACUOUS (a correct engine's S sweep
+    is always flat); B25 as "ignore D" or "S in the adverse comparison".
+  - Supersedes: D-91 for member 7.
+
+D-239 — P-59 pin, commit order, prediction.
+  - Decided by: operator, phase 14 chat 11.
+  - Pin: tests/position_engine/test_kill_runner.py:116 range(1, 23) ->
+    range(1, 26), in its own commit, the rung's fail first (as D-210).
+  - Commit order: SPEC, PIN, IMPL (P-59-t2c.diff without its pin hunk,
+    applied byte-identically), baselines, ledger.
+  - Finding F-P59-2: tests/position_engine/mutants.py:1 says "B1–B14"
+    (stale). Not in FILES; unscheduled.
+  - Prediction (pre-registered): no src change; full suite 5431 -> 5439
+    passed, 0 failed, 44 skipped, 2 xfailed (8 nodes; the full capture
+    collects the real nodes); determinism 148; prepush and CI Tests
+    5414 -> 5420 passed, 5 skipped, 59 deselected, 1 xfailed; parity
+    constants 64 -> 64, changed 0; fingerprint unchanged; no pinned literal
+    moves except the registry pin; battery synthetic 117 passed, 11
+    deselected at D and E; real 14 passed, 5471 deselected at D and E;
+    accepted reds at D synthetic 29 (CAP:gate_fire 23, NONVACUOUS 2,
+    CAP:conservation 3, CAP:favorable_fire 1) and real 4 (CAP:gate_fire);
+    at E 0; kill A 9 of 9, B 16 of 16 (B23 and B24 by member 8, B25 by
+    member 7), controls 0 failures.
+  - Supersedes: none.
+
 ### D-66 pre-registered prediction
 
 ```

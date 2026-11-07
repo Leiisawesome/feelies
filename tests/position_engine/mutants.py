@@ -1118,6 +1118,95 @@ class EndSkipsExiting(PositionEngine):
             self._close_end(cell)
 
 
+class AdverseSkipsExiting(PositionEngine):
+    """B23. An EXITING cell records the adverse decision as outcome none.
+
+    Battery row: member 8.
+    Diff against PositionEngine._evaluate, when cell.state == "EXITING":
+        adverse = adverse._replace(outcome="none", reason="", trigger="")
+    """
+
+    def _evaluate(
+        self,
+        cell: Cell,
+        rail: MarkRailUpdate,
+        orient: RailOrientation,
+        move_now: int | None,
+        move_worst: int | None,
+    ) -> tuple[Decision, Decision]:
+        adverse, favorable = super()._evaluate(cell, rail, orient, move_now, move_worst)
+        if cell.state == "EXITING":
+            adverse = adverse._replace(outcome="none", reason="", trigger="")
+        return adverse, favorable
+
+
+class OffListReason(PositionEngine):
+    """B24. A suppressed favorable decision reports reason BLOCKED.
+
+    Battery row: member 8.
+    Diff against PositionEngine._evaluate, when favorable.outcome == "suppressed":
+        favorable = favorable._replace(reason="BLOCKED")
+    """
+
+    def _evaluate(
+        self,
+        cell: Cell,
+        rail: MarkRailUpdate,
+        orient: RailOrientation,
+        move_now: int | None,
+        move_worst: int | None,
+    ) -> tuple[Decision, Decision]:
+        adverse, favorable = super()._evaluate(cell, rail, orient, move_now, move_worst)
+        if favorable.outcome == "suppressed":
+            favorable = favorable._replace(reason="BLOCKED")
+        return adverse, favorable
+
+
+class InvertedGiveback(PositionEngine):
+    """B25. Trailing give-back is max(1, floor(spread / k)).
+
+    Battery row: member 7.
+    Diff against reference giveback_r, applied in _evaluate:
+        floored = (numerator * spread) // denominator
+        floored = (denominator * spread) // numerator
+    """
+
+    def _evaluate(
+        self,
+        cell: Cell,
+        rail: MarkRailUpdate,
+        orient: RailOrientation,
+        move_now: int | None,
+        move_worst: int | None,
+    ) -> tuple[Decision, Decision]:
+        adverse, favorable = super()._evaluate(cell, rail, orient, move_now, move_worst)
+        policy = cell.policy
+        multiple = policy.favorable.giveback_spread_multiple
+        if policy.favorable.form != "trailing" or multiple is None:
+            return adverse, favorable
+        ratio = ref.Fraction(repr(multiple))
+        floored = (ratio.denominator * cell.spread) // ratio.numerator
+        inverted = floored if floored >= 1 else 1
+        if favorable.suppressions:
+            return adverse, favorable._replace(reference_ticks=inverted)
+        peak = cell.best_clean.cents if cell.best_clean is not None else None
+        size = cell.open_qty
+        round_trip = cell.spread + policy.fee_round_trip_ticks
+        armed = peak is not None and move_now is not None and peak > (inverted + round_trip) * size
+        fire = (
+            armed
+            and peak is not None
+            and move_now is not None
+            and move_now <= peak - inverted * size
+        )
+        return adverse, favorable._replace(
+            outcome="fire" if fire else "none",
+            reason="",
+            reference_ticks=inverted,
+            trigger="TRAIL" if fire else "",
+        )
+
+
 REGISTRY: dict[str, Mutant] = {
     "B1": Mutant("B1", "rail", f"{__name__}.MidRail", (_M4,), "assert", "A"),
     "B2": Mutant("B2", "engine", f"{__name__}.FavorableWins", _M5, "exit reason", "B"),
@@ -1287,6 +1376,30 @@ REGISTRY: dict[str, Mutant] = {
             "::test_m10_every_opened_cell_closes",
         ),
         "CAP:lifecycle:",
+        "B",
+    ),
+    "B23": Mutant(
+        "B23",
+        "engine",
+        f"{__name__}.AdverseSkipsExiting",
+        ("tests/position_engine/test_battery_m8_records_syn.py::test_m8_adverse_record",),
+        "M8:",
+        "B",
+    ),
+    "B24": Mutant(
+        "B24",
+        "engine",
+        f"{__name__}.OffListReason",
+        ("tests/position_engine/test_battery_m8_records_syn.py::test_m8_favorable_reasons",),
+        "M8:",
+        "B",
+    ),
+    "B25": Mutant(
+        "B25",
+        "engine",
+        f"{__name__}.InvertedGiveback",
+        ("tests/position_engine/test_battery_m7_monotonicity.py::test_m7_giveback",),
+        "M7:",
         "B",
     ),
 }
