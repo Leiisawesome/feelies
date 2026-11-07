@@ -267,8 +267,8 @@ four runs; A2 on each copy, including risk-verdict equality (D-75). `green_from`
 
 ```
 MEMBER:            7 Monotonicity
-                   deferred (D-91); authored in P-59 (P-29).
-                   green_from E at P-61 (phase14 row: "+ 6, 8 (favorable half), 7").
+                   authored in P-59 (D-238; D-91 deferred it). green_from E at P-61;
+                   one node per knob in test_battery_m7_monotonicity.py; it catches B25.
 ASSERTS:           one knob swept at a time, at least four settings: more S gives weakly
                    worse mean result and S = 0 is never beaten; longer D gives weakly fewer
                    favorable exits; wider give-back gives weakly fewer favorable exits, the
@@ -279,9 +279,9 @@ BLOCKS THE BUILD:  no
 
 ```
 MEMBER:            8 Decision record completeness
-                   deferred (D-91); authored in P-59 (P-29).
-                   green_from E: adverse half at P-60 ("+ 6, 8 (adverse half)");
-                   favorable half at P-61 ("+ 6, 8 (favorable half), 7").
+                   authored in P-59 (D-237; D-91 deferred it). green_from E: adverse
+                   half at P-60, favorable half at P-61; one node per half in
+                   test_battery_m8_records_syn.py and _real.py; it catches B23 and B24.
 ASSERTS:           every rail event of every open cell has an adverse decision (fire or
                    hold); every blocked favorable comparison carries one of the six declared
                    block reasons; both counts non-zero on every injected tape
@@ -425,6 +425,9 @@ and by the named member. A broken engine nothing catches is a hole in the suite.
 | B20 | the horizon fires only when the exit side is usable | 10 (horizon clause) |
 | B21 | a closed cell publishes one more PositionSnapshot | 10 (closed clause) |
 | B22 | finalize closes OPEN cells only; EXITING cells stay open | 10 (every-cell-closes clause) |
+| B23 | the adverse gate is not evaluated while EXITING; its decision records outcome none | 8 (`test_m8_adverse_record`) |
+| B24 | a suppressed favorable decision carries a reason outside the six | 8 (`test_m8_favorable_reasons`) |
+| B25 | the trailing give-back is inverted: R = max(1, floor(spread / k)) | 7 (`test_m7_giveback`) |
 
 ## Kill runner
 
