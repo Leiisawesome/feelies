@@ -1,5 +1,5 @@
 ---
-description: Phase-14 standing contract (position engine, backtest only). Binds every Cursor session in this repo until P-99. Version 4 (T-6a, D-211).
+description: Phase-14 standing contract (position engine, backtest only). Binds every Cursor session in this repo until P-99. Version 5 (T-12, D-240).
 alwaysApply: true
 ---
 
@@ -27,7 +27,8 @@ The Claude chat rollover limit is 3 merged steps (playbook v1.2; D-202).
 - Push to main, use --admin, or bypass a required check (check (ubuntu-latest),
   parity oracle).
 - Commit anywhere but exec/<id>, except the ledger commit on arch/exec after a
-  merge the operator approved. PRs are drafts against arch/exec.
+  merge the operator approved. PRs are drafts against arch/exec;
+  gh pr ready runs only in the merge session, after the checks.
 - Squash or rebase a merge. Merges are merge commits, on the operator's go.
 - Change the remote configuration.
 - Run broker or network tests (FEELIES_BROKER_TESTS, FEELIES_NETWORK_TESTS);
@@ -101,6 +102,20 @@ The Claude chat rollover limit is 3 merged steps (playbook v1.2; D-202).
   byte-compare in a clean worktree.
 - Captures are clean (git.dirty false) and committed before the ## <id> ledger
   heading. Every rung heading needs both, docs-only rungs included (D-94).
+- Long runs (D-240). A capture, gate or other command that can outlast the
+  runner's limit is started in the foreground and awaited. If the runner
+  returns first, poll the live process (Get-CimInstance) until it exits;
+  never start a second copy. Immediately before a capture, Test-Path of its
+  baseline_<label>.json is False and no baseline.py, pytest or perfmeasure
+  process is live; either failing is a STOP.
+- A capture that records git.dirty true is moved to
+  %USERPROFILE%\feelies-probes\<id>\discarded, its SHA256 recorded as a
+  deviation, and retaken once in the foreground after those checks. A
+  second dirty capture is a STOP (D-240).
+- Network commands (D-240). A git push or other network command that
+  returns at the runner's limit is retried only after git ls-remote shows
+  the ref did not move and no git process is live; a moved ref is success,
+  not a retry.
 - A ledger block carries: VERDICT, DECISIONS, E0, TREE, SPEC, IMPL, BASE
   (pre and post, predicted against actual), GATES, CI (pending until the
   merge), MERGE (filled at the merge), BUGBOT, DEVIATIONS, STANDING, EVIDENCE,
