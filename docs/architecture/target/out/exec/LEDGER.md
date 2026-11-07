@@ -36337,10 +36337,34 @@ OWNER:       campaign 15.
                  -q -m universe_check, exit 0. 1 passed in
                  168.52s (0:02:48). Predicted 1 passed.
                  MATCH.
-  CI:            pending
-  MERGE:         filled at the merge
-  BUGBOT:        read only after CI
-  CI WATCH:      pending until the merge
+  CI:            PR head 42354971674 success at 1630a568
+                 (check 621 s, parity oracle 494 s,
+                 reference battery 711 s, kill A 282 s,
+                 kill B 237 s, reference battery (real)
+                 skipped); Tests 5420 passed, 5 skipped,
+                 1 xfailed; determinism 148 passed.
+                 Merge run 42356889212 success (check 608 s,
+                 parity oracle 292 s, reference battery
+                 716 s, kill A 280 s, kill B 327 s, real
+                 skipped); Tests 5420 passed, 5 skipped,
+                 1 xfailed; determinism 148 passed.
+  MERGE:         138f4d90fe5820102140499bc60b42532615b1d1,
+                 parents
+                 329e4930952f502d41fa843e5e6f24bdec7bfe94
+                 and
+                 1630a568eeb2f79a4ed5b77451f60b166cb44b0d,
+                 tree
+                 742f7e5481f86779bac124fed616678d7e756512
+                 = PR head tree. PR #307. Merged
+                 2026-11-07T08:46:17Z. Push of exec/P-59:
+                 the first git push stopped at the runner's
+                 30 s limit with no remote ref; relaunched
+                 after ls-remote showed none (F-T11L-1).
+  BUGBOT:        pass (4m52s); no issues found; no comments, no reviews.
+  CI WATCH:      head 621 s, ratio 531.16 / 7.83 = 67.84;
+                 merge 608 s, ratio 519.26 / 8.24 = 63.02.
+                 Two-run geometric mean 65.38; D-209
+                 fired no.
   DEVIATIONS:    1. The first pre capture launched while
                  baseline_pre-P-59.json existed
                  (captured_at
