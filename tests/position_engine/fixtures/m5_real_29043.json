@@ -1,0 +1,45 @@
+{
+  "cell_id": "APP|sig_position_fixture_v1|29043|SHORT",
+  "symbol": "APP",
+  "strategy_id": "sig_position_fixture_v1",
+  "side": "SHORT",
+  "exit_reason": "ADVERSE",
+  "paths": ["ADVERSE"],
+  "entry_fill_timestamps_ns": [1774532192316312475],
+  "exit_fill_timestamps_ns": [1774532192569271721, 1774532192569271722],
+  "events": [
+    {
+      "ordinal": 51300,
+      "type": "OrderAck",
+      "timestamp_ns": 1774532192316312475,
+      "order_id": "c4c4ae6c48cef633",
+      "status": "FILLED",
+      "symbol": "APP"
+    },
+    {
+      "ordinal": 51301,
+      "type": "SlicePositionUpdate",
+      "fill_timestamp_ns": 1774532192316312475,
+      "order_id": "c4c4ae6c48cef633",
+      "symbol": "APP",
+      "strategy_id": "sig_position_fixture_v1"
+    },
+    {
+      "ordinal": 51310,
+      "type": "DeRiskRequirement",
+      "timestamp_ns": 1774532192296335957,
+      "order_id": "APP|sig_position_fixture_v1|29043|SHORT|EXIT|1",
+      "reason": "ADVERSE_EXCURSION",
+      "symbol": "APP",
+      "strategy_id": "sig_position_fixture_v1"
+    },
+    {
+      "ordinal": 51397,
+      "type": "OrderAck",
+      "timestamp_ns": 1774532192569271722,
+      "order_id": "APP|sig_position_fixture_v1|29043|SHORT|EXIT|1",
+      "status": "FILLED",
+      "symbol": "APP"
+    }
+  ]
+}

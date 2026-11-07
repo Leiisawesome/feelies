@@ -340,6 +340,7 @@ class LayerValidator:
         _bound("G15", self._check_g15_fill_assumptions)
         _bound("G16", self._check_g16_trend_mechanism_compliance)
         _bound("G17", self._check_g17_safety_exit_policy)
+        _bound("EXIT_POLICY", self._check_exit_policy)
 
     def _check_g14_data_scope(self, spec: dict[str, Any], source: str) -> None:
         """G14 — alpha must declare no data dependency beyond L1 NBBO + trades.
@@ -1174,6 +1175,124 @@ class LayerValidator:
                         f"this PORTFOLIO's consumes whitelist "
                         f"{sorted(seen_families)}"
                     )
+
+    def _check_exit_policy(self, spec: dict[str, Any], source: str) -> None:
+        """L1–L6 (alpha) and L8. L7 is the BACKTEST mode check at build."""
+        block = spec.get("exit_policy")
+        if not isinstance(block, dict):
+            return
+        horizon_raw = block.get("horizon")
+        adverse_raw = block.get("adverse")
+        favorable_raw = block.get("favorable")
+        horizon: dict[str, Any] = horizon_raw if isinstance(horizon_raw, dict) else {}
+        adverse: dict[str, Any] = adverse_raw if isinstance(adverse_raw, dict) else {}
+        favorable: dict[str, Any] = favorable_raw if isinstance(favorable_raw, dict) else {}
+
+        curve_ref = block.get("curve_ref")
+        if not isinstance(curve_ref, str) or not curve_ref.strip():
+            raise LayerValidationError(f"{source}: EXIT_POLICY L4 — curve_ref is required")
+
+        positive = (
+            ("T_seconds", horizon.get("T_seconds")),
+            ("cutoff_before_close_seconds", horizon.get("cutoff_before_close_seconds")),
+            ("blind_limit_seconds", adverse.get("blind_limit_seconds")),
+            ("quiet_limit_seconds", favorable.get("quiet_limit_seconds")),
+            ("centre_ticks", adverse.get("centre_ticks")),
+            ("lo_ticks", adverse.get("lo_ticks")),
+        )
+        for name, value in positive:
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise LayerValidationError(
+                    f"{source}: EXIT_POLICY L8 — {name} must be > 0, got {value!r}"
+                )
+        band = adverse.get("band_ticks")
+        if isinstance(band, bool) or not isinstance(band, int) or band < 0 or band % 2 != 0:
+            raise LayerValidationError(
+                f"{source}: EXIT_POLICY L8 — band_ticks must be even and >= 0, got {band!r}"
+            )
+
+        fee = block.get("fee_round_trip_ticks")
+        if isinstance(fee, bool) or not isinstance(fee, int):
+            raise LayerValidationError(
+                f"{source}: EXIT_POLICY L8 — fee_round_trip_ticks must be int, got {fee!r}"
+            )
+        form = str(favorable.get("form", ""))
+        target = favorable.get("target_ticks")
+        if form == "fixed":
+            if isinstance(target, bool) or not isinstance(target, int) or target <= fee + 1:
+                raise LayerValidationError(
+                    f"{source}: EXIT_POLICY L1 — fixed target_ticks must be > "
+                    f"fee_round_trip_ticks + 1"
+                )
+        centre = adverse["centre_ticks"]
+        lo = adverse["lo_ticks"]
+        hi = adverse.get("hi_ticks")
+        if isinstance(hi, bool) or not isinstance(hi, int):
+            raise LayerValidationError(
+                f"{source}: EXIT_POLICY L2 — hi_ticks must be int, got {hi!r}"
+            )
+        half = band // 2
+        if centre - half < lo or centre + half > hi or lo <= fee + 1:
+            raise LayerValidationError(
+                f"{source}: EXIT_POLICY L2 — adverse band must lie inside [lo, hi] "
+                f"and lo > fee_round_trip_ticks + 1"
+            )
+
+        arbitrary = curve_ref == "ARBITRARY_NOT_CALIBRATED"
+        has_cross = "crossing_ticks" in adverse
+        has_premium = "premium_bps" in adverse
+        if arbitrary and (has_cross or has_premium):
+            raise LayerValidationError(
+                f"{source}: EXIT_POLICY L3 — ARBITRARY_NOT_CALIBRATED rejects "
+                f"crossing_ticks and premium_bps"
+            )
+        if not arbitrary:
+            crossing = adverse.get("crossing_ticks")
+            if not has_cross or isinstance(crossing, bool) or not isinstance(crossing, int):
+                raise LayerValidationError(
+                    f"{source}: EXIT_POLICY L3 — a calibrated curve_ref requires crossing_ticks"
+                )
+            if centre < crossing and not has_premium:
+                raise LayerValidationError(
+                    f"{source}: EXIT_POLICY L3 — centre_ticks tighter than crossing_ticks "
+                    f"requires premium_bps"
+                )
+
+        archetype = str(block.get("archetype", ""))
+        giveback = favorable.get("giveback_spread_multiple")
+        shape = block.get("declared_shape")
+        if archetype == "liquidity_provision" and form == "trailing":
+            raise LayerValidationError(
+                f"{source}: EXIT_POLICY L5 — liquidity_provision is fixed, not trailing"
+            )
+        if archetype == "declared_other" and (not isinstance(shape, str) or not shape.strip()):
+            raise LayerValidationError(
+                f"{source}: EXIT_POLICY L5 — declared_other requires declared_shape"
+            )
+        if form == "trailing" and (
+            isinstance(giveback, bool) or not isinstance(giveback, (int, float))
+        ):
+            raise LayerValidationError(
+                f"{source}: EXIT_POLICY L5 — trailing requires giveback_spread_multiple"
+            )
+        if archetype not in (
+            "liquidity_provision",
+            "informed_flow_following",
+            "declared_other",
+        ):
+            raise LayerValidationError(
+                f"{source}: EXIT_POLICY L5 — archetype {archetype!r} is not a closed value"
+            )
+        if form not in ("fixed", "trailing"):
+            raise LayerValidationError(
+                f"{source}: EXIT_POLICY L5 — form {form!r} is not a closed value"
+            )
+
+        if spec.get("hazard_exit") is not None or spec.get("safety_exit_policy") is not None:
+            raise LayerValidationError(
+                f"{source}: EXIT_POLICY L6 — exit_policy excludes hazard_exit "
+                f"and safety_exit_policy"
+            )
 
     def _check_g17_safety_exit_policy(self, spec: dict[str, Any], source: str) -> None:
         """G17 — Stage-0 dual-permission actuation (design rev 5 §2.8 / §3.4).

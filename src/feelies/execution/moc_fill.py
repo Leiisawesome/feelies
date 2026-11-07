@@ -68,7 +68,7 @@ class MocFillController:
         """Handle an MOC submit.  Returns True when consumed by this controller.
 
         ``reject_fn`` must be callable as
-        ``reject_fn(request, reason, *, timestamp_ns=None, release_submitted_id=True)``.
+        ``reject_fn(request, reason, *, release_submitted_id=True)``.
         """
         if not request.is_moc:
             return False
@@ -77,10 +77,6 @@ class MocFillController:
             reject_fn(  # type: ignore[operator]
                 request,
                 "MOC_SESSION_DATE_MISMATCH",
-                timestamp_ns=max(
-                    self._clock.now_ns(),
-                    exchange_timestamp_ns,
-                ),
             )
             return True
 
@@ -88,10 +84,6 @@ class MocFillController:
             reject_fn(  # type: ignore[operator]
                 request,
                 "MOC_CUTOFF_MISSED",
-                timestamp_ns=max(
-                    self._clock.now_ns(),
-                    exchange_timestamp_ns,
-                ),
             )
             return True
 
@@ -133,6 +125,7 @@ class MocFillController:
             # the per-tick timeout that applies to deferred MARKET fills is
             # not appropriate here (replays routinely emit hundreds of NBBO
             # updates between submit and 16:00 ET).
+            # T3: physical-time close gate; not a raw cross-class compare.
             if quote.exchange_timestamp_ns < self._bounds.official_close_ns:
                 remaining.append(pm)
                 continue
@@ -144,7 +137,8 @@ class MocFillController:
                 # backstop when no clean post-close quote ever arrives.
                 remaining.append(pm)
                 continue
-            fill_ts = max(pm.ack_timestamp_ns, quote.exchange_timestamp_ns)
+            # T2: the published fill is the clock at publication.
+            fill_ts = self._clock.now_ns()
             self._fill_at_close(pm.request, quote, fill_ts)
         self._pending = remaining
 
@@ -160,10 +154,9 @@ class MocFillController:
         for index, pm in enumerate(self._pending):
             if pm.request.order_id != order_id:
                 continue
-            cancel_ts = max(self._clock.now_ns(), pm.ack_timestamp_ns)
             self._pending_acks.append(
                 OrderAck(
-                    timestamp_ns=cancel_ts,
+                    timestamp_ns=self._clock.now_ns(),
                     correlation_id=pm.request.correlation_id,
                     sequence=self._ack_seq.next(),
                     order_id=order_id,
@@ -194,7 +187,6 @@ class MocFillController:
             reject_fn(  # type: ignore[operator]
                 pm.request,
                 reason,
-                timestamp_ns=max(self._clock.now_ns(), pm.ack_timestamp_ns),
             )
         return len(expired)
 

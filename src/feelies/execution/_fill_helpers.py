@@ -14,6 +14,7 @@ STOP_EXIT_REASONS: frozenset[str] = frozenset(
         "HARD_EXIT_AGE",
         "HAZARD_SPIKE",
         "FORCE_FLATTEN",
+        "ADVERSE_EXCURSION",
     }
 )
 

@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Callable, Sequence, TypeVar
 if TYPE_CHECKING:
     from feelies.execution.portfolio_netter import NetDivergence
     from feelies.risk.edge_weighted_sizer import SizeDivergence
+from feelies.core.session_clock import rth_open_ns
 from feelies.harness.backtest_cli import (
     ConfigNotFoundError,
     add_backtest_api_arguments,
@@ -48,6 +49,7 @@ from feelies.harness.backtest_prep import (
     QuoteReplayObserver,
     prepare_backtest_event_log,
 )
+from feelies.harness.regime_calibration import prior_session_calibration_quotes
 from feelies.harness.backtest_report import (
     cache_data_version,
     format_section,
@@ -85,7 +87,12 @@ from feelies.ingestion.data_integrity import DataHealth
 from feelies.ingestion.ingest_health import terminal_symbol_health_rows
 from feelies.ingestion.massive_ingestor import IngestResult
 from feelies.kernel.macro import MacroState
-from feelies.storage.cache_replay import IngestDayMeta, iter_trading_dates
+from feelies.storage.cache_replay import (
+    CacheReplayError,
+    IngestDayMeta,
+    iter_trading_dates,
+    load_event_log_from_disk_cache,
+)
 from feelies.storage.disk_event_cache import DiskEventCache
 from feelies.storage.event_resequence import resequence_event_list
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -179,16 +186,18 @@ def _ensure_backtest_session_anchor(
     *,
     first_event_ts_ns: int | None,
 ) -> PlatformConfig:
-    """Set ``session_open_ns`` when absent.
+    """Anchor an unset backtest grid at the exchange regular-session open.
 
-    *first_event_ts_ns* must be the first event in replay order — identical
-    anchor to :class:`HorizonScheduler` auto-binding when ordering matches.
+    Boundary ``k`` at horizon ``h`` seconds is ``rth_open_ns + k * h``.
+    ``k`` starts at 0. An event with ``timestamp_ns < open`` emits nothing.
+    The first kept event at or after the open emits the boundary it falls in,
+    which is ``k = 0`` when that event is inside the first bucket.
     """
     if config.session_open_ns is not None:
         return config
     if first_event_ts_ns is None:
         return config
-    return replace(config, session_open_ns=first_event_ts_ns)
+    return replace(config, session_open_ns=rth_open_ns(first_event_ts_ns))
 
 
 # ── BusRecorder (same pattern as test_backtest_e2e.py) ───────────────
@@ -710,6 +719,68 @@ def _run_backtest_phases_2_7(
             f"({len(_edge_factors)} alpha factor(s))",
             flush=True,
         )
+    session_date = date_range.split(" to ", 1)[0]
+    max_cal = config.regime_calibration_max_quotes
+    if max_cal is None:
+        cal_quotes = None
+        cal_provenance: tuple[str | None, int] = (None, 0)
+    else:
+
+        def _load_prior_session(symbols_in: Sequence[str], day: str) -> Sequence[Event] | None:
+            cache_arg = getattr(args, "cache_dir", None)
+            if cache_arg:
+                resolved_cache: Path | None = Path(cache_arg)
+            else:
+                resolved_cache = getattr(config, "cache_dir", None)
+            try:
+                prior_log, _, _ = load_event_log_from_disk_cache(
+                    symbols_in,
+                    day,
+                    day,
+                    cache_dir=resolved_cache,
+                )
+            except CacheReplayError:
+                return None
+            return list(prior_log.replay())
+
+        if len(symbols) <= 1:
+            cal_quotes, cal_provenance = prior_session_calibration_quotes(
+                symbols=symbols,
+                session_date=session_date,
+                max_quotes=max_cal,
+                loader=_load_prior_session,
+            )
+        else:
+            parts: list[NBBOQuote] = []
+            source: str | None = None
+            for sym in symbols:
+                part, prov = prior_session_calibration_quotes(
+                    symbols=(sym,),
+                    session_date=session_date,
+                    max_quotes=max_cal,
+                    loader=_load_prior_session,
+                )
+                if prov[0] is not None:
+                    source = prov[0]
+                parts.extend(part)
+            if parts:
+                cal_quotes = tuple(parts)
+                cal_provenance = (source, len(parts))
+            else:
+                cal_quotes = ()
+                cal_provenance = (None, 0)
+        if cal_provenance[0] is None:
+            print(
+                f"  regime calibration: no prior-session data before {session_date}; "
+                "uncalibrated fallback",
+                flush=True,
+            )
+        else:
+            print(
+                f"  regime calibration: prior session {cal_provenance[0]} "
+                f"({cal_provenance[1]} quotes)",
+                flush=True,
+            )
     orchestrator, config_out = platform_factory(
         config,
         event_log=event_log,
@@ -717,9 +788,10 @@ def _run_backtest_phases_2_7(
         net_shadow_sink=net_shadow_sink,
         size_shadow_sink=size_shadow_sink,
         precomputed_ex_date_spans=prep.calendar_spans,
-        regime_calibration_quotes=prep.regime_calibration_quotes,
+        regime_calibration_quotes=cal_quotes,
         edge_calibration_factors=_edge_factors,
     )
+    orchestrator.note_regime_calibration_source(cal_provenance[0])
     alpha_count = (
         len(orchestrator.alpha_registry.alpha_ids())
         if orchestrator.alpha_registry is not None

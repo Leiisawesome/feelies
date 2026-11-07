@@ -115,11 +115,24 @@ class PositionStore(Protocol):
         ...
 
     def latest_mark(self, symbol: str) -> Decimal | None:
-        """Return the most recent mark recorded via :meth:`update_mark`.
+        """Reference price for sizing and exposure notional only; never valuation. Remaining valuation readers: D-23."""
+        ...
 
-        Returns ``None`` when no mark has been recorded for ``symbol``.
-        Used by the risk engine to translate intent
-        ``target_usd`` into share counts (see
-        :meth:`feelies.risk.basic_risk.BasicRiskEngine.check_sized_intent`).
+    def valuation_mark(self, symbol: str, quantity: int) -> Decimal | None:
+        """Executable side for a signed quantity. Long uses the bid, short the ask.
+
+        Returns None when quantity is 0 or that side was never stored. Pure read.
         """
+        ...
+
+    def reference_mid(self, symbol: str) -> Decimal | None:
+        """Stored reference mid from the last accepted mark. Not a valuation input."""
+        ...
+
+    def mark_stale(self, symbol: str) -> None:
+        """Flag the symbol stale without moving bid, ask, or the reference mid."""
+        ...
+
+    def is_mark_stale(self, symbol: str) -> bool:
+        """True when flagged stale, or when no valid bid and ask were ever stored."""
         ...

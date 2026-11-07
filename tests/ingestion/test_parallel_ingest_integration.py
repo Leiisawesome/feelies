@@ -35,7 +35,7 @@ from feelies.storage.event_resequence import resequence_event_list as _resequenc
 from feelies.storage.disk_event_cache import DiskEventCache
 from feelies.storage.memory_event_log import InMemoryEventLog
 
-pytestmark = pytest.mark.functional
+pytestmark = [pytest.mark.functional, pytest.mark.network]
 
 _RECORD_LIMIT = 200
 

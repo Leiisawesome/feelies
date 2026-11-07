@@ -177,25 +177,48 @@ def _cleanup_order(
     )
 
 
+def _open_guarded(clock: WallClock, client_id: int) -> IBGatewayConnection:
+    """Connect, then fail closed on a live port or a non-paper account list."""
+    from tests.broker.ib._paper_guard import assert_paper_target
+
+    port = _port()
+    conn = _GuardedConnection(host=_host(), port=port, client_id=client_id, clock=clock)
+    conn.connect_and_start(ready_timeout_s=10.0)
+    assert_paper_target(port)
+    deadline = time.monotonic() + 2.0
+    while not conn.paper_guard_accounts and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert_paper_target(port, conn.paper_guard_accounts)
+    return conn
+
+
+class _GuardedConnection(IBGatewayConnection):
+    """Records the ``managedAccounts`` callback for the paper guard."""
+
+    def __init__(self, *, host: str, port: int, client_id: int, clock: WallClock) -> None:
+        super().__init__(host=host, port=port, client_id=client_id, clock=clock)
+        self.paper_guard_accounts: list[str] = []
+
+    def managedAccounts(self, accountsList: str) -> None:  # noqa: N802
+        self.paper_guard_accounts = [
+            part.strip() for part in accountsList.split(",") if part.strip()
+        ]
+
+
 @pytest.fixture
 def ib_session() -> tuple[IBGatewayConnection, IBOrderRouter, WallClock]:
     """Connect once per test; always tear down."""
     _require_ib_gateway_reachable()
     clock = WallClock()
-    conn = IBGatewayConnection(
-        host=_host(),
-        port=_port(),
-        client_id=_client_id(),
-        clock=clock,
-    )
+    conn = _open_guarded(clock, _client_id())
     router = IBOrderRouter(connection=conn, clock=clock)
-    conn.connect_and_start(ready_timeout_s=10.0)
     try:
         yield conn, router, clock
     finally:
         conn.disconnect_and_stop()
 
 
+@pytest.mark.broker
 class TestIBGatewayFunctional:
     def test_connect_handshake_and_next_order_id(
         self,
@@ -352,28 +375,16 @@ class TestIBGatewayFunctional:
         }, f"expected terminal cleanup, got {seen}"
 
 
+@pytest.mark.broker
 class TestIBGatewayReconnect:
     def test_reconnect_after_clean_disconnect(self) -> None:
         _require_ib_gateway_reachable()
         clock = WallClock()
-        cid = _unique_client_id()
-        conn = IBGatewayConnection(
-            host=_host(),
-            port=_port(),
-            client_id=cid,
-            clock=clock,
-        )
-        conn.connect_and_start(ready_timeout_s=10.0)
+        conn = _open_guarded(clock, _unique_client_id())
         first = conn.next_order_id()
         conn.disconnect_and_stop()
 
-        conn2 = IBGatewayConnection(
-            host=_host(),
-            port=_port(),
-            client_id=_unique_client_id(),
-            clock=clock,
-        )
-        conn2.connect_and_start(ready_timeout_s=10.0)
+        conn2 = _open_guarded(clock, _unique_client_id())
         try:
             second = conn2.next_order_id()
             assert isinstance(first, int) and isinstance(second, int)
@@ -383,13 +394,7 @@ class TestIBGatewayReconnect:
     def test_double_connect_raises(self) -> None:
         _require_ib_gateway_reachable()
         clock = WallClock()
-        conn = IBGatewayConnection(
-            host=_host(),
-            port=_port(),
-            client_id=_unique_client_id(),
-            clock=clock,
-        )
-        conn.connect_and_start(ready_timeout_s=10.0)
+        conn = _open_guarded(clock, _unique_client_id())
         try:
             with pytest.raises(RuntimeError, match="already connected"):
                 conn.connect_and_start(ready_timeout_s=10.0)
@@ -399,6 +404,7 @@ class TestIBGatewayReconnect:
 
 @pytest.mark.paper_rth
 class TestIBGatewayRTHFills:
+    @pytest.mark.broker
     def test_market_order_submit_and_cancel(
         self,
         ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
@@ -463,6 +469,7 @@ class TestIBGatewayRTHFills:
         assert conn.last_order.eTradeOnly is False
         assert conn.last_order.firmQuoteOnly is False
 
+    @pytest.mark.broker
     def test_ten_orders_rapid_submit_cancel(
         self,
         ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
@@ -480,6 +487,7 @@ class TestIBGatewayRTHFills:
         for oid in order_ids:
             _cleanup_order(router, oid, timeout_s=_poll_timeout_s())
 
+    @pytest.mark.broker
     def test_partial_fill_then_cancel(
         self,
         ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
@@ -508,6 +516,7 @@ class TestIBGatewayRTHFills:
             OrderAckStatus.PARTIALLY_FILLED,
         }
 
+    @pytest.mark.broker
     def test_fill_ack_lag_exceeds_idle_tick_interval(
         self,
         ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],

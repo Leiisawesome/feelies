@@ -60,6 +60,19 @@ class HorizonScheduler(Protocol):
         """Return ticks whose boundaries the event crossed, or an empty tuple."""
         ...
 
+    def claim_capture_keys(
+        self,
+        symbol: str,
+        timestamp_ns: int,
+    ) -> tuple[tuple[int, int, int], ...]:
+        """Boundaries of *symbol* with nominal time strictly before *timestamp_ns*.
+
+        Returns ``(horizon_seconds, boundary_index, boundary_ts_ns)`` for rows
+        not yet claimed. Marks them claimed. Does not emit. Binds an unbound
+        session before computing keys.
+        """
+        ...
+
 
 class HorizonSignalEngine(Protocol):
     """Layer-2 engine over registered ``HorizonSignal`` implementations."""
