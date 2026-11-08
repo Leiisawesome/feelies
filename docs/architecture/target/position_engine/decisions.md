@@ -1334,6 +1334,38 @@ D-239 — P-59 pin, commit order, prediction.
     member 7), controls 0 failures.
   - Supersedes: none.
 
+D-240 — Contract version 5: long runs, dirty captures, network retries (T-12).
+  - Decided by: operator, phase 14 chat 11 (AskUserQuestion, 2026-11-07),
+    on the T-12 censuses at 29ccbd6a.
+  - Long runs: a capture, gate or other command that can outlast the
+    runner's limit is started in the foreground and awaited, polled and
+    never relaunched; at launch the capture file is absent and no capture
+    process is live. Evidence (F-T10-1): at P-59 two background starts
+    reported aborted at 02:05:48Z and 02:06:13Z, and the foreground capture
+    at 02:36:26Z found baseline_pre-P-59.json already written (a capture
+    runs about 30 minutes). The same dirty first capture occurred at T-6a
+    (LEDGER ## T-6a DEVIATIONS), T-10, T-11 and P-52.
+  - Dirty capture: moved outside the repo with its SHA256 recorded as a
+    deviation and retaken once in the foreground; a second dirty capture is
+    a STOP (as T-6a and T-10 did).
+  - Network retries (F-T11L-1): three pushes returned at the runner's 30 s
+    limit with the ref unmoved (T-11 ledger, the exec/P-59 branch, the P-59
+    ledger); each was retried after ls-remote and succeeded. A retry needs
+    ls-remote showing the ref unmoved and no live git process.
+  - PRs stay drafts (exec-guardrail.mdc:29-30); gh pr ready runs only in the
+    merge session. PRs 302-306 were drafts made ready before merge; PR 307
+    was opened as a non-draft by Claude's PUSH prompt (deviation; the merge
+    checks were unaffected).
+  - Closes F-T10-1 and F-T11L-1. E0 none: docs and agent rules only (as
+    T-4, D-202).
+  - Prediction (pre-registered): no src or test change; full suite 5439
+    passed, 0 failed, 44 skipped, 2 xfailed at pre and post; determinism
+    148; parity constants 64 -> 64, changed 0; fingerprint unchanged;
+    prepush 5420 passed, 5 skipped, 59 deselected, 1 xfailed; -n 4 5420
+    passed, 5 skipped, 1 xfailed; docs tests and test_doc_integrity.py
+    green with the same counts on SPEC and IMPL; universe check 1 passed.
+  - Supersedes: none.
+
 ### D-66 pre-registered prediction
 
 ```

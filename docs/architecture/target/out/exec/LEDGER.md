@@ -36392,3 +36392,97 @@ OWNER:       campaign 15.
   F-T10-1:       evidence: deviation 1's timeline.
                  INFERRED: a reported-aborted background
                  start ran the capture detached.
+
+## T-12 Contract version 5: long runs, dirty captures, network retries
+
+  VERDICT:       passed
+  DECISIONS:     D-240, operator chat 11
+                 (AskUserQuestion), on the T-12
+                 censuses at 29ccbd6a.
+  E0:            none. Docs and agent rules only.
+  TREE:          none. No prototype applied.
+  SPEC:          e57a91787e82ab1aa4b5ed2ae0d37c452022463c.
+                 D-240 and the T-12 plan row.
+                 Parity hold.
+  IMPL:          9dd41c3f1cd99a6f6266e44168c3fa3efc90e91d.
+                 .cursor/rules/exec-guardrail.mdc
+                 version 5, blob
+                 fde548801e439d85fe796892841e468ed748380d,
+                 159 lines.
+  BASE:          2f7c90126154c6f73a6f584b2c1532ae5f54cc5a.
+                 Branch base
+                 29ccbd6a0ca88d8f08add0893c83df647fac199d. pre
+                 baseline_pre-T-12.json on
+                 e57a91787e82ab1aa4b5ed2ae0d37c452022463c,
+                 captured_at
+                 2026-11-07T12:34:40.348399+00:00, git.dirty
+                 false. Full suite 5439 passed, 0 failed,
+                 44 skipped, 2 xfailed (5439 passed, 44
+                 skipped, 2 xfailed, 49 warnings in
+                 2015.04s (0:33:35)); determinism 148 (148
+                 passed, 1 warning in 14.53s); parity
+                 constants 64; tools_fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. post baseline_post-T-12.json on
+                 9dd41c3f1cd99a6f6266e44168c3fa3efc90e91d,
+                 captured_at
+                 2026-11-07T13:52:16.008734+00:00, git.dirty
+                 false. Full suite 5439 passed, 0 failed,
+                 44 skipped, 2 xfailed (5439 passed, 44
+                 skipped, 2 xfailed, 49 warnings in
+                 1508.23s (0:25:08)); determinism 148 (148
+                 passed, 1 warning in 11.30s); same
+                 fingerprint, files 1. compare
+                 parity-only: 64 -> 64, changed 0, parity
+                 HOLDS. Predicted MATCH.
+  GATES:         Docs on SPEC: uv run pytest tests/docs
+                 -q, exit 0. 107 passed, 1 warning in
+                 0.53s. uv run pytest
+                 tests/conformance/test_doc_integrity.py
+                 -q, exit 0. 13 passed, 1 warning in
+                 0.16s. Predicted all pass. MATCH.
+                 Docs on IMPL: tests/docs 107 passed, 1
+                 warning in 0.51s;
+                 test_doc_integrity.py 13 passed, 1
+                 warning in 0.18s. Predicted same counts
+                 as SPEC, all pass. MATCH.
+                 Prepush: uv run python
+                 scripts/prepush.py, exit 0. ruff check
+                 All checks passed; ruff format 815
+                 files already formatted; mypy Success:
+                 no issues found in 257 source files;
+                 lint-imports Contracts: 2 kept, 0
+                 broken. Serial 5420 passed, 5 skipped,
+                 59 deselected, 1 xfailed, 49 warnings
+                 in 844.63s (0:14:04). Predicted ruff
+                 check passes, 815 files already
+                 formatted, mypy 257 source files no
+                 issues, lint-imports 2 kept 0 broken,
+                 serial 5420 passed, 5 skipped, 59
+                 deselected, 1 xfailed. MATCH.
+                 -n 4: uv run pytest -m "not functional
+                 and not paper_rth and not battery_real
+                 and not universe_check" -q -n 4, exit
+                 0. 5420 passed, 5 skipped, 1 xfailed,
+                 53 warnings in 429.72s (0:07:09).
+                 Predicted 5420 passed, 5 skipped, 1
+                 xfailed. MATCH.
+                 Universe check: PYTHONHASHSEED 0, uv
+                 run pytest
+                 tests/conformance/test_cap_neutral_universe.py
+                 -q -m universe_check, exit 0. 1 passed
+                 in 117.66s (0:01:57). Predicted 1
+                 passed. MATCH.
+                 Battery and mutant runs not run: no
+                 code changed.
+  CI:            pending
+  MERGE:         filled at the merge
+  BUGBOT:        read only after CI
+  CI WATCH:      pending until the merge
+  DEVIATIONS:    none.
+  STANDING:      the contract is version 5 (T-12,
+                 D-240); stage D. PYTHONHASHSEED unset
+                 in local runs (conftest warning
+                 PYTHONHASHSEED=None); the universe
+                 check ran at 0.
+  EVIDENCE:      T-12 censuses 1 and 2 at 29ccbd6a.
