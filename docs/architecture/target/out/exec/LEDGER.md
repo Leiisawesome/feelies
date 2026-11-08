@@ -36475,10 +36475,32 @@ OWNER:       campaign 15.
                  passed. MATCH.
                  Battery and mutant runs not run: no
                  code changed.
-  CI:            pending
-  MERGE:         filled at the merge
-  BUGBOT:        read only after CI
-  CI WATCH:      pending until the merge
+  CI:            PR head 42382145092 success at e2d1be4a
+                 (check 822 s, parity oracle 490 s,
+                 reference battery 392 s, kill A 252 s,
+                 kill B 295 s, reference battery (real)
+                 skipped); Tests 5420 passed, 5 skipped,
+                 1 xfailed; determinism 148 passed.
+                 Merge run 42429591045 success (check 616 s,
+                 parity oracle 488 s, reference battery
+                 509 s, kill A 169 s, kill B 293 s, real
+                 skipped); Tests 5420 passed, 5 skipped, 1 xfailed;
+                 determinism 148 passed.
+  MERGE:         43bb2a1797fab84cd6433bc81f1bebec2296fc0e,
+                 parents
+                 29ccbd6a0ca88d8f08add0893c83df647fac199d
+                 and
+                 e2d1be4afc5523c607671a30f2c754187c59ad9f,
+                 tree
+                 5f064295b5a70ae6e99dc29d4b736b95c7953991
+                 = PR head tree. PR #308, opened as a
+                 draft and marked ready in the merge
+                 session. Merged 2026-11-08T00:24:08Z.
+  BUGBOT:        pass (2m25s); no issues found; no comments, no reviews.
+  CI WATCH:      head 822 s, ratio 714.90 / 11.05 = 64.70;
+                 merge 616 s, ratio 519.01 / 7.99 = 64.96.
+                 Two-run geometric mean 64.83; D-209
+                 fired no.
   DEVIATIONS:    none.
   STANDING:      the contract is version 5 (T-12,
                  D-240); stage D. PYTHONHASHSEED unset
