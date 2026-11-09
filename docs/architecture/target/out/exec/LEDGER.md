@@ -36580,100 +36580,65 @@ OWNER:       campaign 15.
                  fingerprint, files 1. compare
                  parity-only: 64 -> 64, changed 0, parity
                  HOLDS. Predicted MATCH.
-  GATES:         TESTS, predicted against actual. The
-                 first full pytest, prepush pytest and
-                 -n 4 exited 1 on test_g45_keep (stale
-                 hot-path profile); those three were
-                 retaken after the profile refresh. The
-                 retake is the result compared here.
-                 See DEVIATIONS.
-                 Full pytest (retake): uv run pytest -q,
-                 exit 0. 5451 passed, 44 skipped, 2
-                 xfailed, 49 warnings in 2217.49s
-                 (0:36:57). Predicted 5451 passed, 44
-                 skipped, 2 xfailed (5439 + 12). MATCH.
-                 tests/position_engine: uv run pytest
-                 tests/position_engine -q, exit 0. 315
-                 passed, 1 warning in 1074.07s (0:17:54).
+  GATES:         Full pytest, retake: uv run pytest -q,
+                 exit 0.
+                 5451 passed, 44 skipped, 2 xfailed, 49 warnings in 2217.49s (0:36:57).
+                 Predicted 5451 passed, 44 skipped, 2 xfailed (5439 + 12). MATCH.
+                 tests/position_engine: uv run pytest tests/position_engine -q,
+                 exit 0.
+                 315 passed, 1 warning in 1074.07s (0:17:54).
                  Predicted 315 (303 + 12). MATCH.
-                 Determinism: uv run pytest
-                 tests/determinism -q, exit 0. 148 passed,
-                 1 warning in 13.98s. Predicted 148. MATCH.
-                 Prepush (retake): uv run python
-                 scripts/prepush.py, exit 0. ruff check
-                 All checks passed; ruff format 817 files
-                 already formatted; mypy Success: no
-                 issues found in 258 source files;
+                 Determinism: uv run pytest tests/determinism -q, exit 0.
+                 148 passed, 1 warning in 13.98s.
+                 Predicted 148. MATCH.
+                 Prepush, retake: uv run python scripts/prepush.py, exit 0.
+                 ruff check All checks passed!; ruff format 817 files already formatted;
+                 mypy Success: no issues found in 258 source files;
                  lint-imports Contracts: 2 kept, 0 broken.
-                 Serial 5432 passed, 5 skipped, 59
-                 deselected, 1 xfailed, 49 warnings in
-                 1019.85s (0:16:59). Predicted ruff check
-                 passes; ruff format 817 files; mypy 258
-                 source files; lint-imports 2 kept, 0
-                 broken; serial 5432 passed, 5 skipped,
+                 5432 passed, 5 skipped, 59 deselected, 1 xfailed, 49 warnings in 1019.85s (0:16:59).
+                 Predicted ruff check passes; ruff format 817 files; mypy 258 source
+                 files; lint-imports 2 kept, 0 broken; serial 5432 passed, 5 skipped,
                  59 deselected, 1 xfailed. MATCH.
-                 -n 4 (retake): uv run pytest -m "not
-                 functional and not paper_rth and not
-                 battery_real and not universe_check" -q
-                 -n 4, exit 0. 5432 passed, 5 skipped, 1
-                 xfailed, 53 warnings in 464.18s
-                 (0:07:44). Predicted 5432 passed, 5
-                 skipped, 1 xfailed. MATCH.
-                 Battery at D, production, stage.txt as
-                 it stands, globs as the contract, -p
-                 node_report. node_report.py SHA256
+                 -n 4, retake: uv run pytest -m "not functional and not paper_rth and not battery_real and not universe_check" -q -n 4,
+                 exit 0.
+                 5432 passed, 5 skipped, 1 xfailed, 53 warnings in 464.18s (0:07:44).
+                 Predicted 5432 passed, 5 skipped, 1 xfailed. MATCH.
+                 Battery synthetic at D, production, stage.txt bytes 44 0A,
+                 -p node_report. node_report.py SHA256
                  72FE8C206AD0243C843D980EBF76A294D6EA8C11A8B670716E867CCA892EBA88.
-                 Synthetic: 117 passed, 11 deselected, 1
-                 warning in 567.81s (0:09:27), exit 0.
-                 Reds 29: CAP:gate_fire 23, NONVACUOUS 2,
-                 CAP:conservation 3, CAP:favorable_fire 1.
-                 Real: 14 passed, 5483 deselected, 1
-                 warning in 518.89s (0:08:38), exit 0.
-                 Reds 4 CAP:gate_fire: test_m5_real,
-                 test_m6_real, test_m8_adverse_record_real,
-                 test_m8_favorable_reasons_real.
-                 Passed-before-stage none. Predicted
-                 synthetic 117 passed, 11 deselected,
-                 reds 29 (same split); real 14 passed,
-                 5483 deselected (5471 + 12), reds 4
-                 CAP:gate_fire; passed-before-stage none.
-                 MATCH.
-                 Universe check: PYTHONHASHSEED 0, uv run
-                 pytest
-                 tests/conformance/test_cap_neutral_universe.py
-                 -q -m universe_check, exit 0. 1 passed
-                 in 199.22s (0:03:19). Predicted 1 passed.
-                 MATCH.
-                 Battery at E and mutant kill not run:
-                 reference and broken engines unchanged
-                 and not opened (engine independence).
+                 uv run pytest tests/position_engine/test_battery_m10_lifecycle.py tests/position_engine/test_battery_m11_audit.py tests/position_engine/test_battery_m1_reproducibility.py tests/position_engine/test_battery_m2_no_lookahead.py tests/position_engine/test_battery_m3_known_answer_conservation.py tests/position_engine/test_battery_m4_side_correctness.py tests/position_engine/test_battery_m5_precedence.py tests/position_engine/test_battery_m6_injection_real.py tests/position_engine/test_battery_m6_injection_syn.py tests/position_engine/test_battery_m7_monotonicity.py tests/position_engine/test_battery_m8_records_real.py tests/position_engine/test_battery_m8_records_syn.py tests/position_engine/test_battery_m9_held_price.py tests/position_engine/test_reference_engine.py tests/position_engine/test_reference_import_boundary.py tests/position_engine/test_reference_rail.py tests/position_engine/test_reference_trace.py -m "not battery_real" -q -p node_report,
+                 exit 0.
+                 117 passed, 11 deselected, 1 warning in 567.81s (0:09:27).
+                 Reds 29: CAP:gate_fire 23, NONVACUOUS 2, CAP:conservation 3,
+                 CAP:favorable_fire 1. Passed-before-stage none.
+                 Predicted synthetic 117 passed, 11 deselected, reds 29
+                 (CAP:gate_fire 23, NONVACUOUS 2, CAP:conservation 3,
+                 CAP:favorable_fire 1); passed-before-stage none. MATCH.
+                 Battery real at D, production, stage.txt bytes 44 0A,
+                 FEELIES_REQUIRE_BASELINE_CACHE=1:
+                 uv run pytest -m battery_real -q -p node_report, exit 0.
+                 14 passed, 5483 deselected, 1 warning in 518.89s (0:08:38).
+                 Reds 4 CAP:gate_fire: test_m5_real, test_m6_real,
+                 test_m8_adverse_record_real, test_m8_favorable_reasons_real.
+                 Passed-before-stage none.
+                 Predicted real 14 passed, 5483 deselected (5471 + 12), reds 4
+                 CAP:gate_fire. MATCH.
+                 Universe check, PYTHONHASHSEED 0:
+                 uv run pytest tests/conformance/test_cap_neutral_universe.py -q -m universe_check,
+                 exit 0.
+                 1 passed in 199.22s (0:03:19).
+                 Predicted 1 passed. MATCH.
+                 Battery at E and mutant kill not run: reference and broken engines unchanged and not opened (engine independence).
   CI:            pending
   MERGE:         filled at the merge
   BUGBOT:        read only after CI
   CI WATCH:      pending until the merge
-  DEVIATIONS:    1. The first full pytest, prepush
-                 pytest and -n 4 ran on the S4 hot-path
-                 profile, taken before adverse_gate.py
-                 existed. test_g45_keep raised
-                 SystemExit: stale hot-path profile —
-                 run perfmeasure --mode profile. Full:
-                 1 failed, 5450 passed, 44 skipped, 2
-                 xfailed, 49 warnings in 2094.17s
-                 (0:34:54), exit 1. Prepush pytest:
-                 1 failed, 5431 passed, 5 skipped, 59
-                 deselected, 1 xfailed, 49 warnings in
-                 1387.50s (0:23:07), exit 1; ruff check,
-                 ruff format 817, mypy 258 and
-                 lint-imports 2 kept, 0 broken had
-                 already passed. -n 4: 1 failed, 5431
-                 passed, 5 skipped, 1 xfailed, 53
-                 warnings in 593.63s (0:09:53), exit 1.
-                 Profile refreshed after the src edit
-                 (exit 0, 101.52s) and those three gates
-                 were retaken once. No source change
-                 between the two runs. The pre file was
-                 moved aside for the post capture and
-                 restored; SHA256 unchanged.
+  DEVIATIONS:    1. The gates step did not refresh the hot-path profile after the source
+                 edit (exec-guardrail.mdc:48); the prompt's S9 omitted it (Claude).
+                 test_g45_keep raised SystemExit: stale hot-path profile. First runs:
+                 full 1 failed, 5450 passed, 44 skipped, 2 xfailed, 49 warnings in 2094.17s (0:34:54), prepush pytest 1 failed, 5431 passed, 5 skipped, 59 deselected, 1 xfailed, 49 warnings in 1387.50s (0:23:07), -n 4 1 failed, 5431 passed, 5 skipped, 1 xfailed, 53 warnings in 593.63s (0:09:53).
+                 The profile was refreshed (perfmeasure --mode profile, exit 0, 101.52s) and those
+                 three gates retaken once; the retakes are recorded in GATES.
   STANDING:      the contract is version 5 (T-12,
                  D-240); stage D; the adverse gate
                  exists unwired (D-241).
