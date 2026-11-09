@@ -36812,10 +36812,34 @@ OWNER:       campaign 15.
                  Battery at E and mutant kill not run:
                  reference and broken engines unchanged
                  and not opened (engine independence).
-  CI:            pending
-  MERGE:         filled at the merge
-  BUGBOT:        read only after CI
-  CI WATCH:      pending until the merge
+  CI:            PR head 42573338339 success at f92ca1d4
+                 (check 588 s, parity oracle 374 s,
+                 reference battery 428 s, kill A 185 s,
+                 kill B 195 s, reference battery (real)
+                 skipped); Tests 5459 passed, 5 skipped,
+                 1 xfailed in 498.17s; determinism 148
+                 passed in 7.43s; KILLED B 16, A 9.
+                 Merge run 42574996371 success (check 838 s,
+                 parity oracle 370 s, reference battery
+                 425 s, kill A 200 s, kill B 239 s, real
+                 skipped); Tests 5459 passed, 5 skipped,
+                 1 xfailed in 730.59s; determinism 148
+                 passed in 11.30s; KILLED B 16, A 9.
+  MERGE:         fe84a75ccde02e76206add3daa95620eb2e7d6bd,
+                 parents
+                 c7339793b3388f1352f441ea5c46b035e38431db
+                 and
+                 f92ca1d4d874320e2a60ddec270ee03730fede1f,
+                 tree
+                 1704ed723f114a28ee85ffa43b126e3b57b82e9a
+                 = PR head tree. PR #310, opened as a
+                 draft and marked ready in the merge
+                 session. Merged 2026-11-09T06:45:12Z.
+  BUGBOT:        pass (2m6s); no issues found; no comments, no reviews.
+  CI WATCH:      head 588 s, ratio 498.17 / 7.43 = 67.05;
+                 merge 838 s, ratio 730.59 / 11.30 = 64.65.
+                 Two-run geometric mean 65.84; D-209
+                 fired no.
   DEVIATIONS:    none.
   STANDING:      the contract is version 5 (T-12,
                  D-240); stage D; both gates exist
