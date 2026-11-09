@@ -1366,6 +1366,72 @@ D-240 — Contract version 5: long runs, dirty captures, network retries (T-12).
     green with the same counts on SPEC and IMPL; universe check 1 passed.
   - Supersedes: none.
 
+D-241 — Stage E is entered at P-62; P-60 and P-61 build their gates dark
+(closes F-P59-1).
+  - Decided by: operator, phase 14 chat 11 (AskUserQuestion, 2026-11-08),
+    on P-60 censuses 1-3 at d826e54c.
+  - The stage hook orders "ABCDE" (conftest.py:11) and fails a node that
+    passes before its green_from (conftest.py:113-118). battery.md's stage E
+    is one delivery: both gates and precedence, all eleven green.
+    Publishing a real drawn level at stage D would let the
+    require_adverse_level guards pass, so guarded nodes would pass early.
+  - Answer: P-60 lands the adverse gate and P-61 the favorable gate as pure
+    functions in src/feelies/position, tested outside the battery (as
+    D-228), not called by engine.py; published GateDecisions stay the
+    stage-B stubs. P-62 wires both into publication and resolve, writes
+    stage.txt E, and all eleven members turn green there. The Gate cells
+    "+ 6, 8 (adverse half)" (P-60) and "+ 6, 8 (favorable half), 7" (P-61)
+    move to P-62. green_from stays E for every node.
+  - Rejected: one stage letter per rung (conftest, battery.md, every
+    green_from E node, kill.py, ci.yml and the contract change first); one
+    merged rung for P-60 to P-62 (one large production change with no
+    intermediate check).
+  - Supersedes: D-189 D3, D-237 and D-238 on the rungs where members 6, 7
+    and 8 turn green (P-60, P-61 -> P-62) only.
+
+D-242 — The P-60 trigger of content-keyed order ids is retired.
+  - Decided by: operator, phase 14 chat 11 (AskUserQuestion, 2026-11-08).
+  - D-190 deferred content-keyed order ids with the trigger "before P-60's
+    band draw hashes cell_id". D-191 later keyed cell_id on the birth
+    fill's timestamp, not on event numbering or the universe (0/9 joint vs
+    solo), and cell_id contains no order id; an id rewrite moves the parity
+    hash while the fills stay put (D-180).
+  - Answer: the band draw needs no order-id change. The other triggers
+    stay: before any PORTFOLIO alpha; before a second hazard-enabled alpha
+    on one symbol (F-P24-10). The universe check covers the published draw
+    from P-62.
+  - Supersedes: D-190's first trigger only.
+
+D-243 — P-60: the adverse gate as a pure function.
+  - Decided by: operator, phase 14 chat 11 (AskUserQuestion, 2026-11-08).
+  - Module src/feelies/position/adverse_gate.py, standard library only
+    (hashlib), integers only. drawn_level(cell_id, centre, band) =
+    (centre - band // 2) + (int.from_bytes(sha256(cell_id.encode("utf-8"))
+    .digest()[:8], "big") mod (band + 1)) (D-44, D-83). evaluate_adverse
+    returns AdverseDecision(outcome, trigger, drawn_level_ticks,
+    proposed_price_cents).
+  - Interpretations: (1) BLIND first: when paying_absent_ns,
+    valuation_absent_ns or quiet_ns exceeds A (strict, D-42) the outcome is
+    fire with trigger BLIND, even if the level also breaches (§4:369, "fire
+    unconditionally"). (2) Otherwise fire with trigger LEVEL when
+    move_worst <= -L x size (§4:363); a None move_worst is absent (D-99)
+    and holds. (3) proposed_price_cents is the forced_exit_mark, None when
+    that mark is None; its wire form is decided at P-62. Crossed, locked
+    and feed gap need no branch (§4 table).
+  - Blast radius local: engine.py does not call it.
+  - Tests: tests/position_engine/test_p60_adverse_gate.py, 12 ids, outside
+    the battery; fail first on import.
+  - Prediction (pre-registered): full suite 5439 -> 5451 passed, 0 failed,
+    44 skipped, 2 xfailed; tests/position_engine 303 -> 315; prepush and CI
+    Tests 5420 -> 5432 passed, 5 skipped, 59 deselected, 1 xfailed; -n 4
+    5432 passed, 5 skipped, 1 xfailed; determinism 148; parity constants
+    64 -> 64, changed 0; fingerprint unchanged; mypy 257 -> 258 source
+    files; ruff format 815 -> 817 files; lint-imports 2 kept, 0 broken;
+    battery at D: synthetic 117 passed, 11 deselected, reds 29 (same
+    split); real 14 passed, 5471 -> 5483 deselected, reds 4; universe
+    check 1 passed.
+  - Supersedes: none.
+
 ### D-66 pre-registered prediction
 
 ```
