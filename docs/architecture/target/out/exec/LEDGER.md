@@ -36629,10 +36629,34 @@ OWNER:       campaign 15.
                  1 passed in 199.22s (0:03:19).
                  Predicted 1 passed. MATCH.
                  Battery at E and mutant kill not run: reference and broken engines unchanged and not opened (engine independence).
-  CI:            pending
-  MERGE:         filled at the merge
-  BUGBOT:        read only after CI
-  CI WATCH:      pending until the merge
+  CI:            PR head 42544851894 success at ad0dc707
+                 (check 793 s, parity oracle 460 s,
+                 reference battery 447 s, kill A 198 s,
+                 kill B 327 s, reference battery (real)
+                 skipped); Tests 5432 passed, 5 skipped,
+                 1 xfailed in 681.28s; determinism 148
+                 passed in 10.02s; KILLED B 16, A 9.
+                 Merge run 42547423550 success (check 598 s,
+                 parity oracle 440 s, reference battery
+                 733 s, kill A 165 s, kill B 192 s, real
+                 skipped); Tests 5432 passed, 5 skipped,
+                 1 xfailed in 510.56s; determinism 148
+                 passed in 7.74s; KILLED B 16, A 9.
+  MERGE:         843ea6d1726f8836da4ff022b507cab2cc288e72,
+                 parents
+                 d826e54cedbe48be4e58f5e43a43af012fe77bd3
+                 and
+                 ad0dc7071a1ffa1ea520df82762829e4d714d313,
+                 tree
+                 d6907bde6c55e279b6e166f0c89286943fe57e5e
+                 = PR head tree. PR #309, opened as a
+                 draft and marked ready in the merge
+                 session. Merged 2026-11-09T01:47:34Z.
+  BUGBOT:        pass (1m46s); no issues found; no comments, no reviews.
+  CI WATCH:      head 793 s, ratio 681.28 / 10.02 = 67.99;
+                 merge 598 s, ratio 510.56 / 7.74 = 65.96.
+                 Two-run geometric mean 66.97; D-209
+                 fired no.
   DEVIATIONS:    1. The gates step did not refresh the hot-path profile after the source
                  edit (exec-guardrail.mdc:48); the prompt's S9 omitted it (Claude).
                  test_g45_keep raised SystemExit: stale hot-path profile. First runs:
