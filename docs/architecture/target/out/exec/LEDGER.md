@@ -36671,3 +36671,156 @@ OWNER:       campaign 15.
                  the universe check ran at 0.
   EVIDENCE:      P-60 censuses 1-3 at d826e54c.
   F-P59-1:       closed by D-241.
+
+## P-61 Favorable gate as a pure function, not wired
+
+  VERDICT:       passed
+  DECISIONS:     D-244, operator chat 12
+                 (AskUserQuestion), on P-61
+                 censuses 1, 2 and 2B at c7339793.
+  E0:            FAILFIRST
+                 81e0b20f7f3cfa4daa3e09a46dc5c286907daf8b.
+                 ==================================== ERRORS ====================================
+                 ______ ERROR collecting tests/position_engine/test_p61_favorable_gate.py ______
+                 ImportError while importing test module 'C:\Users\cheng.lei\OneDrive\Documents\GitHub\feelies\tests\position_engine\test_p61_favorable_gate.py'.
+                 Hint: make sure your test modules/packages have valid Python names.
+                 Traceback:
+                 ..\..\..\..\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\importlib\__init__.py:90: in import_module
+                     return _bootstrap._gcd_import(name[level:], package, level)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                 tests\position_engine\test_p61_favorable_gate.py:9: in <module>
+                     from feelies.position.favorable_gate import (
+                 E   ModuleNotFoundError: No module named 'feelies.position.favorable_gate'
+                 ============================== warnings summary ===============================
+                 conftest.py:59
+                   C:\Users\cheng.lei\OneDrive\Documents\GitHub\feelies\conftest.py:59: PytestConfigWarning: PYTHONHASHSEED=None (expected '0'). Inv-5 determinism is contractually pinned at PYTHONHASHSEED=0 (docs/three_layer_architecture.md §12.5); run `PYTHONHASHSEED=0 uv run pytest ...` so set/frozenset iteration order is reproducible across hosts.
+                     config.issue_config_time_warning(
+
+                 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+                 =========================== short test summary info ===========================
+                 ERROR tests/position_engine/test_p61_favorable_gate.py
+                 !!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+                 1 warning, 1 error in 0.48s
+  TREE:          none. No prototype applied.
+  SPEC:          92635b0f74f497b1c685a08f0ea9c566267315cb.
+                 D-244 and the plan row.
+                 Parity hold.
+  FAILFIRST:     81e0b20f7f3cfa4daa3e09a46dc5c286907daf8b.
+                 tests/position_engine/test_p61_favorable_gate.py,
+                 27 ids, outside the battery.
+  IMPL:          b5f3cb3932e5f0800efc568181f5cf24873487e9.
+                 src/feelies/position/favorable_gate.py,
+                 not called by engine.py. S7: 27 passed,
+                 1 warning in 0.19s; ruff check All checks
+                 passed; ruff format 2 files already
+                 formatted; mypy Success: no issues found
+                 in 2 source files. git diff
+                 92635b0f74f497b1c685a08f0ea9c566267315cb..b5f3cb3932e5f0800efc568181f5cf24873487e9
+                 --stat: the two new files only.
+  BASE:          0357e1a894e654dd6fe0405e93ce5466fae0d914.
+                 Branch base
+                 c7339793b3388f1352f441ea5c46b035e38431db. pre
+                 baseline_pre-P-61.json on
+                 92635b0f74f497b1c685a08f0ea9c566267315cb,
+                 captured_at
+                 2026-11-09T02:59:27.592156+00:00, git.dirty
+                 false. Full suite 5451 passed, 0 failed,
+                 44 skipped, 2 xfailed (5451 passed, 44
+                 skipped, 2 xfailed, 49 warnings in
+                 1644.60s (0:27:24)); determinism 148 (148
+                 passed, 1 warning in 10.67s); parity
+                 constants 64; tools_fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. post baseline_post-P-61.json on
+                 b5f3cb3932e5f0800efc568181f5cf24873487e9,
+                 captured_at
+                 2026-11-09T05:35:06.288649+00:00, git.dirty
+                 false. Full suite 5478 passed, 0 failed,
+                 44 skipped, 2 xfailed (5478 passed, 44
+                 skipped, 2 xfailed, 49 warnings in
+                 2281.90s (0:38:01)); determinism 148 (148
+                 passed, 1 warning in 15.90s); same
+                 fingerprint, files 1. compare
+                 parity-only: 64 -> 64, changed 0, parity
+                 HOLDS. Predicted MATCH.
+  GATES:         Hot-path profile: uv run python
+                 tools/arch/perfmeasure.py --mode profile,
+                 exit 0.
+                 Full pytest: uv run pytest -q, exit 0.
+                 5478 passed, 44 skipped, 2 xfailed, 49 warnings in 1529.55s (0:25:29).
+                 Predicted 5478 passed, 44 skipped, 2
+                 xfailed (5451 + 27). MATCH.
+                 tests/position_engine: uv run pytest
+                 tests/position_engine -q, exit 0.
+                 342 passed, 1 warning in 936.21s (0:15:36).
+                 Predicted 342 (315 + 27). MATCH.
+                 Determinism: uv run pytest
+                 tests/determinism -q, exit 0.
+                 148 passed, 1 warning in 18.58s.
+                 Predicted 148. MATCH.
+                 Prepush: uv run python scripts/prepush.py,
+                 exit 0. ruff check All checks passed!;
+                 ruff format 819 files already formatted;
+                 mypy Success: no issues found in 259
+                 source files; lint-imports Contracts:
+                 2 kept, 0 broken.
+                 5459 passed, 5 skipped, 59 deselected, 1 xfailed, 49 warnings in 1346.71s (0:22:26).
+                 Predicted ruff check passes; ruff format
+                 819 files; mypy 259 source files;
+                 lint-imports 2 kept, 0 broken; serial
+                 5459 passed, 5 skipped, 59 deselected,
+                 1 xfailed. MATCH.
+                 -n 4: uv run pytest -m "not functional
+                 and not paper_rth and not battery_real
+                 and not universe_check" -q -n 4, exit 0.
+                 5459 passed, 5 skipped, 1 xfailed, 53 warnings in 613.76s (0:10:13).
+                 Predicted 5459 passed, 5 skipped, 1
+                 xfailed. MATCH.
+                 Battery synthetic at D, production,
+                 stage.txt bytes 44 0A, -p node_report.
+                 node_report.py SHA256
+                 72FE8C206AD0243C843D980EBF76A294D6EA8C11A8B670716E867CCA892EBA88.
+                 uv run pytest tests/position_engine/test_battery_m10_lifecycle.py tests/position_engine/test_battery_m11_audit.py tests/position_engine/test_battery_m1_reproducibility.py tests/position_engine/test_battery_m2_no_lookahead.py tests/position_engine/test_battery_m3_known_answer_conservation.py tests/position_engine/test_battery_m4_side_correctness.py tests/position_engine/test_battery_m5_precedence.py tests/position_engine/test_battery_m6_injection_real.py tests/position_engine/test_battery_m6_injection_syn.py tests/position_engine/test_battery_m7_monotonicity.py tests/position_engine/test_battery_m8_records_real.py tests/position_engine/test_battery_m8_records_syn.py tests/position_engine/test_battery_m9_held_price.py tests/position_engine/test_reference_engine.py tests/position_engine/test_reference_import_boundary.py tests/position_engine/test_reference_rail.py tests/position_engine/test_reference_trace.py -m "not battery_real" -q -p node_report,
+                 exit 0.
+                 117 passed, 11 deselected, 1 warning in 472.77s (0:07:52).
+                 Reds 29: CAP:gate_fire 23, NONVACUOUS 2,
+                 CAP:conservation 3, CAP:favorable_fire 1.
+                 Passed-before-stage none.
+                 Predicted synthetic 117 passed, 11
+                 deselected, reds 29 (CAP:gate_fire 23,
+                 NONVACUOUS 2, CAP:conservation 3,
+                 CAP:favorable_fire 1); passed-before-stage
+                 none. MATCH.
+                 Battery real at D, production, stage.txt
+                 bytes 44 0A,
+                 FEELIES_REQUIRE_BASELINE_CACHE=1:
+                 uv run pytest -m battery_real -q -p node_report, exit 0.
+                 14 passed, 5510 deselected, 1 warning in 468.05s (0:07:48).
+                 Reds 4 CAP:gate_fire: test_m5_real,
+                 test_m6_real, test_m8_adverse_record_real,
+                 test_m8_favorable_reasons_real.
+                 Passed-before-stage none.
+                 Predicted real 14 passed, 5510
+                 deselected (5483 + 27), reds 4
+                 CAP:gate_fire. MATCH.
+                 Universe check, PYTHONHASHSEED 0:
+                 uv run pytest
+                 tests/conformance/test_cap_neutral_universe.py
+                 -q -m universe_check, exit 0.
+                 1 passed in 180.60s (0:03:00).
+                 Predicted 1 passed. MATCH.
+                 Battery at E and mutant kill not run:
+                 reference and broken engines unchanged
+                 and not opened (engine independence).
+  CI:            pending
+  MERGE:         filled at the merge
+  BUGBOT:        read only after CI
+  CI WATCH:      pending until the merge
+  DEVIATIONS:    none.
+  STANDING:      the contract is version 5 (T-12,
+                 D-240); stage D; both gates exist
+                 unwired (D-241).
+                 PYTHONHASHSEED unset in local runs
+                 (conftest warning PYTHONHASHSEED=None);
+                 the universe check ran at 0.
+  EVIDENCE:      P-61 censuses 1, 2 and 2B at c7339793.

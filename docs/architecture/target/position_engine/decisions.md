@@ -1432,6 +1432,55 @@ D-243 — P-60: the adverse gate as a pure function.
     check 1 passed.
   - Supersedes: none.
 
+D-244 — P-61: the favorable gate as a pure function.
+  - Decided by: operator, phase 14 chat 12 (AskUserQuestion, 2026-11-09),
+    on P-61 censuses 1, 2 and 2B at c7339793.
+  - Module src/feelies/position/favorable_gate.py, standard library only
+    (fractions, math), integers on the decision path.
+    giveback_ticks(k, entry_spread_ticks) = max(1, floor(Fraction(repr(k))
+    x entry_spread_ticks)) (D-83, D-101). fixed_disarmed(X,
+    entry_spread_ticks, fee_round_trip_ticks) = X <= entry_spread_ticks +
+    fee_round_trip_ticks (battery.md L1 runtime clause).
+    evaluate_favorable returns FavorableDecision(outcome, reason,
+    suppressions, form, proposed_price_cents, reference_ticks,
+    reference_sequence); its mapping to GateDecision is decided at P-62.
+  - Interpretations: (1) The six blocks are computed in D-43 order. If any
+    fails, the outcome is suppressed, suppressions is every failing token
+    in that order and reason is the first; no comparison is made
+    (contracts.md §3:328, "checked before any comparison"). SYMBOL_QUIET is
+    symbol_quiet_ns > Q, strict. valuation_age_ns and locked are not inputs
+    (§3:330-331). (2) fixed: none when disarmed; else fire when
+    move_now_cents >= X x size. (3) trailing: none while best_clean is None
+    (D-79, D-100) or best_clean <= (R + round_trip_ticks) x size; else fire
+    when move_now_cents <= best_clean - R x size. best_clean only rises, so
+    arming needs no state. (4) A None move_now_cents gives none (D-99).
+    (5) proposed_price_cents is dwelled_exit_mark always, None when that
+    mark is None; its wire form is decided at P-62. (6) reference_ticks is
+    X (fixed) or R (trailing); reference_sequence is None (fixed) or
+    best_clean's sequence (trailing) (§3:345). (7) The inputs carry none of
+    forced_exit_mark, worst_side_mark, paying_mark or the adverse decision
+    (§3:348-349; battery.md:502-504). (8) The disarm is recomputed each
+    event from frozen inputs; counting it (target_inside_round_trip) stays
+    with the closing record (§9:476).
+  - Ceiling C is out of scope: a non-None ceiling_ticks raises ValueError.
+    ASSUMES no alpha wired at P-62 declares ceiling_ticks. TOLERABLE
+    BECAUSE the gate is not called before P-62 and §3:339-340 gives C no
+    comparison. FALSIFIED BY a loaded configuration with ceiling_ticks set.
+    EXPIRES WHEN an alpha needs C; that rung amends §3 first.
+  - Blast radius local: engine.py does not call it.
+  - Tests: tests/position_engine/test_p61_favorable_gate.py, 27 ids,
+    outside the battery; fail first on import.
+  - Prediction (pre-registered): full suite 5451 -> 5478 passed, 0 failed,
+    44 skipped, 2 xfailed; tests/position_engine 315 -> 342; prepush and CI
+    Tests 5432 -> 5459 passed, 5 skipped, 59 deselected, 1 xfailed; -n 4
+    5459 passed, 5 skipped, 1 xfailed; determinism 148; parity constants
+    64 -> 64, changed 0; fingerprint unchanged; mypy 258 -> 259 source
+    files; ruff format 817 -> 819 files; lint-imports 2 kept, 0 broken;
+    battery at D: synthetic 117 passed, 11 deselected, reds 29 (same
+    split); real 14 passed, 5483 -> 5510 deselected, reds 4; universe
+    check 1 passed.
+  - Supersedes: none.
+
 ### D-66 pre-registered prediction
 
 ```
