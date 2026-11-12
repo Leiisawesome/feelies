@@ -298,12 +298,12 @@ mix the levels are judged by.
   `cell_id`, symbol, strategy, side; every entry fill
   (price, qty, ts, seq); `entry_spread_ticks`; `horizon_deadline_ns`; drawn stop level;
   exit reason; `triggered_paths` (each path triggered on the deciding event, its proposed
-  price and trigger); proposed price; every exit fill (price, qty, ts, seq); the three
-  extremes and the `sequence` that set each; flags `closed_on_stale_data`,
-  `exited_on_unusable_data`, `lived_through_feed_gap`, `first_event_exit`,
-  `stop_inside_round_trip`; `uncalibrated`; `supersedes`. **Raw prices only. No net figure,
-  no winner flag, no fee applied.** *Reason:* the audit must be recomputable without asking
-  the engine.
+  price and trigger); proposed price; every exit fill (price, qty, ts, seq; in both fill
+  lists seq is the fill-ack sequence, D-245); the three extremes and the `sequence` that
+  set each; flags `closed_on_stale_data`, `exited_on_unusable_data`,
+  `lived_through_feed_gap`, `first_event_exit`, `stop_inside_round_trip`; `uncalibrated`;
+  `supersedes`. **Raw prices only. No net figure, no winner flag, no fee applied.**
+  *Reason:* the audit must be recomputable without asking the engine.
 
 **Forbidden to read.** Wall clock; the raw quote feed (rail outputs only); mid; any other
 cell's state or P&L; any fee schedule beyond the declared fee figure; the count of events

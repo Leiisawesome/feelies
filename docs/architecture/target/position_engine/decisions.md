@@ -1481,6 +1481,52 @@ D-244 — P-61: the favorable gate as a pure function.
     check 1 passed.
   - Supersedes: none.
 
+D-245 — T-13: a fill leg's sequence is the fill-ack sequence; the battery
+reaches a fill's quote through the ack.
+  - Decided by: operator, phase 14 chat 12 (AskUserQuestion, 2026-11-10
+    and 2026-11-11), on T-13 censuses 1, 2, 3 and 3B and trials t1 and t2
+    at 87f4a223, and P-62 trials t1 and t2.
+  - Answer: PositionFillLeg.sequence is the fill-ack sequence
+    (contracts.md §2:190, §2:299). The reference engine records it so: its
+    _tape_sequence goes and every method signature stays, because broken
+    engines override them (B4). scenarios.fill_quote returns the pricing
+    quote of the OrderAck whose sequence is the leg's, and every battery
+    read of a fill's quote goes through it: _cell_born, check_a4,
+    cell_economics, check_m11_gross, _alive_at_gap, displacement_identity,
+    m3 _spread, m6_real _spans, m7 _result_map. audit_m11 gains gross
+    (default True); the D-115 golden runs with gross=False because its
+    stream has no OrderAck rows. test_scenarios cases carry OrderAck bridge
+    rows; no assertion text changes.
+  - Amendment (battery.md amendment rule, stated without results): the
+    members read a leg's sequence as a tape quote sequence, which the
+    contract does not say; §2:190 names the fill ack sequence.
+  - Findings: F-P62-1 closed (the battery located cells by the leg's
+    sequence as a quote sequence). F-P62-2 closed (production's small ack
+    sequences are valid quote keys, so a member could read the wrong quote
+    without failing). F-T13-1 open, unscheduled: require_barrier_differs
+    builds a cell id from a quote sequence (D-191 keys the fill timestamp);
+    harmless at band 0, its only battery use.
+  - Evidence: T-13-t2.diff SHA256
+    C3426D8CB133F018D749D9483D44227DA64FE337B9D9C5201054798E7625084D,
+    applied byte-identically. With P-62-t1.diff (SHA256
+    186B3A40CEC71B7491DDAE3E4AC077B47A846598086352659B6AAE1C8E018725) on
+    top at E, production battery synthetic 117 passed, 11 deselected and
+    real 14 passed, reds 0.
+  - Blast radius platform-wide (battery apparatus and the reference
+    engine). No production change. No fail-first commit: the failure
+    appears only with P-62's wiring.
+  - Prediction (pre-registered): full suite 5478 passed, 0 failed, 44
+    skipped, 2 xfailed (unchanged); tests/position_engine 342; prepush and
+    CI Tests 5459 passed, 5 skipped, 59 deselected, 1 xfailed; -n 4 5459
+    passed, 5 skipped, 1 xfailed; determinism 148; parity constants 64 ->
+    64, changed 0; fingerprint unchanged; mypy 259 source files; ruff
+    format 819 files; lint-imports 2 kept, 0 broken; production battery at
+    D: synthetic 117 passed, 11 deselected, reds 29 (same split); real 14
+    passed, 5510 deselected, reds 4; reference battery at E: synthetic 117
+    passed, 11 deselected, real 14 passed, reds 0; mutant kill A 9, B 16,
+    no survivor, controls 0; universe check 1 passed.
+  - Supersedes: none. P-62's design entry becomes D-246.
+
 ### D-66 pre-registered prediction
 
 ```

@@ -520,6 +520,7 @@ T-7 (D-213): fourteen node ids written before D-210 call `require_adverse_level`
 T-8 (D-225): three more nodes call `require_adverse_level` first (`test_m5_invalidation_at_take_profit`, `test_m5_gap_through_trail_and_stop`, `test_m6_a2_v5`), so once P-52 acts on invalidation at stage D they still fail as `CAP:gate_fire` before stage E.
 T-9 (D-226; F-T8-1): `test_m5_real` calls `require_adverse_level` first, so once P-52 acts on invalidation at stage D it still fails as `CAP:gate_fire` before stage E.
 T-10 (D-233; F-P52-3): `test_m11_synthetic` calls `require_adverse_level` first, so once member 11 prices resolve exits at their deciding rail it fails as `CAP:gate_fire` before stage E. Amendment (rule above): for a HORIZON or INVALIDATION close whose paths carry no rail_sequence, the deciding rail is the last snapshot taken while OPEN (contracts.md §2:157, §2:167-168, §2:258-268), because gate outcomes while EXITING can be hold, not only ESCALATION_NOOP.
+T-13 (D-245; F-P62-1, F-P62-2): a fill leg's sequence is the fill-ack sequence (contracts.md §2:190). Amendment (rule above): members reach a fill's quote through the OrderAck whose sequence is the leg's (scenarios.fill_quote), not by reading the leg's sequence as a quote sequence; the D-115 golden is audited for its deciding event only, as its stream has no OrderAck rows.
 
 ## Running locally
 
