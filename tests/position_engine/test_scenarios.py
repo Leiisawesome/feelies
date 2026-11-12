@@ -368,7 +368,7 @@ def test_t8_displacement_identity_holds_on_tape_quotes() -> None:
         paths=[("FAVORABLE", 10_010)],
         proposed=10_010,
     )
-    displacement_identity(Records([row], quotes, ()))
+    displacement_identity(Records([row, _ack_row(2, 2), _ack_row(3, 3)], quotes, ()))
 
 
 def test_t8_displacement_identity_missing_quote() -> None:
@@ -388,7 +388,7 @@ def test_t8_displacement_identity_missing_quote() -> None:
         AssertionError,
         match=r"^displacement identity: cell C exit fill sequence 9 is not on the tape$",
     ):
-        displacement_identity(Records([row], _quotes(), ()))
+        displacement_identity(Records([row, _ack_row(2, 2), _ack_row(9, 9)], _quotes(), ()))
 
 
 def test_t8_mean_within_se_balanced_passes() -> None:
@@ -603,6 +603,10 @@ def _row(type_name: str, body: dict[str, object], cursor: int | None = None) -> 
     return Record(cursor, type_name, _canon(type_name, body))
 
 
+def _ack_row(ack_sequence: int, quote_sequence: int) -> Record:
+    return _row("OrderAck", {"sequence": ack_sequence}, quote_sequence)
+
+
 def _side_flags(*, absent: bool = False, dwell: bool = True) -> dict[str, object]:
     return {
         "valuation_side_absent": absent,
@@ -747,6 +751,10 @@ def _a2(price: int, *, suppress: bool) -> Records:
         _priced_close(
             "B", side="LONG", reason="ADVERSE", entry_seq=20, exit_seq=30, price=100, flag=False
         ),
+        _ack_row(1, 1),
+        _ack_row(10, 10),
+        _ack_row(20, 20),
+        _ack_row(30, 30),
     ]
     if suppress:
         rows.append(
@@ -1199,14 +1207,26 @@ def test_a4_gap_through_passes_and_the_barrier_price_names_the_prefix() -> None:
         4: _book(4, 9_970, 9_971, 4),
     }
     good = Records(
-        [_priced_close("C", side="LONG", reason="ADVERSE", entry_seq=2, exit_seq=4, price=9_970)],
+        [
+            _priced_close(
+                "C", side="LONG", reason="ADVERSE", entry_seq=2, exit_seq=4, price=9_970
+            ),
+            _ack_row(2, 2),
+            _ack_row(4, 4),
+        ],
         quotes,
         (),
     )
     check_a4(good, birth_sequence=2, centre=11, band=0)
     barrier_book = {2: quotes[2], 4: _book(4, 9_989, 9_990, 4)}
     bad = Records(
-        [_priced_close("C", side="LONG", reason="ADVERSE", entry_seq=2, exit_seq=4, price=9_989)],
+        [
+            _priced_close(
+                "C", side="LONG", reason="ADVERSE", entry_seq=2, exit_seq=4, price=9_989
+            ),
+            _ack_row(2, 2),
+            _ack_row(4, 4),
+        ],
         barrier_book,
         (),
     )
@@ -1232,6 +1252,8 @@ def test_a6_adverse_reveal_passes_and_the_wrong_reason_names_the_prefix() -> Non
         [
             _fire_row("C", 20, "ADVERSE"),
             _priced_close("C", side="SHORT", reason="ADVERSE", entry_seq=10, exit_seq=21, price=1),
+            _ack_row(10, 10),
+            _ack_row(21, 21),
         ],
         {},
         (),
@@ -1241,6 +1263,8 @@ def test_a6_adverse_reveal_passes_and_the_wrong_reason_names_the_prefix() -> Non
         [
             _fire_row("C", 20, "ADVERSE"),
             _priced_close("C", side="SHORT", reason="HORIZON", entry_seq=10, exit_seq=21, price=1),
+            _ack_row(10, 10),
+            _ack_row(21, 21),
         ],
         {},
         (),

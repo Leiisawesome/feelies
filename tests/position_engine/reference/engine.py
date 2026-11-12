@@ -262,19 +262,12 @@ class PositionEngine:
                 cell.pending_reemit = True
                 return
 
-    def _tape_sequence(self, event: SlicePositionUpdate) -> int:
-        """The quote the fill crossed. Entry and exit acks settle on that quote."""
-        rail = self._last_rail.get(event.symbol)
-        if rail is None:
-            return event.fill_ack_sequence
-        return rail.quote_sequence
-
     def _on_slice(self, event: SlicePositionUpdate) -> None:
         price = whole_cents(event.symbol, event.fill_price)
         if event.fill_quantity == 0:
             return
         policy = self.policies.get(event.strategy_id)
-        sequence = self._tape_sequence(event)
+        sequence = event.fill_ack_sequence
         cell = self._open.get(self._open_key(event.strategy_id, event.symbol))
         if cell is None:
             if policy is None or event.quantity == 0:
@@ -529,7 +522,7 @@ def _leg(
     *,
     quantity: int | None = None,
 ) -> PositionFillLeg:
-    """Fill leg keyed by the quote the fill crossed, not the ack sequence."""
+    """Fill leg keyed by the fill-ack sequence (contracts.md §2:190; D-245)."""
     return PositionFillLeg(
         price_cents=price,
         quantity=abs(event.fill_quantity) if quantity is None else quantity,

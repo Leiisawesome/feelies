@@ -11,6 +11,7 @@ from feelies.core.events import Event, NBBOQuote, PositionClosed
 from tests.position_engine.scenarios import (
     CellSpan,
     Records,
+    fill_quote,
     check_a1,
     check_a2,
     check_a3,
@@ -75,7 +76,10 @@ def _spans(records: Records, events: Sequence[Event]) -> tuple[list[CellSpan], l
         entries = body["entry_fills"]
         if not isinstance(entries, list) or not entries or not isinstance(entries[0], dict):
             continue
-        birth = quote_index.get(int(entries[0]["sequence"]))
+        q = fill_quote(records, int(entries[0]["sequence"]))
+        if q is None:
+            continue
+        birth = quote_index.get(q)
         if birth is None:
             continue
         spans.append(CellSpan(cell, birth, exit_at[cell]))

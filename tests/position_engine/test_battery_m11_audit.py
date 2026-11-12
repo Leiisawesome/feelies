@@ -127,7 +127,23 @@ def test_m11_satisfying_stream() -> None:
     check_m11_moves(snap)
     check_m11_extremes([snap])
     check_m11_proposed(closed, [snap], _quotes())
-    check_m11_gross(_row(closed), _quotes())
+    gross_records = Records(
+        [
+            Record(
+                10,
+                "OrderAck",
+                "OrderAck" + json.dumps({"sequence": 10}, sort_keys=True, separators=(",", ":")),
+            ),
+            Record(
+                20,
+                "OrderAck",
+                "OrderAck" + json.dumps({"sequence": 20}, sort_keys=True, separators=(",", ":")),
+            ),
+        ],
+        _quotes(),
+        (),
+    )
+    check_m11_gross(_row(closed), gross_records)
 
 
 def test_m11_accumulated_drift_fails() -> None:
@@ -350,5 +366,6 @@ def test_m11_golden_cell_302_deciding_quote() -> None:
 
     contracts.md §2:269-279, §2:287, §2:294-295. The path entries carry no rail
     sequence, so the deciding event is the first triggering gate outcome.
+    Gross is not checked: the stream has no OrderAck rows (D-115 scope; T-13, D-245).
     """
-    audit_m11(_golden_records())
+    audit_m11(_golden_records(), gross=False)
