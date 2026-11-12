@@ -281,7 +281,7 @@ def _valuation_cents(quote: NBBOQuote, side: str) -> int:
     return _cents(quote.bid if side == "LONG" else quote.ask)
 
 
-def cell_economics(row: Record, quotes: dict[int, NBBOQuote]) -> tuple[int, int, int]:
+def cell_economics(row: Record, records: Records) -> tuple[int, int, int]:
     """Return ``(result, displacement, cost)`` in cent-shares from the tape."""
     body = _body(row.canonical)
     cell = str(body["cell_id"])
@@ -293,8 +293,9 @@ def cell_economics(row: Record, quotes: dict[int, NBBOQuote]) -> tuple[int, int,
     entry = entries[0]
     exit_fill = exits[0]
     assert isinstance(entry, dict) and isinstance(exit_fill, dict)
-    exit_seq = int(exit_fill["sequence"])
-    entry_seq = int(entry["sequence"])
+    quotes = records.quotes
+    exit_seq = fill_quote(records, int(exit_fill["sequence"]))
+    entry_seq = fill_quote(records, int(entry["sequence"]))
     if exit_seq not in quotes:
         raise AssertionError(
             f"displacement identity: cell {cell} exit fill sequence {exit_seq} is not on the tape"
@@ -570,7 +571,7 @@ def rebuild_gross(body: Mapping[str, object]) -> int:
     )
 
 
-def check_m11_gross(row: Record, quotes: dict[int, NBBOQuote]) -> None:
+def check_m11_gross(row: Record, records: Records) -> None:
     """The leg rebuild and ``cell_economics`` are two computations and must agree."""
     body = _body(row.canonical)
     if _skip_stale_end(body):
@@ -581,13 +582,17 @@ def check_m11_gross(row: Record, quotes: dict[int, NBBOQuote]) -> None:
     ):
         return
     rebuilt = rebuild_gross(body)
-    result, _displacement, _cost = cell_economics(row, quotes)
+    result, _displacement, _cost = cell_economics(row, records)
     if rebuilt != result:
         raise AssertionError(f"M11: gross {rebuilt} != cell_economics {result}")
 
 
-def audit_m11(records: Records) -> int:
-    """Rebuild moves, extremes, proposed price and gross. Returns the N7 skip count."""
+def audit_m11(records: Records, *, gross: bool = True) -> int:
+    """Rebuild moves, extremes, proposed price and gross. Returns the N7 skip count.
+
+    gross=False only for the D-115 golden, whose stream has no OrderAck rows
+    (T-13, D-245).
+    """
     snapshots: dict[str, list[dict[str, object]]] = {}
     closed: list[tuple[Record, dict[str, object]]] = []
     for row in records:
@@ -606,7 +611,8 @@ def audit_m11(records: Records) -> int:
             skipped += 1
             continue
         check_m11_proposed(body, snaps, records.quotes, decisions)
-        check_m11_gross(row, records.quotes)
+        if gross:
+            check_m11_gross(row, records)
     return skipped
 
 
@@ -616,7 +622,7 @@ def displacement_identity(records: Records) -> None:
             continue
         if str(_body(row.canonical).get("exit_reason")) == "END_OF_TAPE":
             continue
-        result, displacement, cost = cell_economics(row, records.quotes)
+        result, displacement, cost = cell_economics(row, records)
         if result + cost != displacement:
             cell = str(_body(row.canonical)["cell_id"])
             raise AssertionError(
@@ -1093,12 +1099,26 @@ def _rail_body(records: Sequence[Record], sequence: int) -> dict[str, object] | 
     return None
 
 
-def _cell_born(records: Sequence[Record], birth_sequence: int) -> dict[str, object] | None:
+def fill_quote(records: Records, leg_sequence: int) -> int | None:
+    """Tape quote a fill priced on: the pricing quote of the OrderAck whose sequence is the leg's (contracts.md §2:190, §2:299; D-245)."""
+    for index, ack in enumerate(records.order_acks):
+        if int(ack.sequence) == leg_sequence:
+            return records.ack_pricing[index] if index < len(records.ack_pricing) else None
+    for row in records:
+        if row.type_name != "OrderAck":
+            continue
+        if int(_body(row.canonical)["sequence"]) == leg_sequence:
+            quote = row.attributed_quote_sequence
+            return quote if isinstance(quote, int) else None
+    return None
+
+
+def _cell_born(records: Records, birth_sequence: int) -> dict[str, object] | None:
     for body in _closed_bodies(records):
         entries = body.get("entry_fills")
         if not isinstance(entries, list) or not entries or not isinstance(entries[0], dict):
             continue
-        if int(entries[0]["sequence"]) == birth_sequence:
+        if fill_quote(records, int(entries[0]["sequence"])) == birth_sequence:
             return body
     return None
 
@@ -1227,7 +1247,7 @@ def _verdict_stream(records: Records) -> tuple[tuple[object, ...], ...]:
     )
 
 
-def _alive_at_gap(body: dict[str, object], gaps: set[int]) -> bool:
+def _alive_at_gap(body: dict[str, object], gaps: set[int], records: Records) -> bool:
     entries = body.get("entry_fills")
     exits = body.get("exit_fills")
     if str(body.get("exit_reason")) == "END_OF_TAPE" and (
@@ -1235,14 +1255,18 @@ def _alive_at_gap(body: dict[str, object], gaps: set[int]) -> bool:
     ):
         if not isinstance(entries, list) or not entries or not isinstance(entries[0], dict):
             return False
-        entry = int(entries[0]["sequence"])
+        entry = fill_quote(records, int(entries[0]["sequence"]))
+        if entry is None:
+            return False
         return any(entry < gap for gap in gaps)
     if not isinstance(entries, list) or not isinstance(exits, list) or not entries or not exits:
         return False
     if not isinstance(entries[0], dict) or not isinstance(exits[0], dict):
         return False
-    entry = int(entries[0]["sequence"])
-    exit_seq = int(exits[0]["sequence"])
+    entry = fill_quote(records, int(entries[0]["sequence"]))
+    exit_seq = fill_quote(records, int(exits[0]["sequence"]))
+    if entry is None or exit_seq is None:
+        return False
     return any(entry < gap < exit_seq for gap in gaps)
 
 
@@ -1266,7 +1290,7 @@ def check_a2(clean: Records, injected: Records, *, feed_gap_sequences: set[int])
         raise AssertionError("A2: risk verdict streams differ")
     for body in _closed_bodies(injected):
         cell = str(body["cell_id"])
-        alive = _alive_at_gap(body, feed_gap_sequences)
+        alive = _alive_at_gap(body, feed_gap_sequences, injected)
         flag = body.get("lived_through_feed_gap") is True
         if flag != alive:
             raise AssertionError(f"A2: lived_through_feed_gap {flag} != {alive} cell {cell}")
@@ -1508,7 +1532,9 @@ def check_a4(records: Records, *, birth_sequence: int, centre: int, band: int) -
     exits = body.get("exit_fills")
     if not isinstance(exits, list) or not exits or not isinstance(exits[0], dict):
         raise AssertionError(f"A4: cell {cell} has no exit fill")
-    fill_seq = int(exits[0]["sequence"])
+    fill_seq = fill_quote(records, int(exits[0]["sequence"]))
+    if fill_seq is None:
+        raise AssertionError(f"A4: cell {cell} exit fill has no pricing quote")
     price = int(exits[0]["price_cents"])
     exit_acks = _collect_fill_acks(
         records,

@@ -161,7 +161,7 @@ def favorable_count(records: Records) -> int:
 def _result_map(records: Records) -> dict[str, int]:
     found: dict[str, int] = {}
     for row, body in _closed(records):
-        found[str(body["cell_id"])] = cell_economics(row, records.quotes)[0]
+        found[str(body["cell_id"])] = cell_economics(row, records)[0]
     return found
 
 

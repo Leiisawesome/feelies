@@ -11,6 +11,7 @@ from tests.position_engine.scenarios import (
     assert_no_risk_rejects,
     cell_economics,
     drawn_adverse_level,
+    fill_quote,
     fixture_variant,
     mean_within_se,
     nonvacuous,
@@ -59,7 +60,9 @@ def _spread(records: Records, row: object) -> int:
 
     body = json.loads(row.canonical[row.canonical.index("{") :])  # type: ignore[attr-defined]
     entry = body["entry_fills"][0]
-    quote = records.quotes[int(entry["sequence"])]
+    q = fill_quote(records, int(entry["sequence"]))
+    assert q is not None, "PRECONDITION: entry fill has no pricing quote"
+    quote = records.quotes[q]
     return int(quote.ask * 100) - int(quote.bid * 100)
 
 
@@ -69,7 +72,7 @@ def _priced(records: Records) -> list:
 
 
 def _displacements(records: Records) -> list[float]:
-    return [float(cell_economics(row, records.quotes)[1]) for row in _priced(records)]
+    return [float(cell_economics(row, records)[1]) for row in _priced(records)]
 
 
 @_MARK
@@ -120,7 +123,7 @@ def test_m3_barriers_and_deadline() -> None:
     nonvacuous(records, PositionClosed, scenario="m3_deadline")
     assert_no_risk_rejects(records)
     grouped = [
-        float(cell_economics(row, records.quotes)[1])
+        float(cell_economics(row, records)[1])
         for row in _closed(records)
         if any(
             token in row.canonical

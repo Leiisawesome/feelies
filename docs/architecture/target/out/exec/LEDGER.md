@@ -36848,3 +36848,131 @@ OWNER:       campaign 15.
                  (conftest warning PYTHONHASHSEED=None);
                  the universe check ran at 0.
   EVIDENCE:      P-61 censuses 1, 2 and 2B at c7339793.
+
+## T-13 Fill legs keyed by the fill-ack sequence
+
+  VERDICT:       passed
+  DECISIONS:     D-245, operator chat 12
+                 (AskUserQuestion), on T-13
+                 censuses 1, 2, 3 and 3B and
+                 trials t1 and t2 at 87f4a223.
+  E0:            no fail-first commit: the failure
+                 appears only with P-62's wiring.
+                 P-62 trial t1 (diff SHA256
+                 186B3A40CEC71B7491DDAE3E4AC077B47A846598086352659B6AAE1C8E018725)
+                 failed test_m6_a4_gap_through,
+                 test_m6_a6_short, test_m6_a6_long (no
+                 cell born), test_m6_real,
+                 test_m8_adverse_record_real and
+                 test_m8_favorable_reasons_real
+                 (placement rule P found no eligible
+                 cell).
+  TREE:          T-13-t2.diff SHA256
+                 C3426D8CB133F018D749D9483D44227DA64FE337B9D9C5201054798E7625084D,
+                 applied byte-identically.
+  SPEC:          66c021ba6f783fe1e6c61599bc8093a46cffea04.
+  IMPL:          529db51e1ff9b5979be5ae9a58297ad63f8d321c
+                 (7 files, 104 insertions, 37
+                 deletions).
+  BASE:          6be69102649842d262c2f0e2869ca935a233dd8e.
+                 pre: captured_at
+                 2026-11-12T01:32:06.424323+00:00; git.sha
+                 66c021ba6f783fe1e6c61599bc8093a46cffea04;
+                 git.dirty false; full "5478 passed, 44 skipped, 2 xfailed, 49 warnings in 1985.64s";
+                 determinism "148 passed, 1 warning in 13.26s";
+                 parity constants 64; fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1; SHA256
+                 8D0D6C422CB9CA751CA0E303D44E956427EA1B6E8046CE69273AF3BC81158E8D.
+                 post: captured_at
+                 2026-11-12T05:41:39.698007+00:00; git.sha
+                 529db51e1ff9b5979be5ae9a58297ad63f8d321c;
+                 git.dirty false; full "5478 passed, 44 skipped, 2 xfailed, 49 warnings in 2309.88s (0:38:29)";
+                 determinism "148 passed, 1 warning in 14.10s";
+                 fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1; compare 64 -> 64, changed 0,
+                 parity HOLDS; SHA256
+                 EACFEF48306B59556317AD78E05976A76B36EBDE3102F2FD5F89110EBA20D838.
+                 Predicted git.sha
+                 529db51e1ff9b5979be5ae9a58297ad63f8d321c,
+                 git.dirty false, full 5478 passed, 0
+                 failed, 44 skipped, 2 xfailed;
+                 determinism 148; fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1; compare 64 -> 64, changed 0,
+                 parity HOLDS. MATCH.
+  GATES:         Copied from the T-13 EXEC report (session that ran S1-S7).
+                 uv run pytest -q: exit 0, "5478 passed, 44 skipped, 2 xfailed, 49 warnings in 1829.64s".
+                 Predicted 5478 passed, 44 skipped, 2 xfailed. MATCH.
+                 uv run pytest tests/position_engine -q: exit 0, "342 passed, 1 warning in 841.41s".
+                 Predicted 342 passed. MATCH.
+                 uv run pytest tests/determinism -q: exit 0, "148 passed, 1 warning in 12.01s".
+                 Predicted 148 passed. MATCH.
+                 uv run python scripts/prepush.py: exit 0, ruff check passed; "819 files already formatted"; mypy "Success: no issues found in 259 source files"; "Contracts: 2 kept, 0 broken."; "5459 passed, 5 skipped, 59 deselected, 1 xfailed, 49 warnings in 1122.60s".
+                 Predicted ruff check passes; ruff format 819 files; mypy 259 source files; lint-imports 2 kept, 0 broken; 5459 passed, 5 skipped, 59 deselected, 1 xfailed. MATCH.
+                 -n 4 on ci_gate_expr.txt: exit 0, "5459 passed, 5 skipped, 1 xfailed, 53 warnings in 575.62s".
+                 Predicted 5459 passed, 5 skipped, 1 xfailed. MATCH.
+                 production synthetic at D (stage 44 0A; node_report.py SHA256 72FE8C206AD0243C843D980EBF76A294D6EA8C11A8B670716E867CCA892EBA88): exit 0, "117 passed, 11 deselected, 1 warning in 494.60s"; reds 29 (CAP:gate_fire 23, NONVACUOUS 2, CAP:conservation 3, CAP:favorable_fire 1); passed-before-stage 0.
+                 Predicted 117 passed, 11 deselected; reds 29 (CAP:gate_fire 23, NONVACUOUS 2, CAP:conservation 3, CAP:favorable_fire 1); passed-before-stage 0. MATCH.
+                 production real at D (FEELIES_REQUIRE_BASELINE_CACHE=1): exit 0, "14 passed, 5510 deselected, 1 warning in 522.18s"; reds 4 CAP:gate_fire; passed-before-stage 0.
+                 Predicted 14 passed, 5510 deselected; reds 4 CAP:gate_fire; passed-before-stage 0. MATCH.
+                 reference synthetic at E (stage_E.txt 45 0A, reference engine and rail): exit 0, "117 passed, 11 deselected, 1 warning in 845.17s"; reds 0; passed-before-stage 0.
+                 Predicted 117 passed, 11 deselected; reds 0. MATCH.
+                 reference real at E: exit 0, "14 passed, 5510 deselected, 1 warning in 645.78s"; reds 0; passed-before-stage 0; child confirmed engine, rail, stage 45 0A, cache 1.
+                 Predicted 14 passed, 5510 deselected; reds 0. MATCH.
+                 kill.py --shard A: exit 0, 9 killed, 0 survived, B4 by test_m1_fresh_syn.
+                 Predicted 9 killed (B4 by test_m1_fresh_syn), no survivor. MATCH.
+                 kill.py --shard A --control: exit 0, "CONTROL 0 failures".
+                 Predicted 0 failures. MATCH.
+                 kill.py --shard B: exit 0, 16 killed, 0 survived.
+                 Predicted 16 killed, no survivor. MATCH.
+                 kill.py --shard B --control: exit 0, "CONTROL 0 failures".
+                 Predicted 0 failures. MATCH.
+                 universe check, PYTHONHASHSEED=0: exit 0, "1 passed in 196.94s".
+                 Predicted 1 passed. MATCH.
+  CI:            pending.
+  MERGE:         filled at the merge.
+  BUGBOT:        read only after CI.
+  CI WATCH:      pending until the merge.
+  DEVIATIONS:    1. A post-T-13 capture file existed before the S8 launch
+                 check: SHA256
+                 2B7E03CE8ED1259B25F7B9C98637D7E42672A698A60704A6C2DCA5161A2C0494,
+                 captured_at 2026-11-12T04:52:19.024992+00:00, git.sha
+                 529db51e, dirty false; provenance:
+                 FILE=C:\Users\cheng.lei\OneDrive\Documents\GitHub\feelies\docs\architecture\target\out\exec\baseline_pre-T-13.json
+                 CreationTimeUtc=2026-11-12T02:06:07.4697269Z
+                 LastWriteTimeUtc=2026-11-12T02:06:07.4703005Z
+                 FILE=C:\Users\cheng.lei\OneDrive\Documents\GitHub\feelies\docs\architecture\target\out\exec\baseline_post-T-13.json
+                 CreationTimeUtc=2026-11-12T05:31:12.6255082Z
+                 LastWriteTimeUtc=2026-11-12T05:31:12.6412417Z
+                 PROBE_ROOT_EXISTS=True
+                 PROBE C:\Users\cheng.lei\feelies-probes\T-13\s7-kill-a-control.txt LastWriteTimeUtc=2026-11-12T04:41:09.2775575Z Length=968
+                 PROBE C:\Users\cheng.lei\feelies-probes\T-13\s7-kill-a.txt LastWriteTimeUtc=2026-11-12T04:37:28.2767081Z Length=3798
+                 PROBE C:\Users\cheng.lei\feelies-probes\T-13\s7-kill-b-control.txt LastWriteTimeUtc=2026-11-12T04:46:59.7377952Z Length=1162
+                 PROBE C:\Users\cheng.lei\feelies-probes\T-13\s7-kill-b.txt LastWriteTimeUtc=2026-11-12T04:43:38.9274584Z Length=6948
+                 PROBE C:\Users\cheng.lei\feelies-probes\T-13\s7-ref-real.jsonl LastWriteTimeUtc=2026-11-12T04:35:31.4849727Z Length=2207
+                 PROBE C:\Users\cheng.lei\feelies-probes\T-13\s7-ref-real.txt LastWriteTimeUtc=2026-11-12T04:35:41.9333795Z Length=1380
+                 PROBE C:\Users\cheng.lei\feelies-probes\T-13\s7-ref-syn.jsonl LastWriteTimeUtc=2026-11-12T04:14:05.1332381Z Length=19392
+                 PROBE C:\Users\cheng.lei\feelies-probes\T-13\s7-ref-syn.txt LastWriteTimeUtc=2026-11-12T04:14:33.0597203Z Length=1540
+                 PROBE C:\Users\cheng.lei\feelies-probes\T-13\s7-universe.txt LastWriteTimeUtc=2026-11-12T04:50:26.1488545Z Length=226
+                 no record found.
+                 It was set aside to
+                 feelies-probes\T-13\aside\baseline_post-T-13.found.json
+                 and the capture retaken once (D-240). 2. The first
+                 reference-real battery invocation ran without the
+                 FEELIES_* variables and exercised the production
+                 engine (4 CAP:gate_fire reds); it is not the gate; the
+                 rerun with engine, rail, stage 45 0A and cache
+                 confirmed in the child is.
+  STANDING:      the contract is version 5 (T-12,
+                 D-240); stage D; both gates exist
+                 unwired (D-241).
+  EVIDENCE:      T-13 censuses 1, 2, 3, 3B and trials
+                 t1, t2 at 87f4a223.
+  F-P62-1:       closed by D-245.
+  F-P62-2:       closed by D-245.
+  F-T13-1:       open, unscheduled.
+  F-T13-2:       open: a capture file of unknown
+                 provenance appeared during T-13 EXEC
+                 (DEVIATIONS 1).
