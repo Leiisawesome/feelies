@@ -36904,33 +36904,33 @@ OWNER:       campaign 15.
                  parity HOLDS. MATCH.
   GATES:         Copied from the T-13 EXEC report (session that ran S1-S7).
                  uv run pytest -q: exit 0, "5478 passed, 44 skipped, 2 xfailed, 49 warnings in 1829.64s".
-                 Predicted exit 0, "5478 passed, 44 skipped, 2 xfailed, 49 warnings in 1829.64s". MATCH.
+                 Predicted 5478 passed, 44 skipped, 2 xfailed. MATCH.
                  uv run pytest tests/position_engine -q: exit 0, "342 passed, 1 warning in 841.41s".
-                 Predicted exit 0, "342 passed, 1 warning in 841.41s". MATCH.
+                 Predicted 342 passed. MATCH.
                  uv run pytest tests/determinism -q: exit 0, "148 passed, 1 warning in 12.01s".
-                 Predicted exit 0, "148 passed, 1 warning in 12.01s". MATCH.
+                 Predicted 148 passed. MATCH.
                  uv run python scripts/prepush.py: exit 0, ruff check passed; "819 files already formatted"; mypy "Success: no issues found in 259 source files"; "Contracts: 2 kept, 0 broken."; "5459 passed, 5 skipped, 59 deselected, 1 xfailed, 49 warnings in 1122.60s".
-                 Predicted exit 0, ruff check passed; "819 files already formatted"; mypy "Success: no issues found in 259 source files"; "Contracts: 2 kept, 0 broken."; "5459 passed, 5 skipped, 59 deselected, 1 xfailed, 49 warnings in 1122.60s". MATCH.
+                 Predicted ruff check passes; ruff format 819 files; mypy 259 source files; lint-imports 2 kept, 0 broken; 5459 passed, 5 skipped, 59 deselected, 1 xfailed. MATCH.
                  -n 4 on ci_gate_expr.txt: exit 0, "5459 passed, 5 skipped, 1 xfailed, 53 warnings in 575.62s".
-                 Predicted exit 0, "5459 passed, 5 skipped, 1 xfailed, 53 warnings in 575.62s". MATCH.
+                 Predicted 5459 passed, 5 skipped, 1 xfailed. MATCH.
                  production synthetic at D (stage 44 0A; node_report.py SHA256 72FE8C206AD0243C843D980EBF76A294D6EA8C11A8B670716E867CCA892EBA88): exit 0, "117 passed, 11 deselected, 1 warning in 494.60s"; reds 29 (CAP:gate_fire 23, NONVACUOUS 2, CAP:conservation 3, CAP:favorable_fire 1); passed-before-stage 0.
-                 Predicted exit 0, "117 passed, 11 deselected, 1 warning in 494.60s"; reds 29 (CAP:gate_fire 23, NONVACUOUS 2, CAP:conservation 3, CAP:favorable_fire 1); passed-before-stage 0. MATCH.
+                 Predicted 117 passed, 11 deselected; reds 29 (CAP:gate_fire 23, NONVACUOUS 2, CAP:conservation 3, CAP:favorable_fire 1); passed-before-stage 0. MATCH.
                  production real at D (FEELIES_REQUIRE_BASELINE_CACHE=1): exit 0, "14 passed, 5510 deselected, 1 warning in 522.18s"; reds 4 CAP:gate_fire; passed-before-stage 0.
-                 Predicted exit 0, "14 passed, 5510 deselected, 1 warning in 522.18s"; reds 4 CAP:gate_fire; passed-before-stage 0. MATCH.
+                 Predicted 14 passed, 5510 deselected; reds 4 CAP:gate_fire; passed-before-stage 0. MATCH.
                  reference synthetic at E (stage_E.txt 45 0A, reference engine and rail): exit 0, "117 passed, 11 deselected, 1 warning in 845.17s"; reds 0; passed-before-stage 0.
-                 Predicted exit 0, "117 passed, 11 deselected, 1 warning in 845.17s"; reds 0; passed-before-stage 0. MATCH.
+                 Predicted 117 passed, 11 deselected; reds 0. MATCH.
                  reference real at E: exit 0, "14 passed, 5510 deselected, 1 warning in 645.78s"; reds 0; passed-before-stage 0; child confirmed engine, rail, stage 45 0A, cache 1.
-                 Predicted exit 0, "14 passed, 5510 deselected, 1 warning in 645.78s"; reds 0; passed-before-stage 0; child confirmed engine, rail, stage 45 0A, cache 1. MATCH.
+                 Predicted 14 passed, 5510 deselected; reds 0. MATCH.
                  kill.py --shard A: exit 0, 9 killed, 0 survived, B4 by test_m1_fresh_syn.
-                 Predicted exit 0, 9 killed, 0 survived, B4 by test_m1_fresh_syn. MATCH.
+                 Predicted 9 killed (B4 by test_m1_fresh_syn), no survivor. MATCH.
                  kill.py --shard A --control: exit 0, "CONTROL 0 failures".
-                 Predicted exit 0, "CONTROL 0 failures". MATCH.
+                 Predicted 0 failures. MATCH.
                  kill.py --shard B: exit 0, 16 killed, 0 survived.
-                 Predicted exit 0, 16 killed, 0 survived. MATCH.
+                 Predicted 16 killed, no survivor. MATCH.
                  kill.py --shard B --control: exit 0, "CONTROL 0 failures".
-                 Predicted exit 0, "CONTROL 0 failures". MATCH.
+                 Predicted 0 failures. MATCH.
                  universe check, PYTHONHASHSEED=0: exit 0, "1 passed in 196.94s".
-                 Predicted exit 0, "1 passed in 196.94s". MATCH.
+                 Predicted 1 passed. MATCH.
   CI:            pending.
   MERGE:         filled at the merge.
   BUGBOT:        read only after CI.
