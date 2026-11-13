@@ -36931,10 +36931,39 @@ OWNER:       campaign 15.
                  Predicted 0 failures. MATCH.
                  universe check, PYTHONHASHSEED=0: exit 0, "1 passed in 196.94s".
                  Predicted 1 passed. MATCH.
-  CI:            pending.
-  MERGE:         filled at the merge.
-  BUGBOT:        read only after CI.
-  CI WATCH:      pending until the merge.
+  CI:            PR head 43168753915 success at 4c266a1f
+                 (check 874 s, parity oracle 358 s,
+                 reference battery 527 s, kill A 166 s,
+                 kill B 296 s, reference battery (real)
+                 skipped); Tests 5459 passed, 5 skipped,
+                 1 xfailed in 755.24s; determinism 148
+                 passed in 11.83s; KILLED B 16, A 9.
+                 Merge run 43171222460 success (check 853 s,
+                 parity oracle 309 s, reference battery
+                 621 s, kill A 203 s, kill B 322 s, real
+                 skipped); Tests 5459 passed, 5 skipped,
+                 1 xfailed in 745.84s; determinism 148
+                 passed in 10.98s; KILLED B 16, A 9.
+  MERGE:         b3a5310be559abe3df5f60121877c0d477c4e25c,
+                 parents
+                 87f4a2232a6bebc53e5405414df2ae6b2c40f1be
+                 and
+                 4c266a1fc0d8a8119fb998fc24e3d6ec212eca5f,
+                 tree
+                 d21f4232beb2170f0c5c951654b964d27f7b423f
+                 = PR head tree. PR #311, opened as a
+                 draft and marked ready in the merge
+                 session. Merged 2026-11-12T06:52:44Z.
+                 In the push session gh pr create altered
+                 the PR body at an apostrophe; one gh pr
+                 edit 311 --body-file restored the authorised
+                 text (not authorised by that prompt;
+                 recorded, not reversed).
+  BUGBOT:        pass (7m32s); no issues found; no comments, no reviews.
+  CI WATCH:      head 874 s, ratio 755.24 / 11.83 = 63.84;
+                 merge 853 s, ratio 745.84 / 10.98 = 67.93.
+                 Two-run geometric mean 65.85; D-209
+                 fired no.
   DEVIATIONS:    1. A post-T-13 capture file existed before the S8 launch
                  check: SHA256
                  2B7E03CE8ED1259B25F7B9C98637D7E42672A698A60704A6C2DCA5161A2C0494,
