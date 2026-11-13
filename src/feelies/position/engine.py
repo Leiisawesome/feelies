@@ -579,6 +579,7 @@ class PositionEngine:
         triggered: tuple[ExitTriggeredPath, ...] = (),
         proposed: int | None = None,
         closed_on_stale_data: bool = False,
+        exited_on_unusable_data: bool = False,
         first_event_exit: bool = False,
     ) -> None:
         policy = self.policies[cell.strategy_id]
@@ -613,7 +614,7 @@ class PositionEngine:
                 worst=cell.worst,
                 best_clean=cell.best_clean,
                 closed_on_stale_data=closed_on_stale_data,
-                exited_on_unusable_data=cell.exited_blind,
+                exited_on_unusable_data=exited_on_unusable_data,
                 lived_through_feed_gap=cell.lived_through_feed_gap,
                 first_event_exit=first_event_exit,
                 stop_inside_round_trip=level <= round_trip,
@@ -666,6 +667,7 @@ class PositionEngine:
             triggered=triggered,
             proposed=proposed,
             closed_on_stale_data=stale,
+            exited_on_unusable_data=cell.exited_blind,
             first_event_exit=first,
         )
 
