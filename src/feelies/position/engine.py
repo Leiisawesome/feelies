@@ -1,4 +1,4 @@
-"""Stage-D position cell. contracts.md §2. Gates stay stubs; HORIZON resolves."""
+"""Stage-E position cell. contracts.md §2. Both gates wired (D-245)."""
 
 from __future__ import annotations
 
@@ -29,10 +29,17 @@ from feelies.core.events import (
 from feelies.core.exit_policy import ExitPolicy
 from feelies.core.identifiers import SequenceGenerator
 from feelies.core.trading_session import TradingSessionBounds
+from feelies.position.adverse_gate import AdverseDecision, drawn_level, evaluate_adverse
+from feelies.position.favorable_gate import (
+    FavorableDecision,
+    evaluate_favorable,
+    fixed_disarmed,
+)
 
 # Integer stand-in for formula fields the gates do not evaluate. Never NaN. AS-17.
 _FORMULA_PLACEHOLDER = 0
 _CONTRACT_GATE_ORDER = ("ADVERSE", "FAVORABLE")
+_REQUIREMENT_REASON = {"ADVERSE": "ADVERSE_EXCURSION", "FAVORABLE": "FAVORABLE_EXCURSION"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,7 +78,9 @@ class _Cell:
     last_present_rail: MarkRailUpdate | None = None
     last_present_was_first: bool = False
     exit_reason: str = ""
-    triggered_path_names: tuple[str, ...] = ()
+    triggered_paths: tuple[ExitTriggeredPath, ...] = ()
+    deciding_proposed: int | None = None
+    exited_blind: bool = False
 
 
 def _cents(price: Decimal) -> int:
@@ -168,7 +177,7 @@ def _consume(lots: tuple[PositionFillLeg, ...], shares: int) -> tuple[PositionFi
 
 
 class PositionEngine:
-    """Cell, stub gates, two-phase step. HORIZON emits one live requirement."""
+    """Cell, both gates (D-245), two-phase step. One live requirement."""
 
     PUBLICATIONS = (PositionSnapshot, GateDecision, PositionClosed, DeRiskRequirement)
 
@@ -297,15 +306,22 @@ class PositionEngine:
             self._publish(frozen)
             if self._current(key, cell.cell_id) is None:
                 continue
-            outcomes = {name: self._gate_outcome(name) for name in self._gate_order}
-            for name in _CONTRACT_GATE_ORDER:
-                outcome = outcomes.get(name)
-                if outcome is not None:
-                    self._publish(self._gate(name, cell, frozen, event, outcome))
+            policy = self.policies[cell.strategy_id]
+            adverse: AdverseDecision | None = None
+            favorable: FavorableDecision | None = None
+            for name in self._gate_order:
+                if name == "ADVERSE":
+                    adverse = self._adverse(policy, frozen)
+                elif name == "FAVORABLE":
+                    favorable = self._favorable(policy, frozen)
+            if adverse is not None:
+                self._publish(self._adverse_decision(cell, frozen, event, adverse))
+            if favorable is not None:
+                self._publish(self._favorable_decision(cell, frozen, event, favorable))
             cell = self._current(key, prior.cell_id)
             if cell is None:
                 continue
-            cell = self._resolve(cell, event)
+            cell = self._resolve(cell, event, adverse, favorable)
             if cell is None:
                 continue
             self._put(replace(cell, invalidation_sequence=None))
@@ -456,28 +472,53 @@ class PositionEngine:
             warmed_up=snapshot.warmed_up,
         )
 
-    def _gate_outcome(self, name: str) -> str:
-        """Non-acting stub. Evaluation order follows gate_order; publication does not."""
-        if name == "ADVERSE":
-            return "hold"
-        return "none"
+    def _adverse(self, policy: ExitPolicy, s: PositionSnapshot) -> AdverseDecision:
+        return evaluate_adverse(
+            cell_id=s.cell_id,
+            centre=policy.adverse.centre_ticks,
+            band=policy.adverse.band_ticks,
+            blind_limit_ns=policy.adverse.blind_limit_ns,
+            size=s.size,
+            move_worst=s.move_worst_cents,
+            forced_exit_mark=s.rail.forced_exit_mark_cents,
+            paying_absent_ns=s.rail.paying_absent_for_ns,
+            valuation_absent_ns=s.rail.valuation_absent_for_ns,
+            quiet_ns=s.symbol_quiet_ns,
+        )
 
-    def _gate(
+    def _favorable(self, policy: ExitPolicy, s: PositionSnapshot) -> FavorableDecision:
+        return evaluate_favorable(
+            form=policy.favorable.form,
+            size=s.size,
+            target_ticks=policy.favorable.target_ticks,
+            giveback_spread_multiple=policy.favorable.giveback_spread_multiple,
+            ceiling_ticks=policy.favorable.ceiling_ticks,
+            entry_spread_ticks=s.entry_spread_ticks,
+            fee_round_trip_ticks=policy.fee_round_trip_ticks,
+            move_now_cents=s.move_now_cents,
+            best_clean_cents=None if s.best_clean is None else s.best_clean.cents,
+            best_clean_sequence=None if s.best_clean is None else s.best_clean.sequence,
+            dwelled_exit_mark=s.rail.dwelled_exit_mark_cents,
+            valuation_side_absent=s.rail.valuation_side_absent,
+            crossed=s.crossed,
+            feed_gap_before=s.feed_gap_before,
+            dwell_window_clean=s.rail.dwell_window_clean,
+            warmed_up=s.warmed_up,
+            symbol_quiet_ns=s.symbol_quiet_ns,
+            quiet_limit_ns=policy.favorable.quiet_limit_ns,
+        )
+
+    def _adverse_decision(
         self,
-        name: str,
         cell: _Cell,
-        snapshot: PositionSnapshot,
+        s: PositionSnapshot,
         event: MarkRailUpdate,
-        outcome: str,
+        d: AdverseDecision,
     ) -> GateDecision:
-        orient = snapshot.rail
-        if name == "ADVERSE":
-            mark = orient.forced_exit_mark_cents
-            form = ""
-        else:
-            mark = orient.dwelled_exit_mark_cents
-            policy = self.policies.get(cell.strategy_id)
-            form = "" if policy is None else policy.favorable.form
+        outcome = d.outcome
+        if cell.state == "EXITING" and outcome == "fire":
+            outcome = "hold" if cell.exit_reason == "ADVERSE" else "ESCALATION_NOOP"
+        reason = d.trigger if outcome in ("fire", "ESCALATION_NOOP") else ""
         return GateDecision(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=event.correlation_id,
@@ -485,14 +526,45 @@ class PositionEngine:
             source_layer="position",
             cell_id=cell.cell_id,
             rail_sequence=event.quote_sequence,
-            gate=name,
+            gate="ADVERSE",
             outcome=outcome,
-            reason="",
-            form=form,
-            proposed_price_cents=mark if mark is not None else _FORMULA_PLACEHOLDER,
-            reference_ticks=_FORMULA_PLACEHOLDER,
+            reason=reason,
+            form="",
+            proposed_price_cents=d.proposed_price_cents,
+            reference_ticks=d.drawn_level_ticks,
             reference_sequence=_FORMULA_PLACEHOLDER,
+            drawn_level_ticks=d.drawn_level_ticks,
+            suppressions=(),
+        )
+
+    def _favorable_decision(
+        self,
+        cell: _Cell,
+        s: PositionSnapshot,
+        event: MarkRailUpdate,
+        d: FavorableDecision,
+    ) -> GateDecision:
+        outcome = d.outcome
+        if cell.state == "EXITING" and outcome == "fire":
+            outcome = "none"
+        return GateDecision(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=event.correlation_id,
+            sequence=self._seq.next(),
+            source_layer="position",
+            cell_id=cell.cell_id,
+            rail_sequence=event.quote_sequence,
+            gate="FAVORABLE",
+            outcome=outcome,
+            reason=d.reason,
+            form=d.form,
+            proposed_price_cents=d.proposed_price_cents,
+            reference_ticks=d.reference_ticks,
+            reference_sequence=(
+                _FORMULA_PLACEHOLDER if d.reference_sequence is None else d.reference_sequence
+            ),
             drawn_level_ticks=_FORMULA_PLACEHOLDER,
+            suppressions=d.suppressions,
         )
 
     def _publish(self, event: Event) -> None:
@@ -509,6 +581,15 @@ class PositionEngine:
         closed_on_stale_data: bool = False,
         first_event_exit: bool = False,
     ) -> None:
+        policy = self.policies[cell.strategy_id]
+        level = drawn_level(cell.cell_id, policy.adverse.centre_ticks, policy.adverse.band_ticks)
+        round_trip = cell.entry_spread_ticks + policy.fee_round_trip_ticks
+        target_ticks = policy.favorable.target_ticks
+        target_inside = (
+            policy.favorable.form == "fixed"
+            and target_ticks is not None
+            and fixed_disarmed(target_ticks, cell.entry_spread_ticks, policy.fee_round_trip_ticks)
+        )
         self._bus.publish(
             PositionClosed(
                 timestamp_ns=self._clock.now_ns(),
@@ -524,7 +605,7 @@ class PositionEngine:
                 exit_fills=tuple(cell.exit_fills),
                 entry_spread_ticks=cell.entry_spread_ticks,
                 horizon_deadline_ns=cell.horizon_deadline_ns,
-                drawn_level_ticks=_FORMULA_PLACEHOLDER,
+                drawn_level_ticks=level,
                 exit_reason=reason,
                 triggered_paths=triggered,
                 proposed_price_cents=proposed,
@@ -532,11 +613,11 @@ class PositionEngine:
                 worst=cell.worst,
                 best_clean=cell.best_clean,
                 closed_on_stale_data=closed_on_stale_data,
-                exited_on_unusable_data=False,
+                exited_on_unusable_data=cell.exited_blind,
                 lived_through_feed_gap=cell.lived_through_feed_gap,
                 first_event_exit=first_event_exit,
-                stop_inside_round_trip=False,
-                target_inside_round_trip=False,
+                stop_inside_round_trip=level <= round_trip,
+                target_inside_round_trip=target_inside,
                 uncalibrated=cell.uncalibrated,
                 supersedes="",
             )
@@ -576,7 +657,7 @@ class PositionEngine:
         if cell.size != 0:
             self._put(cell)
             return
-        triggered, proposed, stale, first = self._horizon_close_facts(cell)
+        triggered, proposed, stale, first = self._close_facts(cell)
         self._open.pop(key, None)
         self._publish_closed(
             cell,
@@ -588,25 +669,76 @@ class PositionEngine:
             first_event_exit=first,
         )
 
-    def _resolve(self, cell: _Cell, event: MarkRailUpdate) -> _Cell | None:
-        """OPEN: deadline and a latched invalidation. HORIZON wins. EXITING ignores the latch."""
+    def _resolve(
+        self,
+        cell: _Cell,
+        event: MarkRailUpdate,
+        adverse: AdverseDecision | None,
+        favorable: FavorableDecision | None,
+    ) -> _Cell | None:
+        """D-245. OPEN fires ADVERSE, HORIZON, INVALIDATION, FAVORABLE. EXITING re-emits."""
         orient = _orientation(cell, event)
         if cell.state == "OPEN":
-            horizon = event.event_timestamp_ns >= cell.horizon_deadline_ns
-            invalidation = cell.invalidation_sequence is not None
-            if horizon or invalidation:
-                names: list[str] = []
-                if horizon:
-                    names.append("HORIZON")
-                if invalidation:
-                    names.append("INVALIDATION")
+            fired: list[str] = []
+            if adverse is not None and adverse.outcome == "fire":
+                fired.append("ADVERSE")
+            if event.event_timestamp_ns >= cell.horizon_deadline_ns:
+                fired.append("HORIZON")
+            if cell.invalidation_sequence is not None:
+                fired.append("INVALIDATION")
+            if favorable is not None and favorable.outcome == "fire":
+                fired.append("FAVORABLE")
+            if fired:
+                prices: list[int | None] = []
+                triggers: list[str] = []
+                for name in fired:
+                    if name == "FAVORABLE":
+                        assert favorable is not None
+                        price = favorable.proposed_price_cents
+                        trigger = favorable.form.upper()
+                    elif name == "ADVERSE":
+                        assert adverse is not None
+                        price = orient.forced_exit_mark_cents
+                        trigger = adverse.trigger
+                    elif name == "HORIZON":
+                        price = orient.forced_exit_mark_cents
+                        trigger = "DEADLINE"
+                    else:
+                        price = orient.forced_exit_mark_cents
+                        trigger = "INVALIDATION"
+                    prices.append(price)
+                    triggers.append(trigger)
+                if any(price is None for price in prices):
+                    paths: tuple[ExitTriggeredPath, ...] = ()
+                    proposed = None
+                else:
+                    known: list[int] = []
+                    built: list[ExitTriggeredPath] = []
+                    for name, price, trigger in zip(fired, prices, triggers, strict=True):
+                        assert price is not None
+                        known.append(price)
+                        built.append(
+                            ExitTriggeredPath(
+                                path=name,
+                                proposed_price_cents=price,
+                                trigger=trigger,
+                            )
+                        )
+                    paths = tuple(built)
+                    proposed = min(known) if cell.side == "LONG" else max(known)
                 armed = replace(
                     cell,
                     deciding_rail=event,
                     deciding_first=cell.rails_seen == 1,
                     invalidation_sequence=None,
-                    exit_reason="HORIZON" if horizon else "INVALIDATION",
-                    triggered_path_names=tuple(names),
+                    exit_reason=fired[0],
+                    triggered_paths=paths,
+                    deciding_proposed=proposed,
+                    exited_blind=(
+                        fired[0] == "ADVERSE"
+                        and adverse is not None
+                        and adverse.trigger == "BLIND"
+                    ),
                 )
                 return self._emit_exit(armed, event, 1)
         if (
@@ -641,7 +773,7 @@ class PositionEngine:
                 side=side,
                 quantity=cell.size,
                 strategy_id=cell.strategy_id,
-                reason=cell.exit_reason,
+                reason=_REQUIREMENT_REASON.get(cell.exit_reason, cell.exit_reason),
             )
         )
         return self._current((cell.strategy_id, cell.symbol), cell.cell_id)
@@ -667,27 +799,20 @@ class PositionEngine:
             closed_on_stale_data=True,
         )
 
-    def _horizon_close_facts(
+    def _close_facts(
         self,
         cell: _Cell,
     ) -> tuple[tuple[ExitTriggeredPath, ...], int | None, bool, bool]:
-        """D-218. Path, price, stale and first-event are taken at the deciding rail."""
+        """D-218, D-245. Path, price, stale and first-event are taken at the deciding rail."""
         rail = cell.deciding_rail
         if rail is None:
             return (), None, cell.rails_seen == 0, False
-        mark = _orientation(cell, rail).forced_exit_mark_cents
-        stale = _stale(cell, rail)
-        if mark is None:
-            return (), None, stale, cell.deciding_first
-        paths = tuple(
-            ExitTriggeredPath(
-                path=name,
-                proposed_price_cents=mark,
-                trigger={"HORIZON": "DEADLINE", "INVALIDATION": "INVALIDATION"}[name],
-            )
-            for name in cell.triggered_path_names
+        return (
+            cell.triggered_paths,
+            cell.deciding_proposed,
+            _stale(cell, rail),
+            cell.deciding_first,
         )
-        return paths, mark, stale, cell.deciding_first
 
     def _deadline(self, fill_ts: int, policy: ExitPolicy) -> int:
         """D-214. No session close resolves to fill_ts + T."""
