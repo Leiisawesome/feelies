@@ -37151,6 +37151,49 @@ OWNER:       campaign 15.
                  universe check, PYTHONHASHSEED=0: uv run --no-sync --offline pytest tests/conformance/test_cap_neutral_universe.py -q -m universe_check, exit 0, "1 passed in 173.64s (0:02:53)".
                  Predicted 1 passed. MATCH.
                  Reference battery and mutant kill not run: reference and broken engines unchanged and not opened (engine independence).
+  AMENDMENT:     Bugbot on PR #312 (review at fdae4bab, Medium,
+                 engine.py L615-L616): exited_on_unusable_data was set
+                 on END_OF_TAPE and EXTERNAL:SIGN_FLIP closes of a cell
+                 that had exited BLIND. Destination this rung, per D-246
+                 (5). FAILFIRST2
+                 b841f28408d24b473e7bd25f5a212651cf8a14f2:
+                 tests/position_engine/test_p62_close_flags.py, 2 ids;
+                 test_end_of_tape_after_blind_exit_is_not_flagged failed
+                 "assert True is False"; 1 failed, 1 passed. FIX
+                 2787ee602e1c66771d8ad9a67e111535dade25dc:
+                 _publish_closed takes exited_on_unusable_data (default
+                 False), passed only by _apply_exit_fill; 2 passed.
+                 GATES2 on FIX, each MATCH: full pytest 5480 passed, 44
+                 skipped, 2 xfailed; tests/position_engine 344 passed;
+                 determinism 148 passed; prepush ruff check passed, 820
+                 files formatted, mypy 259 source files, lint-imports 2
+                 kept 0 broken, 5461 passed, 5 skipped, 59 deselected, 1
+                 xfailed; -n 4 5461 passed, 5 skipped, 1 xfailed;
+                 production battery at E synthetic 117 passed, 11
+                 deselected, reds 0, passed-before-stage 0, real 14
+                 passed, 5512 deselected, reds 0; R-SYN 1 passed;
+                 universe check 1 passed. BASE2
+                 fb491ba83ffc7aaf5f0d3628145310a029e3ca1f: post-P-62-fix
+                 capture on FIX (2026-11-14T00:30:25.220382+00:00, dirty
+                 false, full
+                 "5480 passed, 44 skipped, 2 xfailed, 49 warnings in 1732.94s (0:28:52)";
+                 determinism "148 passed, 1 warning in 10.52s",
+                 fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1, compare 64 -> 64, changed 0, parity HOLDS); it
+                 is the rung's final post capture;
+                 baseline_post-P-62.json stays as the capture on PIN. A
+                 first re-record under the label post-P-62 removed the
+                 tracked file to make it absent, so the capture was
+                 dirty and its suite failed
+                 test_capture_misses_equal_keep; that capture (SHA256
+                 8DFA29D40C9C5C4F31E17B05B7C0D4F81CA733F948D29257795A3F92184AF2DE)
+                 was set aside to feelies-probes\P-62\discarded and the
+                 committed file restored (prompt design, Claude).
+                 Finding F-P62-3: closed by FIX. PR body: Cursor
+                 appended a "Made with Cursor" line on #311 and #312;
+                 the T-13 MERGE field's apostrophe cause is not
+                 supported by #312, whose body has no apostrophe.
   CI:            pending
   MERGE:         filled at the merge
   BUGBOT:        read only after CI
