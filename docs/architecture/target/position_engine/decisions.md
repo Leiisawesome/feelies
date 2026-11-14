@@ -1591,6 +1591,42 @@ D-246 — P-62: both gates wired; stage E.
     hash; universe check 1 passed.
   - Supersedes: none.
 
+D-247 — Contract version 6: detached long runs, explicit blocking, capture
+labels (T-14).
+  - Decided by: operator, phase 14 chat 13 (2026-11-14), option A after the
+    T-14p probe; on the T-14 census at 6b515db9.
+  - Probe T-14p (Cursor 3.2.11, commit e9ee1339; outside the repo, under
+    %USERPROFILE%\feelies-probes\T-14): a 720 s job with block_until_ms
+    900000 returned on completion (720519 ms, exit 0); a 660 s job with
+    block_until_ms 60000 was sent to the background at 60 s, recorded
+    aborted with exit code 1, its process gone, no log or exit file
+    written (F-T14-1); a 720 s job started with Start-Process completed
+    with exit 0. The shell tool's default block is 30000 ms.
+  - Long runs: the hot-path profile refresh, a capture, the prepush gate,
+    -n 4, and any command expected over 5 minutes or of unknown length run
+    detached (script, log and exit file under feelies-probes, PID printed,
+    short polls until the exit file exists, never relaunched while the PID
+    is alive or the exit file is absent). Supersedes D-240's long-run
+    clause; its dirty-capture and network-retry clauses stand.
+  - Every other command sets block_until_ms explicitly, at least twice its
+    expected runtime and at most 900000 (the probed range). A command sent
+    to the background is a lost run, reported verbatim, relaunched only
+    after Get-CimInstance shows no copy live.
+  - Capture labels: a capture retaken after a fix takes a new label
+    (post-<id>-fix, then -fix2); a tracked baseline is never removed or
+    overwritten to re-capture (as P-62's post-P-62-fix).
+  - Closes F-T13-2; records F-T14-1. E0 none: docs and agent rules only
+    (as T-12, D-240).
+  - Prediction (pre-registered): no src or test change; full suite 5480
+    passed, 0 failed, 44 skipped, 2 xfailed at pre and post; determinism
+    148; parity constants 64 -> 64, changed 0; fingerprint unchanged;
+    prepush ruff check passes, ruff format 820 files, mypy 259 source
+    files, lint-imports 2 kept 0 broken, 5461 passed, 5 skipped, 59
+    deselected, 1 xfailed; -n 4 5461 passed, 5 skipped, 1 xfailed; docs
+    tests and test_doc_integrity.py green with the same counts on SPEC and
+    IMPL; universe check 1 passed.
+  - Supersedes: D-240's long-run clause only.
+
 ### D-66 pre-registered prediction
 
 ```

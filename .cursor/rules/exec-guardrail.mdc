@@ -1,5 +1,5 @@
 ---
-description: Phase-14 standing contract (position engine, backtest only). Binds every Cursor session in this repo until P-99. Version 5 (T-12, D-240).
+description: Phase-14 standing contract (position engine, backtest only). Binds every Cursor session in this repo until P-99. Version 6 (T-14, D-247).
 alwaysApply: true
 ---
 
@@ -102,15 +102,35 @@ The Claude chat rollover limit is 3 merged steps (playbook v1.2; D-202).
   byte-compare in a clean worktree.
 - Captures are clean (git.dirty false) and committed before the ## <id> ledger
   heading. Every rung heading needs both, docs-only rungs included (D-94).
-- Long runs (D-240). A capture, gate or other command that can outlast the
-  runner's limit is started in the foreground and awaited. If the runner
-  returns first, poll the live process (Get-CimInstance) until it exits;
-  never start a second copy. Immediately before a capture, Test-Path of its
-  baseline_<label>.json is False and no baseline.py, pytest or perfmeasure
-  process is live; either failing is a STOP.
+- Long runs (D-247). The hot-path profile refresh, a capture, the prepush
+  gate, -n 4, and any command expected to run over 5 minutes or of unknown
+  length run detached. <runs> is %USERPROFILE%\feelies-probes\<id>\runs.
+  Write <runs>\<tag>.ps1 as two lines, with <runs> expanded:
+    <command> *> "<runs>\<tag>.log"
+    $LASTEXITCODE | Out-File -Encoding ascii "<runs>\<tag>.exit"
+  Start it with Start-Process powershell -WindowStyle Hidden -PassThru
+  -WorkingDirectory <repo root> -ArgumentList '-ExecutionPolicy','Bypass',
+  '-File','<runs>\<tag>.ps1', and print the PID and launch time. Poll with
+  separate short commands, each waiting at most 5 minutes, until
+  <tag>.exit exists; then print the exit code and the log's last 20 lines.
+  Never start a second copy while the PID is alive or <tag>.exit is
+  absent. The profile refresh and a capture are separate runs, never
+  chained.
+- Every other command sets block_until_ms explicitly, at least twice its
+  expected runtime and at most 900000 (probed, T-14p); the 30000 ms
+  default is never relied on. A command sent to the background is a lost
+  run: report it verbatim, and relaunch only after Get-CimInstance shows
+  no copy live (D-247).
+- Before a capture: Test-Path of its baseline_<label>.json and of its
+  <tag>.exit are False, and no baseline.py, pytest or perfmeasure process
+  is live (the checking command's own line excluded); either failing is a
+  STOP.
+- Capture labels (D-247). A capture retaken after a fix takes a new label,
+  post-<id>-fix (then -fix2); a tracked baseline file is never removed or
+  overwritten to re-capture.
 - A capture that records git.dirty true is moved to
   %USERPROFILE%\feelies-probes\<id>\discarded, its SHA256 recorded as a
-  deviation, and retaken once in the foreground after those checks. A
+  deviation, and retaken once by the long-run method after those checks. A
   second dirty capture is a STOP (D-240).
 - Network commands (D-240). A git push or other network command that
   returns at the runner's limit is retried only after git ls-remote shows
