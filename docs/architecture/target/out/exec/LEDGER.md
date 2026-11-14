@@ -37005,3 +37005,229 @@ OWNER:       campaign 15.
   F-T13-2:       open: a capture file of unknown
                  provenance appeared during T-13 EXEC
                  (DEVIATIONS 1).
+
+## P-62 Both gates wired; stage E
+
+  VERDICT:       passed
+  DECISIONS:     D-246, operator chat 12
+                 (AskUserQuestion), on P-62
+                 censuses 1-7 and trials t1, t2,
+                 after T-13 (D-245).
+  OPERATOR DECLARATION:
+                 R-SYN economic pin move in
+                 tests/harness/test_economic_trade_hash_pins.py — trade
+                 count 29 -> 30; ECONOMIC_TRADE_HASH_RSYN
+                 b62b42d2dcc8e7315ca4d75de9b6748af605a6d280ed424dac0edd9cacfd4535
+                 -> 72ee12faec3b32d4e67f66f1ede2a86eb2d19e89da3417b95ec639a64bc8f0d7;
+                 cause: the production engine now exits on ADVERSE and
+                 FAVORABLE (D-246).
+  E0:            FAILFIRST
+                 4471190f67b2a881b3c248d16adfcc9157411d96.
+                 Production synthetic at stage E, exit 1,
+                 "29 failed, 88 passed, 11 deselected, 1 warning in 514.83s (0:08:34)".
+                 tests/position_engine/test_battery_m11_audit.py::test_m11_synthetic
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m11_audit.py::test_m11_gap_through
+                 E           AssertionError: NONVACUOUS: no ADVERSE close in m11_gap
+                 tests/position_engine/test_battery_m2_no_lookahead.py::test_m2_dwell_favorable_ignores_stale_cross
+                 E       AssertionError: CAP:favorable_fire: favorable outcome at 401 is not fire
+                 tests/position_engine/test_battery_m3_known_answer_conservation.py::test_m3_barriers_only
+                 E       AssertionError: CAP:conservation: m3_barriers closed cells 100 < 200
+                 tests/position_engine/test_battery_m3_known_answer_conservation.py::test_m3_barriers_swapped
+                 E       AssertionError: CAP:conservation: m3_barriers_swapped closed cells 100 < 200
+                 tests/position_engine/test_battery_m3_known_answer_conservation.py::test_m3_barriers_and_deadline
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m3_known_answer_conservation.py::test_m3_band_draw
+                 E       AssertionError: CAP:conservation: m3_band closed cells 100 < 200
+                 tests/position_engine/test_battery_m5_precedence.py::test_m5_invalidation_at_take_profit
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m5_precedence.py::test_m5_deadline_beyond_stop
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m5_precedence.py::test_m5_gap_through_trail_and_stop
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m6_injection_syn.py::test_m6_a4_gap_through
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m6_injection_syn.py::test_m6_a5_quiet[298]
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m6_injection_syn.py::test_m6_a5_quiet[299]
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m6_injection_syn.py::test_m6_a5_quiet[300]
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m6_injection_syn.py::test_m6_a5_valuation_absent[299]
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m6_injection_syn.py::test_m6_a5_valuation_absent[300]
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m6_injection_syn.py::test_m6_a5_valuation_absent[301]
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m6_injection_syn.py::test_m6_a5_paying_absent[299]
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m6_injection_syn.py::test_m6_a5_paying_absent[300]
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m6_injection_syn.py::test_m6_a5_paying_absent[301]
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m6_injection_syn.py::test_m6_a6_short
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m6_injection_syn.py::test_m6_a6_long
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m6_injection_syn.py::test_m6_a2_v5
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m7_monotonicity.py::test_m7_slippage
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m7_monotonicity.py::test_m7_dwell
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m7_monotonicity.py::test_m7_giveback
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m7_monotonicity.py::test_m7_band
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m8_records_syn.py::test_m8_adverse_record
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m8_records_syn.py::test_m8_favorable_reasons
+                 E               AssertionError: NONVACUOUS: m8 favorable a5-valuation-299
+                 Production real at stage E, exit 1,
+                 "4 failed, 10 passed, 5510 deselected, 1 warning in 293.17s (0:04:53)".
+                 tests/position_engine/test_battery_m5_precedence.py::test_m5_real
+                 E       AssertionError: CAP:gate_fire: no ADVERSE GateDecision with drawn_level_ticks > 0
+                 tests/position_engine/test_battery_m6_injection_real.py::test_m6_real
+                 E           AssertionError: CAP:gate_fire: A2: placement rule P found no eligible cell
+                 tests/position_engine/test_battery_m8_records_real.py::test_m8_adverse_record_real
+                 E           AssertionError: CAP:gate_fire: A2: placement rule P found no eligible cell
+                 tests/position_engine/test_battery_m8_records_real.py::test_m8_favorable_reasons_real
+                 E           AssertionError: CAP:gate_fire: A2: placement rule P found no eligible cell
+  TREE:          P-62-t1.diff SHA256
+                 186B3A40CEC71B7491DDAE3E4AC077B47A846598086352659B6AAE1C8E018725,
+                 applied byte-identically.
+  SPEC:          3a2d4f1efa2f311dad5dab92742ddf7fa8b4719f.
+  FAILFIRST:     4471190f67b2a881b3c248d16adfcc9157411d96.
+  IMPL:          c8920d3adc02d7facae8dcedb9631cce8432ffb8
+                 (2 files, 189 insertions, 64
+                 deletions). ruff check passed; ruff
+                 format 2 files already formatted; mypy
+                 no issues in 2 source files.
+  PIN:           c1fe7cad7d233743a94312fcab2887daeb9af68a.
+  BASE:          181b478bd530eb92bd1170d136e32459b17c9c44.
+                 pre: captured_at
+                 2026-11-13T02:15:45.840482+00:00; git.sha
+                 3a2d4f1efa2f311dad5dab92742ddf7fa8b4719f;
+                 git.dirty false; full "5478 passed, 44 skipped, 2 xfailed, 49 warnings in 1854.47s (0:30:54)";
+                 determinism "148 passed, 1 warning in 14.71s";
+                 parity constants 64; fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1; SHA256
+                 9D589F57EC7D927F181F9677C670B6786E6DAF364FDCA8FAC2CC04E420614BA0.
+                 post: captured_at
+                 2026-11-13T05:30:27.382420+00:00; git.sha
+                 c1fe7cad7d233743a94312fcab2887daeb9af68a;
+                 git.dirty false; full "5478 passed, 44 skipped, 2 xfailed, 49 warnings in 2533.65s (0:42:13)";
+                 determinism "148 passed, 1 warning in 14.07s";
+                 fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1; compare 64 -> 64, changed 0,
+                 parity HOLDS; SHA256
+                 9608742D37349020243BCA61CA6C9CE4DCC9063B3D424C2EF77F88739943BBD0.
+                 Predicted git.sha
+                 c1fe7cad7d233743a94312fcab2887daeb9af68a,
+                 git.dirty false, full 5478 passed, 0
+                 failed, 44 skipped, 2 xfailed;
+                 determinism 148; fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1; compare 64 -> 64, changed 0,
+                 parity HOLDS. MATCH.
+  GATES:         uv run --no-sync --offline pytest -q: exit 0, "5478 passed, 44 skipped, 2 xfailed, 49 warnings in 1766.73s (0:29:26)".
+                 Predicted 5478 passed, 0 failed, 44 skipped, 2 xfailed. MATCH.
+                 uv run --no-sync --offline pytest tests/position_engine -q: exit 0, "342 passed, 1 warning in 907.57s (0:15:07)".
+                 Predicted 342 passed. MATCH.
+                 uv run --no-sync --offline pytest tests/determinism -q: exit 0, "148 passed, 1 warning in 14.42s".
+                 Predicted 148 passed. MATCH.
+                 uv run --no-sync --offline pytest tests/harness/test_economic_trade_hash_pins.py -q -k rsyn: exit 0, "1 passed, 2 deselected, 1 warning in 10.49s".
+                 Predicted 1 passed; R-SYN 30 trades and hash 72ee12faec3b32d4e67f66f1ede2a86eb2d19e89da3417b95ec639a64bc8f0d7. MATCH.
+                 uv run --no-sync --offline python scripts/prepush.py: exit 0, ruff check "All checks passed!"; "819 files already formatted"; mypy "Success: no issues found in 259 source files"; "Contracts: 2 kept, 0 broken."; "5459 passed, 5 skipped, 59 deselected, 1 xfailed, 49 warnings in 1257.90s (0:20:57)".
+                 Predicted ruff check passes; ruff format 819 files; mypy 259 source files; lint-imports 2 kept, 0 broken; 5459 passed, 5 skipped, 59 deselected, 1 xfailed. MATCH.
+                 uv run --no-sync --offline pytest -m "not functional and not paper_rth and not battery_real and not universe_check" -q -n 4: exit 0, "5459 passed, 5 skipped, 1 xfailed, 53 warnings in 737.46s (0:12:17)".
+                 Predicted 5459 passed, 5 skipped, 1 xfailed. MATCH.
+                 production synthetic at E (stage 45 0A; node_report.py SHA256 72FE8C206AD0243C843D980EBF76A294D6EA8C11A8B670716E867CCA892EBA88): uv run --no-sync --offline pytest on the ordinal-sorted test_battery_m*.py and test_reference_*.py globs, -m "not battery_real" -q -p node_report, exit 0, "117 passed, 11 deselected, 1 warning in 534.26s (0:08:54)"; reds 0; passed-before-stage 0.
+                 Predicted 117 passed, 11 deselected; reds 0; passed-before-stage 0. MATCH.
+                 production real at E (FEELIES_REQUIRE_BASELINE_CACHE=1): uv run --no-sync --offline pytest -m battery_real -q -p node_report, exit 0, "14 passed, 5510 deselected, 1 warning in 614.56s (0:10:14)"; reds 0; passed-before-stage 0.
+                 Predicted 14 passed, 5510 deselected; reds 0; passed-before-stage 0. MATCH.
+                 universe check, PYTHONHASHSEED=0: uv run --no-sync --offline pytest tests/conformance/test_cap_neutral_universe.py -q -m universe_check, exit 0, "1 passed in 173.64s (0:02:53)".
+                 Predicted 1 passed. MATCH.
+                 Reference battery and mutant kill not run: reference and broken engines unchanged and not opened (engine independence).
+  AMENDMENT:     Bugbot on PR #312 (review at fdae4bab, Medium,
+                 engine.py L615-L616): exited_on_unusable_data was set
+                 on END_OF_TAPE and EXTERNAL:SIGN_FLIP closes of a cell
+                 that had exited BLIND. Destination this rung, per D-246
+                 (5). FAILFIRST2
+                 b841f28408d24b473e7bd25f5a212651cf8a14f2:
+                 tests/position_engine/test_p62_close_flags.py, 2 ids;
+                 test_end_of_tape_after_blind_exit_is_not_flagged failed
+                 "assert True is False"; 1 failed, 1 passed. FIX
+                 2787ee602e1c66771d8ad9a67e111535dade25dc:
+                 _publish_closed takes exited_on_unusable_data (default
+                 False), passed only by _apply_exit_fill; 2 passed.
+                 GATES2 on FIX, each MATCH: full pytest 5480 passed, 44
+                 skipped, 2 xfailed; tests/position_engine 344 passed;
+                 determinism 148 passed; prepush ruff check passed, 820
+                 files formatted, mypy 259 source files, lint-imports 2
+                 kept 0 broken, 5461 passed, 5 skipped, 59 deselected, 1
+                 xfailed; -n 4 5461 passed, 5 skipped, 1 xfailed;
+                 production battery at E synthetic 117 passed, 11
+                 deselected, reds 0, passed-before-stage 0, real 14
+                 passed, 5512 deselected, reds 0; R-SYN 1 passed;
+                 universe check 1 passed. BASE2
+                 fb491ba83ffc7aaf5f0d3628145310a029e3ca1f: post-P-62-fix
+                 capture on FIX (2026-11-14T00:30:25.220382+00:00, dirty
+                 false, full
+                 "5480 passed, 44 skipped, 2 xfailed, 49 warnings in 1732.94s (0:28:52)";
+                 determinism "148 passed, 1 warning in 10.52s",
+                 fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1, compare 64 -> 64, changed 0, parity HOLDS); it
+                 is the rung's final post capture;
+                 baseline_post-P-62.json stays as the capture on PIN. A
+                 first re-record under the label post-P-62 removed the
+                 tracked file to make it absent, so the capture was
+                 dirty and its suite failed
+                 test_capture_misses_equal_keep; that capture (SHA256
+                 8DFA29D40C9C5C4F31E17B05B7C0D4F81CA733F948D29257795A3F92184AF2DE)
+                 was set aside to feelies-probes\P-62\discarded and the
+                 committed file restored (prompt design, Claude).
+                 Finding F-P62-3: closed by FIX. PR body: Cursor
+                 appended a "Made with Cursor" line on #311 and #312;
+                 the T-13 MERGE field's apostrophe cause is not
+                 supported by #312, whose body has no apostrophe.
+  CI:            pending
+  MERGE:         filled at the merge
+  BUGBOT:        read only after CI
+  CI WATCH:      pending until the merge
+  DEVIATIONS:    1. A pre-P-62 capture file existed
+                 before the S4 launch check: SHA256
+                 BF503089D9F87EE8A09DEA81274F08A006C3ABD72C4364965FD9B8864183F254,
+                 captured_at 2026-11-13T01:25:04.358829+00:00, git.sha
+                 3a2d4f1e, dirty false; its captured_at is 11 s after
+                 that session's profile refresh ended
+                 (2026-11-13T01:24:53Z), so it was most likely that
+                 session's own capture backgrounded by the runner
+                 timeout (F-T13-2). Set aside to
+                 feelies-probes\P-62\aside\baseline_pre-P-62.found.json
+                 and retaken once (D-240). 2. Long runs in this rung ran
+                 detached with exit-code files and were polled
+                 (F-T13-2). 3. The first hot-path profile launch, PID
+                 26288, exited 1 before perfmeasure started: the log
+                 redirect quotes were stripped and no log was written.
+                 Relaunched as PID 9716, exit 0, which is the S4
+                 profile. 4. The first S5 synthetic battery launch, PID
+                 24544, exited 4. pytest reported "ERROR: file or
+                 directory not found: battery_real" because the marker
+                 expression was split on a space. No node log was
+                 written. Relaunched with the marker expression as one
+                 argument, PID 18732, exit 1, which is the fail-first
+                 synthetic gate. 5. Capture, profile, and gate commands
+                 ran as uv run --no-sync --offline so this rung would
+                 not sync or install. The contract text is uv run.
+  STANDING:      the contract is version 5 (T-12,
+                 D-240); stage E; both gates wired
+                 (D-246).
+  EVIDENCE:      P-62 censuses 1-7 and trials t1 and
+                 t2; T-13 trial t2 (T5).
+  F-T13-2:       recurred in P-62; destination a
+                 contract rung (T-14) after the
+                 rollover.

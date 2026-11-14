@@ -1527,6 +1527,70 @@ reaches a fill's quote through the ack.
     no survivor, controls 0; universe check 1 passed.
   - Supersedes: none. P-62's design entry becomes D-246.
 
+D-246 — P-62: both gates wired; stage E.
+  - Decided by: operator, phase 14 chat 12 (AskUserQuestion, 2026-11-09 to
+    2026-11-13), on P-62 censuses 1-7 and trials t1 and t2 at 87f4a223,
+    after T-13 (D-245).
+  - Answer: engine.py evaluates both pure gates (D-243, D-244) on every
+    rail event of every open cell, OPEN and EXITING, on the one frozen
+    snapshot; publishes the ADVERSE then the FAVORABLE GateDecision; then
+    resolves. stage.txt is E (D-241); all eleven members are green.
+  - Interpretations: (1) ADVERSE GateDecision: outcome fire or hold;
+    reason is the trigger (LEVEL, BLIND) on fire or escalation, else
+    empty; reference_ticks = drawn_level_ticks = L; reference_sequence 0;
+    form empty; proposed price the forced_exit_mark. (2) FAVORABLE
+    GateDecision: outcome fire, none or suppressed; reason and
+    suppressions from the gate; reference_ticks X or R; reference_sequence
+    the peak's sequence, else 0; drawn_level_ticks 0; form from the
+    policy; proposed price the dwelled_exit_mark. (3) In EXITING (D-95,
+    D-233, D-237) an ADVERSE fire publishes ESCALATION_NOOP when the live
+    reason is HORIZON, INVALIDATION or FAVORABLE and hold when it is
+    ADVERSE; a FAVORABLE fire publishes none; no order. (4) OPEN resolve:
+    triggered paths in rank ADVERSE > HORIZON > INVALIDATION > FAVORABLE,
+    the first wins; path prices are the forced_exit_mark, FAVORABLE's the
+    dwelled_exit_mark; the close's proposed price is the worst (LONG min,
+    SHORT max); with no usable mark, no paths and price None (D-218).
+    triggered_paths holds the deciding event's paths only (§2:300);
+    escalations stay as ESCALATION_NOOP decisions. Triggers: ADVERSE LEVEL
+    or BLIND, HORIZON DEADLINE, INVALIDATION INVALIDATION, FAVORABLE FIXED
+    or TRAILING. Requirement reasons ADVERSE_EXCURSION, HORIZON,
+    INVALIDATION, FAVORABLE_EXCURSION (D-47). (5) Close flags:
+    exited_on_unusable_data when the deciding path is ADVERSE with trigger
+    BLIND; stop_inside_round_trip when L <= entry_spread_ticks +
+    fee_round_trip_ticks; target_inside_round_trip when the fixed form is
+    disarmed; drawn_level_ticks is L, recomputed, never stored. (6)
+    GateDecision.proposed_price_cents widens to int | None (D-99; field
+    names unchanged, no pin moves). AS-17 still covers the adverse
+    reference_sequence and the favorable drawn_level_ticks and
+    reference_sequence without a peak.
+  - Operator declaration (exempt economic route, D-190; not among the 64
+    parity constants): R-SYN in tests/harness/test_economic_trade_hash_pins.py,
+    trade count 29 -> 30; ECONOMIC_TRADE_HASH_RSYN
+    b62b42d2dcc8e7315ca4d75de9b6748af605a6d280ed424dac0edd9cacfd4535 ->
+    72ee12faec3b32d4e67f66f1ede2a86eb2d19e89da3417b95ec639a64bc8f0d7.
+    Mechanism: the production engine now exits cells on ADVERSE and
+    FAVORABLE. Measured in P-62 trial t2; not cited as an economic
+    improvement.
+  - Blast radius platform-wide (wires a safety control). Engine
+    independence: production sessions never opened the reference.
+  - Evidence: P-62-t1.diff SHA256
+    186B3A40CEC71B7491DDAE3E4AC077B47A846598086352659B6AAE1C8E018725,
+    applied byte-identically; with T-13 at E, production battery
+    synthetic 117 passed, 11 deselected and real 14 passed, reds 0 (T-13
+    trial t2, T5).
+  - Prediction (pre-registered): fail first (stage E alone) production
+    battery synthetic 29 failed, 88 passed, 11 deselected; real 4 failed,
+    10 passed, 5510 deselected. After wiring and the re-pin: full suite
+    5478 passed, 0 failed, 44 skipped, 2 xfailed; tests/position_engine
+    342; prepush and CI Tests 5459 passed, 5 skipped, 59 deselected, 1
+    xfailed; -n 4 5459 passed, 5 skipped, 1 xfailed; determinism 148;
+    parity constants 64 -> 64, changed 0; fingerprint unchanged; mypy 259
+    source files; ruff format 819 files; lint-imports 2 kept, 0 broken;
+    production battery at E: synthetic 117 passed, 11 deselected, real 14
+    passed, 5510 deselected, reds 0; R-SYN 30 trades and the declared
+    hash; universe check 1 passed.
+  - Supersedes: none.
+
 ### D-66 pre-registered prediction
 
 ```

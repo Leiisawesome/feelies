@@ -19,7 +19,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 _EIGHT = ("APP", "CROX", "DIOD", "ENSG", "MLI", "OLN", "PCTY", "RMBS")
 
 ECONOMIC_TRADE_HASH_RFIX = "61a12456fcd669c48512f4d5e76ea29119387d2aea917aa89252e89bdbc81b36"
-ECONOMIC_TRADE_HASH_RSYN = "b62b42d2dcc8e7315ca4d75de9b6748af605a6d280ed424dac0edd9cacfd4535"
+ECONOMIC_TRADE_HASH_RSYN = "72ee12faec3b32d4e67f66f1ede2a86eb2d19e89da3417b95ec639a64bc8f0d7"
 ECONOMIC_TRADE_HASH_EIGHT = "aae3847abdb29b4524b7a285d13784058fbcce0f3c5cd0682f8877c6a3e84484"
 
 
@@ -56,7 +56,7 @@ def test_rsyn_economic_trade_hash() -> None:
     tape = make_tape(seed=11, n=36000, symbol="SYN", start_ns=T0, size=1000)
     orchestrator = _capture(lambda: _execute_synthetic(tape, ("SYN",), None, None, True, None))
     records = list(orchestrator.trade_journal.query())
-    assert len(records) == 29
+    assert len(records) == 30
     assert compute_economic_trade_hash(orchestrator) == ECONOMIC_TRADE_HASH_RSYN
 
 

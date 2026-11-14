@@ -1138,7 +1138,7 @@ class GateDecision(Event):
     outcome: str
     reason: str
     form: str
-    proposed_price_cents: int = field(metadata={"unit": "cent"})
+    proposed_price_cents: int | None = field(metadata={"unit": "cent"})
     reference_ticks: int = field(metadata={"unit": "tick"})
     reference_sequence: int = field(metadata={"unit": "1"})
     drawn_level_ticks: int = field(metadata={"unit": "tick"})
