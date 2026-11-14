@@ -37350,10 +37350,38 @@ OWNER:       campaign 15.
                  passed. MATCH.
                  Battery and mutant runs not run: no
                  code changed.
-  CI:            pending
-  MERGE:         filled at the merge
-  BUGBOT:        read only after CI
-  CI WATCH:      pending until the merge
+  CI:            PR head 43574285462 success at 4b03ccaf
+                 (check 1033 s, parity oracle 387 s,
+                 reference battery 629 s, kill A 218 s,
+                 kill B 180 s, reference battery (real)
+                 skipped); Tests 5461 passed, 5 skipped,
+                 1 xfailed in 923.95s; determinism 148
+                 passed in 11.06s; KILLED A 9, B 16.
+                 Merge run 43577872718 success at 0e90a79f
+                 (check 1041 s, parity oracle 484 s,
+                 reference battery 712 s, kill A 274 s,
+                 kill B 190 s, reference battery (real)
+                 skipped); Tests 5461 passed, 5 skipped,
+                 1 xfailed in 931.54s; determinism 148
+                 passed in 11.00s; KILLED A 9, B 16.
+  MERGE:         0e90a79f9ed362e92e9fbbc069fb767356d81158,
+                 parents
+                 6b515db92829e8c698dc8ff2602b8c5d147decd4
+                 and
+                 4b03ccaf89d2500997e74120fbfab77f9ef4f94b,
+                 tree
+                 461c4f8e38d37ac61ebf108b7858b72b43133d2b
+                 = PR head tree. PR #313, opened as a
+                 draft and marked ready in the merge
+                 session. Merged 2026-11-14T08:52:34Z.
+  BUGBOT:        pass (2m44s); no issues found; no
+                 comments, no reviews.
+  CI WATCH:      head 1033 s, ratio 923.95 / 11.06 = 83.54;
+                 merge 1041 s, ratio 931.54 / 11.00 = 84.69.
+                 Two-run geometric mean 84.11; D-209
+                 fired yes (cost trigger; timeout guard
+                 no). Per D-209 the merge proceeds; the
+                 next code rung waits on a tooling census.
   DEVIATIONS:    none.
   STANDING:      the contract is version 6 (T-14,
                  D-247); stage E. PYTHONHASHSEED unset
