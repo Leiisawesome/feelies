@@ -37194,10 +37194,45 @@ OWNER:       campaign 15.
                  appended a "Made with Cursor" line on #311 and #312;
                  the T-13 MERGE field's apostrophe cause is not
                  supported by #312, whose body has no apostrophe.
-  CI:            pending
-  MERGE:         filled at the merge
-  BUGBOT:        read only after CI
-  CI WATCH:      pending until the merge
+  CI:            PR head 43541414425 success at f7ff602c
+                 (check 754 s, parity oracle 886 s,
+                 reference battery 512 s, kill A 277 s,
+                 kill B 327 s, reference battery (real)
+                 skipped); Tests 5461 passed, 5 skipped,
+                 1 xfailed in 651.61s; determinism 148
+                 passed in 7.98s; KILLED A 9, B 16.
+                 Earlier head run 43412585593 on fdae4bab
+                 (check 724 s, 636.13 / 7.74) superseded
+                 by the amendment f7ff602c.
+                 Merge run 43545445005 success at c874f845
+                 (check 1058 s, parity oracle 551 s,
+                 reference battery 523 s, kill A 203 s,
+                 kill B 245 s, real skipped); Tests 5461
+                 passed, 5 skipped, 1 xfailed in 945.24s;
+                 determinism 148 passed in 11.20s;
+                 KILLED A 9, B 16.
+  MERGE:         c874f845dd015e2553c7508c21cf11f78a68247a,
+                 parents
+                 1cecc34dbb1405d2b2802e0abd3249108cdd9d0a
+                 and
+                 f7ff602c9b4490d30d651c6cfdccc0f95c2f7641,
+                 tree
+                 9411810ead17f1251243b68cceef234b8bf15918
+                 = head tree. PR #312, opened as a
+                 draft and marked ready in the merge
+                 session. Merged 2026-11-14T02:17:13Z.
+  BUGBOT:        review PRR_kwDORcI_Jc8AAAABXw7IRg on
+                 fdae4bab: 1 Medium finding ("Blind
+                 flag leaks onto non-gate closes"),
+                 destination AMENDMENT, closed by FIX
+                 2787ee60; on f7ff602c pass 1m3s, no new
+                 issues.
+  CI WATCH:      head 754 s, ratio 651.61 / 7.98 = 81.66;
+                 merge 1058 s, ratio 945.24 / 11.20 = 84.40.
+                 Two-run geometric mean 83.01; D-209
+                 fired yes (cost trigger; timeout guard
+                 no). Per D-209 the merge proceeds; the
+                 next code rung waits on a tooling census.
   DEVIATIONS:    1. A pre-P-62 capture file existed
                  before the S4 launch check: SHA256
                  BF503089D9F87EE8A09DEA81274F08A006C3ABD72C4364965FD9B8864183F254,
