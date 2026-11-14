@@ -108,6 +108,25 @@ class StrategyPositionStore:
         for store in self._stores.values():
             store.update_mark(symbol, mark_price, bid=bid, ask=ask)
 
+    def reference_mid(self, symbol: str) -> Decimal | None:
+        """Reference mid forwarded from the per-strategy books."""
+        for store in self._stores.values():
+            mid = store.reference_mid(symbol)
+            if mid is not None:
+                return mid
+        return None
+
+    def mark_stale(self, symbol: str) -> None:
+        """Flag every per-strategy book stale for this symbol."""
+        for store in self._stores.values():
+            store.mark_stale(symbol)
+
+    def is_mark_stale(self, symbol: str) -> bool:
+        """True when no book holds a fresh valid bid and ask for the symbol."""
+        if not self._stores:
+            return True
+        return all(store.is_mark_stale(symbol) for store in self._stores.values())
+
     def get_aggregate(self, symbol: str) -> Position:
         """Net position across all strategies for a symbol.
 
@@ -285,6 +304,15 @@ class _AggregateView:
         ask: Decimal | None = None,
     ) -> None:
         self._parent.update_mark(symbol, mark_price, bid=bid, ask=ask)
+
+    def reference_mid(self, symbol: str) -> Decimal | None:
+        return self._parent.reference_mid(symbol)
+
+    def mark_stale(self, symbol: str) -> None:
+        self._parent.mark_stale(symbol)
+
+    def is_mark_stale(self, symbol: str) -> bool:
+        return self._parent.is_mark_stale(symbol)
 
     def all_positions(self) -> dict[str, Position]:
         return self._parent.all_aggregate_positions()

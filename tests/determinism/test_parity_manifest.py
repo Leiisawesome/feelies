@@ -182,6 +182,17 @@ _UNREGISTERED_HASH_EXEMPTIONS: dict[str, str] = {
     # cache is absent. Locked locally in the cache-gated acceptance test.
     "_BASELINE_TRADE_PARITY_HASH": "data-gated APP trade baseline "
     "(tests/acceptance/test_backtest_app_baseline.py)",
+    # Companion of the trade parity hash with order_id removed. Not a replay
+    # stream, so it has no (hash, count) manifest row. The parity hash stays
+    # the identity pin; these constants are the economic pin.
+    "ECONOMIC_TRADE_HASH": "order_id-excluded APP trade hash "
+    "(tests/acceptance/test_backtest_app_baseline.py)",
+    "ECONOMIC_TRADE_HASH_RFIX": "order_id-excluded R-FIX trade hash "
+    "(tests/harness/test_economic_trade_hash_pins.py)",
+    "ECONOMIC_TRADE_HASH_RSYN": "order_id-excluded R-SYN trade hash "
+    "(tests/harness/test_economic_trade_hash_pins.py)",
+    "ECONOMIC_TRADE_HASH_EIGHT": "order_id-excluded eight-name trade hash "
+    "(tests/harness/test_economic_trade_hash_pins.py)",
     # CPCV fold-PnL-curve hashes over committed JSON fixtures — they pin fixture
     # *data* against silent regeneration, not an event stream produced by a
     # replay, so there is nothing for _REPLAY_BY_NAME to call.
@@ -396,7 +407,8 @@ def test_scanner_sees_dict_and_underscore_bindings(tmp_path: Path) -> None:
 # ``StrategyPositionStore`` or hashes order/state streams rather than the journal,
 # so per-strategy re-attribution was invisible to the whole corpus. See
 # ``test_forced_exit_attribution_replay.py``.
-EXPECTED_MANIFEST_FINGERPRINT = "ff2ca64cbd9d56250aab7ef68b9012b0c9595289f9d65c47ff3813cb94654acc"
+# P-10: five position engine event types
+EXPECTED_MANIFEST_FINGERPRINT = "fdf270da3b4384f5af5c29bd2fb3bb3b6f38690944104709384b085d0bbe8e05"
 
 
 def test_manifest_fingerprint_matches_locked_value() -> None:

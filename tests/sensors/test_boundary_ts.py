@@ -36,16 +36,14 @@ def test_scheduler_stamps_nominal_boundary_vs_trigger_on_sparse_tape() -> None:
         session_open_ns=_OPEN,
         sequence_generator=SequenceGenerator(),
     )
-    # First event lands 95 s in — it crosses the 90 s boundary (k=3) but
-    # arrives 5 s late.
+    # First event lands 95 s in. Every skipped boundary is emitted, in order.
+    # The nominal grid time stays the boundary; the trigger time stays the event.
     trigger = _OPEN + 95 * _NS
     ticks = sched.on_event(_quote(trigger))
-    assert ticks, "expected a boundary tick"
+    symbol = [tick for tick in ticks if tick.scope == "SYMBOL"]
+    assert [tick.boundary_index for tick in symbol] == [0, 1, 2, 3]
     for tick in ticks:
-        assert tick.boundary_index == 3
-        # Nominal boundary is the exact grid point ...
-        assert tick.boundary_ts_ns == _OPEN + 90 * _NS
-        # ... while the event/trigger time is 5 s later.
+        assert tick.boundary_ts_ns == _OPEN + tick.boundary_index * 30 * _NS
         assert tick.timestamp_ns == trigger
         assert tick.boundary_ts_ns < tick.timestamp_ns
 

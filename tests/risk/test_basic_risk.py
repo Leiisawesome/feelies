@@ -249,7 +249,7 @@ class TestCheckOrder:
         )
         engine = BasicRiskEngine(cfg)
         store.update("AAPL", 500, Decimal("100.00"))
-        store.update_mark("AAPL", Decimal("80.00"))
+        store.update_mark("AAPL", Decimal("80.00"), bid=Decimal("80.00"), ask=Decimal("80.01"))
         verdict = engine.check_signal(_make_signal(), store)
         assert verdict.action == RiskAction.FORCE_FLATTEN
         assert "drawdown" in verdict.reason
@@ -323,7 +323,7 @@ class TestMarkToMarketExposureAndDrawdown:
         # Small position so exposure stays well under cap; the 20%
         # adverse mark gives a $2k unrealized loss = 2% drawdown.
         store.update("AAPL", 100, Decimal("100"))
-        store.update_mark("AAPL", Decimal("80"))
+        store.update_mark("AAPL", Decimal("80"), bid=Decimal("80"), ask=Decimal("80.01"))
 
         order = _make_order(side=Side.BUY, quantity=10)
         verdict = engine.check_order(order, store)
@@ -661,7 +661,7 @@ class TestNonPositiveEquityForceFlattens:
         engine = BasicRiskEngine(cfg)
         # Unrealized loss of $120k drives live equity to −$20k.
         store.update("AAPL", 2000, Decimal("100"))
-        store.update_mark("AAPL", Decimal("40"))
+        store.update_mark("AAPL", Decimal("40"), bid=Decimal("40"), ask=Decimal("40.01"))
 
         order = _make_order(symbol="MSFT", side=Side.BUY, quantity=10)
         verdict = engine.check_order(order, store)
@@ -684,7 +684,7 @@ class TestNonPositiveEquityForceFlattens:
         )
         # Unrealized loss of $120k drives live equity to -$20k.
         store.update("AAPL", 2000, Decimal("100"))
-        store.update_mark("AAPL", Decimal("40"))
+        store.update_mark("AAPL", Decimal("40"), bid=Decimal("40"), ask=Decimal("40.01"))
 
         order = _make_order(symbol="MSFT", side=Side.BUY, quantity=10)
         verdict = engine.check_order(order, store)

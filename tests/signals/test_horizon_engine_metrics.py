@@ -6,6 +6,7 @@ Metrics use a dedicated sequence so they cannot perturb signal parity.
 from __future__ import annotations
 
 from feelies.bus.event_bus import EventBus
+from feelies.core.clock import SimulatedClock
 from feelies.core.events import Signal, SignalDirection
 from feelies.core.identifiers import SequenceGenerator
 from feelies.monitoring.in_memory import InMemoryMetricCollector
@@ -27,6 +28,7 @@ def _engine_with_metrics() -> tuple[
     engine = HorizonSignalEngine(
         bus=bus,
         signal_sequence_generator=SequenceGenerator(),
+        clock=SimulatedClock(start_ns=1),
         metric_collector=collector,
     )
     captured: list[Signal] = []

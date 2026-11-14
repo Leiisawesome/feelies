@@ -25,6 +25,7 @@ from typing import Protocol
 _logger = logging.getLogger(__name__)
 
 from feelies.bus.event_bus import EventBus
+from feelies.core.clock import Clock, SimulatedClock
 from feelies.core.events import (
     Alert,
     AlertSeverity,
@@ -129,7 +130,7 @@ def _should_suppress_entry(
 
 def _resolve_mark(symbol: str, current: object, positions: PositionStore) -> Decimal:
     """Return the best-available mark for translating USD -> shares."""
-    latest = getattr(positions, "latest_mark", None)
+    latest = getattr(positions, "reference_mid", None)
     if callable(latest):
         try:
             m = latest(symbol)
@@ -195,8 +196,10 @@ class BasicRiskEngine:
         trading_session_bounds: _SessionBounds | None = None,
         account_id: str = "default",
         warn_on_inert_entry_gates: bool = False,
+        clock: Clock | None = None,
     ) -> None:
         self._config = config
+        self._clock = clock if clock is not None else SimulatedClock(start_ns=0)
         self._regime_states = regime_states
         self._high_water_mark = config.account_equity
         self._regime_scale_map: dict[str, float] = {
@@ -291,7 +294,7 @@ class BasicRiskEngine:
             return _emit_risk(
                 "RT.EXPOSURE_LIMITS",
                 RiskVerdict(
-                    timestamp_ns=signal.timestamp_ns,
+                    timestamp_ns=self._clock.now_ns(),
                     correlation_id=signal.correlation_id,
                     sequence=signal.sequence,
                     symbol=signal.symbol,
@@ -301,7 +304,7 @@ class BasicRiskEngine:
             )
 
         shared = self._check_exposure_and_drawdown(
-            signal.timestamp_ns,
+            self._clock.now_ns(),
             signal.correlation_id,
             signal.sequence,
             signal.symbol,
@@ -315,7 +318,7 @@ class BasicRiskEngine:
         return _emit_risk(
             "RT.VERDICT_COMPOSE",
             RiskVerdict(
-                timestamp_ns=signal.timestamp_ns,
+                timestamp_ns=self._clock.now_ns(),
                 correlation_id=signal.correlation_id,
                 sequence=signal.sequence,
                 symbol=signal.symbol,
@@ -342,7 +345,7 @@ class BasicRiskEngine:
             return _emit_risk(
                 "RT.DRAWDOWN_TIER",
                 RiskVerdict(
-                    timestamp_ns=order.timestamp_ns,
+                    timestamp_ns=self._clock.now_ns(),
                     correlation_id=order.correlation_id,
                     sequence=order.sequence,
                     symbol=order.symbol,
@@ -390,7 +393,7 @@ class BasicRiskEngine:
             return _emit_risk(
                 "RT.EXPOSURE_LIMITS",
                 RiskVerdict(
-                    timestamp_ns=order.timestamp_ns,
+                    timestamp_ns=self._clock.now_ns(),
                     correlation_id=order.correlation_id,
                     sequence=order.sequence,
                     symbol=order.symbol,
@@ -411,7 +414,7 @@ class BasicRiskEngine:
             + additional_exposure
         )
         shared = self._check_exposure_and_drawdown(
-            order.timestamp_ns,
+            self._clock.now_ns(),
             order.correlation_id,
             order.sequence,
             order.symbol,
@@ -426,7 +429,7 @@ class BasicRiskEngine:
         return _emit_risk(
             "RT.VERDICT_COMPOSE",
             RiskVerdict(
-                timestamp_ns=order.timestamp_ns,
+                timestamp_ns=self._clock.now_ns(),
                 correlation_id=order.correlation_id,
                 sequence=order.sequence,
                 symbol=order.symbol,
@@ -481,7 +484,7 @@ class BasicRiskEngine:
             return
         self._bus.publish(
             Alert(
-                timestamp_ns=intent.timestamp_ns,
+                timestamp_ns=self._clock.now_ns(),
                 correlation_id=intent.correlation_id,
                 sequence=self._alert_seq.next(),
                 source_layer="RISK",
@@ -571,7 +574,7 @@ class BasicRiskEngine:
         return _emit_risk(
             "RT.BUYING_POWER",
             RiskVerdict(
-                timestamp_ns=order.timestamp_ns,
+                timestamp_ns=self._clock.now_ns(),
                 correlation_id=order.correlation_id,
                 sequence=order.sequence,
                 symbol=order.symbol,
@@ -609,7 +612,7 @@ class BasicRiskEngine:
         return _emit_risk(
             "RT.SESSION_ADMISSION",
             RiskVerdict(
-                timestamp_ns=order.timestamp_ns,
+                timestamp_ns=self._clock.now_ns(),
                 correlation_id=order.correlation_id,
                 sequence=order.sequence,
                 symbol=order.symbol,
@@ -671,7 +674,7 @@ class BasicRiskEngine:
             return _emit_risk(
                 "RT.BUYING_POWER",
                 RiskVerdict(
-                    timestamp_ns=order.timestamp_ns,
+                    timestamp_ns=self._clock.now_ns(),
                     correlation_id=order.correlation_id,
                     sequence=order.sequence,
                     symbol=order.symbol,
@@ -874,8 +877,9 @@ class BasicRiskEngine:
     def _regime_scaling(self, symbol: str) -> float:
         """Return ``sum(p_i * scale_i)`` for smooth limit tightening.
 
-        Missing posteriors and unknown states use the minimum scale. A missing
-        regime engine means scaling was explicitly disabled and returns 1.0.
+        Missing posteriors, an uncalibrated state, and unknown states use the
+        minimum scale. A missing regime engine means scaling was explicitly
+        disabled and returns 1.0.
         """
         if self._regime_states is None:
             return 1.0
@@ -883,7 +887,8 @@ class BasicRiskEngine:
         # Read the *published* snapshot, not the live engine: risk and the signal
         # layer must scale and gate on the same announced state (Inv-8).
         state = self._regime_states.latest(symbol)
-        if state is None or not state.posteriors:
+        # An uncalibrated posterior carries no more information than a missing one.
+        if state is None or not state.posteriors or not state.calibrated:
             return self._regime_scale_default
 
         posteriors = state.posteriors

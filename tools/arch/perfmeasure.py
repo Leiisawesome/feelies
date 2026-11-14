@@ -692,9 +692,7 @@ SENSOR_INFO: dict[str, Any] = {}
 
 
 @contextlib.contextmanager
-def _sensor_registration_recorder(
-    *, prune: bool, drop_id: str | None = None
-) -> Iterator[None]:
+def _sensor_registration_recorder(*, prune: bool, drop_id: str | None = None) -> Iterator[None]:
     """Record the sensor specs the platform ends up registering.
 
     Wraps the single pruning call so the count is observed rather than inferred,
@@ -808,9 +806,7 @@ def mode_sensorscale(
     """
     _install_arming_probe()
     points = [
-        _best_unprobed_sensor_leg(
-            symbols, date, config_path, repeats, label=label, prune=prune
-        )
+        _best_unprobed_sensor_leg(symbols, date, config_path, repeats, label=label, prune=prune)
         for label, prune in (("pruned", True), ("all_declared", False))
     ]
 
@@ -1123,7 +1119,16 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     if args.mode == "profile":
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from tools.arch.hotpath import config_closure, source_fingerprint
+
         payload["profile"] = mode_profile(symbols, date, args.config)
+        closure = config_closure(Path(args.config))
+        payload["profile"]["source_fingerprint_configs"] = [
+            path.relative_to(ROOT).as_posix() for path in closure
+        ]
+        payload["profile"]["source_fingerprint"] = source_fingerprint(closure)
         out = args.out or "hotpath_executed.json"
     elif args.mode == "census":
         _install_census_probes()

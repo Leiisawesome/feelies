@@ -121,14 +121,24 @@ def paper_session(
     None,
 ]:
     """Run ``run_paper.main`` in-process; capture orchestrator + bus."""
+    import importlib.util
+    import sys
+
+    import yaml
+
+    from tests.broker.ib._paper_guard import assert_paper_target
+
+    repo_root = Path(__file__).resolve().parents[2]
+    config_path = repo_root / "configs" / "paper_smoke_rth.yaml"
+    if not config_path.is_file():
+        pytest.skip(f"Missing smoke config: {config_path}")
+    loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert_paper_target(int(loaded["paper"]["ib_port"]))
+
     require_rth_window()
     require_ib_gateway()
     require_massive_api_key()
 
-    import importlib.util
-    import sys
-
-    repo_root = Path(__file__).resolve().parents[2]
     run_paper_path = repo_root / "scripts" / "run_paper.py"
     spec = importlib.util.spec_from_file_location("run_paper", run_paper_path)
     assert spec is not None and spec.loader is not None
