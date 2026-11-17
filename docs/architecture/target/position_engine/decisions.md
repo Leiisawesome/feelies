@@ -1627,6 +1627,55 @@ labels (T-14).
     IMPL; universe check 1 passed.
   - Supersedes: D-240's long-run clause only.
 
+D-248 — CI watch re-anchored after P-62; check job timeout 25 minutes
+(T-15).
+  - Decided by: operator, phase 14 chat 13 (2026-11-15), on the T-15c and
+    T-15c2 censuses and the T-15p2 timing probe at 1acedfb8.
+  - Tooling census (D-209). D-209 fired at P-62 (mean 83.01) and T-14
+    (84.11). Run ratios T-10 to T-13 ranged 63.02 to 67.99; P-62 and T-14
+    gave 81.66, 84.40, 83.54, 84.69; determinism 148 throughout. Probe
+    T-15p2 (local, CPython 3.12.13, -n 4, 1cecc34d against c874f845):
+    per-test sum 1064.96 s -> 1261.58 s (+196.62 s);
+    test_battery_m7_monotonicity.py +221.64 s (test_m7_band 0.17 s ->
+    135.55 s), member 7 running in full at stage E (P-62, D-241);
+    tests/harness/ +1.67 s. The cost is test apparatus, not the production
+    path, and is accepted.
+  - Re-anchor. Reference 75.09 -> 83.56: the geometric mean of the four
+    post-P-62 run ratios (651.61 / 7.98, 945.24 / 11.20, 923.95 / 11.06,
+    931.54 / 11.00). Sigma 0.0382, unchanged (D-209's run set). Threshold
+    81.43 -> 90.61 = reference x exp(3 x 0.0382 / sqrt(2)). Computed with
+    python in T-15; tools/exec/ci_watch.py needs 12 runs and is not used.
+    tests/conformance/test_ci_watch.py keeps pinning the T-5 derivation.
+  - Timeout. ci.yml check job timeout-minutes 20 -> 25 (ci.yml:51); the
+    guard at 90% moves 1080 s -> 1350 s. Check jobs reached 1033 to
+    1058 s. Other jobs unchanged.
+  - ASSUMES: the four post-P-62 runs stand for the stage-E workload.
+    TOLERABLE BECAUSE: their spread is 0.036 in log units, under one
+    sigma, and a false fire costs one census.
+    FALSIFIED BY: two fires in a row whose tooling census finds no cost
+    change (as D-209).
+    EXPIRES WHEN: 12 completed pull_request runs since the P-62 merge
+    exist (re-derive with tools/exec/ci_watch.py on a new run set, under
+    an operator gh-read authorisation), or P-99.
+    BLAST RADIUS: merge pacing and the check job's hard limit; no code path
+    reads either.
+  - Records F-T15c-1 (ci_watch.py takes no flags; --help is read as a
+    path), F-T15p-1 (stale worktree admin dirs that prune cannot delete),
+    F-T15p-2 (member 7 cost, test_m7_band 135 s; unscheduled), F-T15p-3
+    (a detached log shows stderr as NativeCommandError; the exit file
+    decides).
+  - E0 none: configuration, docs and agent rules only (as T-14, D-247).
+  - Prediction (pre-registered): no src or test change; full suite 5480
+    passed, 0 failed, 44 skipped, 2 xfailed at pre and post; determinism
+    148; parity constants 64 -> 64, changed 0; fingerprint unchanged;
+    prepush ruff check passes, ruff format 820 files, mypy 259 source
+    files, lint-imports 2 kept 0 broken, 5461 passed, 5 skipped, 59
+    deselected, 1 xfailed; -n 4 5461 passed, 5 skipped, 1 xfailed; docs
+    tests, test_doc_integrity.py and tests/conformance/test_ci_*.py green
+    with the same counts on SPEC and IMPL; universe check 1 passed.
+  - Supersedes: D-209's reference, threshold and timeout figure only; its
+    method, sigma and rules stand.
+
 ### D-66 pre-registered prediction
 
 ```

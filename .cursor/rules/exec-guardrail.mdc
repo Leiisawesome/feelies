@@ -1,5 +1,5 @@
 ---
-description: Phase-14 standing contract (position engine, backtest only). Binds every Cursor session in this repo until P-99. Version 6 (T-14, D-247).
+description: Phase-14 standing contract (position engine, backtest only). Binds every Cursor session in this repo until P-99. Version 7 (T-15, D-248).
 alwaysApply: true
 ---
 
@@ -149,13 +149,13 @@ The Claude chat rollover limit is 3 merged steps (playbook v1.2; D-202).
   fixed in the rung or recorded with a destination rung. The merge stops on
   any finding without one.
 - Stop at the step boundary. Do not begin the next step.
-- CI watch (D-209). Every merge report prints the check job's seconds and the
-  ratio Tests / Determinism for the PR-head run and for the merge run, each
-  from pytest's final summary line in that check job's log, and the geometric
-  mean of the two ratios. A mean above 81.43, or a check job above 90% of the
-  check job's timeout-minutes (1080 s at 20), fires: the merge proceeds, and
-  the next code rung waits on a tooling census. 81.43 moves only by an
-  operator D-entry.
+- CI watch (D-209, D-248). Every merge report prints the check job's seconds
+  and the ratio Tests / Determinism for the PR-head run and for the merge
+  run, each from pytest's final summary line in that check job's log, and
+  the geometric mean of the two ratios. A mean above 90.61, or a check job
+  above 90% of the check job's timeout-minutes (1350 s at 25), fires: the
+  merge proceeds, and the next code rung waits on a tooling census. 90.61
+  moves only by an operator D-entry.
 
 ## Engine independence
 - src/ never imports tests/. The reference imports only the D-92 allowlist.
