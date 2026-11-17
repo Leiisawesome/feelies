@@ -37400,3 +37400,133 @@ OWNER:       campaign 15.
                  the background at its block_until_ms
                  was aborted, exit 1, process gone
                  (T-14p B2, Cursor 3.2.11).
+
+## T-15 CI watch re-anchored; check timeout 25; contract version 7
+
+  VERDICT:       passed
+  DECISIONS:     D-248, operator chat 13, on the
+                 T-15c and T-15c2 censuses and the
+                 T-15p2 probe at 1acedfb8.
+  E0:            none. Configuration, docs and agent
+                 rules only.
+  TREE:          none.
+  SPEC:          c37f5a56229092daa2b0b97c067c38c14ba55eea.
+                 D-248 and the T-15 plan row.
+                 Parity hold.
+  IMPL:          IMPL1
+                 f72bb17ad02955842955a3659de8ba36bef715c6.
+                 Contract version 7, blob
+                 1e15aebd417cda3b450f1ea055cece50c69b6cdc,
+                 179 lines. IMPL2
+                 4cd1e4a04e268a27a88b1184fffff01e916c3690.
+                 ci.yml check timeout-minutes 20 -> 25,
+                 blob
+                 57f33fdb26d4f87cc9f9a336a84c020c150e5772.
+  BASE:          e80f7a6de7b01c530293afd1bb75ecb6dfc7163c.
+                 Branch base
+                 1acedfb834d5e5c517d10015d0360c36f4f07b6c. pre
+                 baseline_pre-T-15.json on
+                 c37f5a56229092daa2b0b97c067c38c14ba55eea,
+                 captured_at
+                 2026-11-15T02:37:07.500609+00:00, git.dirty
+                 false. Full suite 5480 passed, 0 failed,
+                 44 skipped, 2 xfailed (5480 passed, 44
+                 skipped, 2 xfailed, 49 warnings in
+                 2814.20s (0:46:54)); determinism 148 (148
+                 passed, 1 warning in 13.23s); parity
+                 constants 64; tools_fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. post baseline_post-T-15.json on
+                 4cd1e4a04e268a27a88b1184fffff01e916c3690,
+                 captured_at
+                 2026-11-17T01:31:34.412449+00:00, git.dirty
+                 false. Full suite 5480 passed, 0 failed,
+                 44 skipped, 2 xfailed (5480 passed, 44
+                 skipped, 2 xfailed, 49 warnings in
+                 2688.95s (0:44:48)); determinism 148 (148
+                 passed, 1 warning in 15.96s); same
+                 fingerprint, files 1. compare
+                 parity-only: 64 -> 64, changed 0, parity
+                 HOLDS. Predicted MATCH.
+  GATES:         Docs on SPEC: uv run pytest tests/docs
+                 -q, exit 0. 107 passed, 1 warning in
+                 0.58s. uv run pytest
+                 tests/conformance/test_doc_integrity.py
+                 -q, exit 0. 13 passed, 1 warning in
+                 0.18s. uv run pytest
+                 tests/conformance/test_ci_watch.py
+                 tests/conformance/test_ci_event_cache_guard.py
+                 tests/conformance/test_ci_gate_single_source.py
+                 tests/conformance/test_ci_mutant_control.py
+                 tests/conformance/test_ci_real_job_selection.py
+                 tests/conformance/test_ci_reference_battery_selection.py
+                 -q, exit 0. 15 passed, 1 warning in
+                 1.03s. Predicted green. MATCH.
+                 Docs on IMPL: tests/docs 107 passed, 1
+                 warning in 0.53s;
+                 test_doc_integrity.py 13 passed, 1
+                 warning in 0.17s; the CI conformance
+                 files 15 passed, 1 warning in 0.98s.
+                 Predicted same counts as SPEC, all
+                 pass. MATCH.
+                 Prepush: uv run python
+                 scripts/prepush.py, exit 0. ruff check
+                 All checks passed; ruff format 820
+                 files already formatted; mypy Success:
+                 no issues found in 259 source files;
+                 lint-imports Contracts: 2 kept, 0
+                 broken. Serial 5461 passed, 5 skipped,
+                 59 deselected, 1 xfailed, 49 warnings
+                 in 1078.37s (0:17:58). Predicted ruff
+                 check passes, 820 files already
+                 formatted, mypy 259 source files no
+                 issues, lint-imports 2 kept 0 broken,
+                 serial 5461 passed, 5 skipped, 59
+                 deselected, 1 xfailed. MATCH.
+                 -n 4: uv run pytest -m "not functional
+                 and not paper_rth and not battery_real
+                 and not universe_check" -q -n 4, exit
+                 0. 5461 passed, 5 skipped, 1 xfailed,
+                 53 warnings in 619.99s (0:10:19).
+                 Marker expression reached pytest
+                 intact. Predicted 5461 passed, 5
+                 skipped, 1 xfailed. MATCH.
+                 Universe check: PYTHONHASHSEED 0, uv
+                 run pytest
+                 tests/conformance/test_cap_neutral_universe.py
+                 -q -m universe_check, exit 0. 1 passed
+                 in 171.13s (0:02:51). Predicted 1
+                 passed. MATCH.
+                 Battery and mutant runs not run: no
+                 code changed.
+  CI:            pending until the merge.
+  MERGE:         filled at the merge.
+  BUGBOT:        read only after CI.
+  CI WATCH:      pending until the merge. From this
+                 merge on the threshold is 90.61 and
+                 the guard 1350 s, D-248.
+  DEVIATIONS:    none.
+  STANDING:      the contract is version 7 (T-15,
+                 D-248); stage E. PYTHONHASHSEED unset
+                 in local runs; the universe check ran
+                 at 0. The D-209 tooling census owed
+                 since P-62 is done (T-15c, T-15p2,
+                 T-15c2).
+  EVIDENCE:      T-15c, T-15p2, T-15c2. Detached runs:
+                 profile-pre PID 31556, exit 0;
+                 pre-T-15 PID 31968, exit 0;
+                 profile-post PID 31248, exit 0;
+                 post-T-15 PID 31528, exit 0;
+                 prepush PID 13692, exit 0;
+                 n4 PID 19140, exit 0.
+  F-T15c-1:      recorded (D-248): ci_watch.py takes no
+                 flags; --help is read as a path.
+  F-T15p-1:      recorded (D-248): stale worktree admin
+                 dirs under .git/worktrees that prune
+                 cannot delete (Permission denied).
+  F-T15p-2:      recorded (D-248), unscheduled: member 7
+                 cost at stage E, test_m7_band 135.55 s
+                 locally.
+  F-T15p-3:      recorded (D-248): a detached log shows
+                 stderr as NativeCommandError; the exit
+                 file decides.
