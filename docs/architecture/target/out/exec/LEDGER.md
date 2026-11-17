@@ -37499,12 +37499,37 @@ OWNER:       campaign 15.
                  passed. MATCH.
                  Battery and mutant runs not run: no
                  code changed.
-  CI:            pending until the merge.
-  MERGE:         filled at the merge.
-  BUGBOT:        read only after CI.
-  CI WATCH:      pending until the merge. From this
-                 merge on the threshold is 90.61 and
-                 the guard 1350 s, D-248.
+  CI:            PR head 44006466974 success at 8a72273b
+                 (check 582 s, parity oracle 455 s,
+                 reference battery 613 s, kill A 283 s,
+                 kill B 197 s, reference battery (real)
+                 skipped); Tests 5461 passed, 5 skipped,
+                 1 xfailed in 507.56s; determinism 148
+                 passed in 5.97s; KILLED A 9, B 16.
+                 Merge run 44050960379 success at 3347bb10
+                 (check 735 s, parity oracle 431 s,
+                 reference battery 706 s, kill A 200 s,
+                 kill B 239 s, reference battery (real)
+                 skipped); Tests 5461 passed, 5 skipped,
+                 1 xfailed in 632.29s; determinism 148
+                 passed in 7.77s; KILLED A 9, B 16.
+  MERGE:         3347bb10fbe6b7b51711ded34c706cca7d0db1ea,
+                 parents
+                 1acedfb834d5e5c517d10015d0360c36f4f07b6c
+                 and
+                 8a72273b466088de021610917d903c5f0a44b432,
+                 tree
+                 831373aeb57f4d4880cc05aadfba76268d5cf634
+                 = PR head tree. PR #314, opened as a
+                 draft and marked ready in the merge
+                 session. Merged 2026-11-17T08:55:53Z.
+  BUGBOT:        pass (2m24s); no issues found; no
+                 comments, no reviews.
+  CI WATCH:      head 582 s, ratio 507.56 / 5.97 = 85.02;
+                 merge 735 s, ratio 632.29 / 7.77 = 81.38.
+                 Two-run geometric mean 83.18; D-209
+                 fired no (threshold 90.61, guard 1350 s,
+                 D-248).
   DEVIATIONS:    none.
   STANDING:      the contract is version 7 (T-15,
                  D-248); stage E. PYTHONHASHSEED unset
