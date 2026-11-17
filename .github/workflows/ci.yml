@@ -48,7 +48,7 @@ jobs:
   check:
     name: check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 25
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     strategy:
       # One host today. The matrix is kept so re-adding macos to re-test the
