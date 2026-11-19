@@ -1,0 +1,151 @@
+# ── Identity & Provenance ─────────────────────────────────
+schema_version: "1.1"
+layer: SIGNAL
+alpha_id: sig_position_fixture_v1
+version: "1.0.0"
+
+# RESEARCH is load-enforced (loader._parse_lifecycle_state) and blocks PAPER and
+# LIVE promotion. That is the point: this is a measurement instrument, not a
+# strategy, and it must never reach capital.
+lifecycle_state: RESEARCH
+
+description: |
+  RESEARCH FIXTURE — NOT A STRATEGY. NEVER PROMOTE.
+
+  Deterministic, test-only schedule fixture with no market hypothesis. It emits
+  LONG on odd boundary_index 1, 5, ... and SHORT on odd boundary_index 3, 7, ...,
+  and stays silent on even boundaries. It reads no sensor and no feature.
+
+notes: |
+  Pair with sig_benign_midcap_v1 under configs/bt_netting_contest.yaml.
+  Running this alone is meaningless — it is one half of a deliberate collision.
+
+# ── Hypothesis (causal mechanism) ─────────────────────────
+hypothesis: |
+  None. This is a deterministic, test-only schedule fixture with no market
+  hypothesis.
+
+falsification_criteria:
+  - "not applicable — test fixture"
+
+# ── Layer-1 sensor dependencies ───────────────────────────
+depends_on_sensors: []
+reads_no_sensor: true
+
+# ── Parameters ────────────────────────────────────────────
+# Mirrored from sig_benign_midcap_v1's tuned overrides so the two fire on the
+# same ticks. Changing one without the other breaks the contest.
+parameters:
+  entry_threshold_z:
+    type: float
+    default: 1.5
+    min: 0.5
+    max: 3.0
+    description: Mirror of the counterpart's entry gate on |ofi_ewma_zscore|.
+  edge_per_z_bps:
+    type: float
+    default: 6.0
+    min: 1.0
+    max: 8.0
+    description: Mirror of the counterpart's edge slope.
+  edge_cap_bps:
+    type: float
+    default: 20.0
+    min: 5.0
+    max: 40.0
+    description: Hard cap on reported edge_estimate_bps.
+  imbalance_floor:
+    type: float
+    default: 0.05
+    min: 0.0
+    max: 0.5
+    description: Mirror of the counterpart's confirmation floor.
+  cost_floor_bps:
+    type: float
+    default: 5.0
+    min: 5.0
+    max: 30.0
+    description: |
+      One-way cost floor (half_spread 2.0 + impact 2.0 + fee 1.0). Suppresses
+      entries that would not clear disclosed cost, matching the counterpart so
+      the two are gated alike.
+  strength_cap:
+    type: float
+    default: 2.0
+    min: 1.0
+    max: 4.0
+    description: Convex strength ceiling, mirrored.
+
+# ── Horizon (Layer-2 boundary) ────────────────────────────
+# Must match the counterpart, or the two standing targets expire at different
+# times and the overlap the netter needs is intermittent.
+horizon_seconds: 120
+
+# ── Risk Budget ───────────────────────────────────────────
+# Deliberately small: this alpha exists to be observed, not to move a book.
+# Deliberately LARGER than sig_benign_midcap_v1's 25%. The counterpart's target
+# has to be exceeded, not merely opposed: equal and opposite targets sum to a net
+# of zero, which reads as "netting holds nothing" rather than as the two sides
+# disagreeing about direction. Oversized on purpose, and harmless because
+# lifecycle_state RESEARCH keeps this away from capital.
+risk_budget:
+  max_position_per_symbol: 500
+  max_gross_exposure_pct: 60.0
+  max_drawdown_pct: 5.0
+  capital_allocation_pct: 50.0
+
+# ── Regime gate ───────────────────────────────────────────
+# Mirrored exactly. A different gate would let one side fire while the other is
+# suppressed, which is the "one real target against one zero" shape this alpha
+# exists to avoid producing.
+regime_gate:
+  regime_engine: hmm_3state_fractional
+  on_condition: "True"
+  off_condition: "False"
+
+# ── Cost Arithmetic Disclosure (G12) ──────────────────────
+# Not an edge claim. These numbers exist so the B4 gate admits the order; the
+# alpha's realized economics are irrelevant to what it measures.
+cost_arithmetic:
+  edge_estimate_bps: 9.0
+  half_spread_bps: 2.0
+  impact_bps: 2.0
+  fee_bps: 1.0
+  margin_ratio: 1.8
+  cost_basis: one_way
+
+# ── Signal (Layer-2 evaluate) ─────────────────────────────
+signal: |
+  def evaluate(snapshot, regime, params):
+      k = snapshot.boundary_index
+      if k % 2 == 0:
+          return None
+      direction = LONG if (k // 2) % 2 == 0 else SHORT
+      return Signal(
+          timestamp_ns=snapshot.timestamp_ns,
+          correlation_id=snapshot.correlation_id,
+          sequence=snapshot.sequence,
+          symbol=snapshot.symbol,
+          strategy_id=alpha_id,
+          direction=direction,
+          strength=1.0,
+          edge_estimate_bps=9.0,
+      )
+
+exit_policy:
+  archetype: liquidity_provision
+  curve_ref: ARBITRARY_NOT_CALIBRATED
+  fee_round_trip_ticks: 1
+  horizon:
+    T_seconds: 120
+    cutoff_before_close_seconds: 300
+  adverse:
+    centre_ticks: 10
+    band_ticks: 4
+    lo_ticks: 5
+    hi_ticks: 20
+    blind_limit_seconds: 30
+  favorable:
+    form: fixed
+    target_ticks: 6
+    quiet_limit_seconds: 5

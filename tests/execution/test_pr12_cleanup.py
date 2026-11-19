@@ -86,9 +86,14 @@ class TestLockedQuoteMetric:
 
 
 class TestPartialFillDistinctTimestamps:
-    """Partial and final fill timestamps differ by at least 1 ns."""
+    """Depth-walk legs stay distinguishable without a 1 ns stamp offset.
 
-    def test_partial_and_final_fill_have_distinct_timestamps(self) -> None:
+    The original test required the final stamp to be later than the
+    partial. T2 stamps both at the publication clock. Bus order and the
+    ack sequence keep the forensic distinction (PR 90, a4dab082).
+    """
+
+    def test_partial_and_final_fill_order_by_sequence(self) -> None:
         router = BacktestOrderRouter(
             SimulatedClock(start_ns=0),
             cost_model=ZeroCostModel(),
@@ -98,7 +103,11 @@ class TestPartialFillDistinctTimestamps:
         acks = router.poll_acks()
         partial = next(a for a in acks if a.status == OrderAckStatus.PARTIALLY_FILLED)
         final = next(a for a in acks if a.status == OrderAckStatus.FILLED)
-        assert final.timestamp_ns > partial.timestamp_ns
+        assert acks.index(partial) < acks.index(final)
+        assert final.sequence > partial.sequence
+        assert partial.timestamp_ns == 0
+        assert final.timestamp_ns == 0
+        assert partial.filled_quantity + final.filled_quantity == 200
 
 
 class TestExpiredTimeoutStatus:

@@ -36,7 +36,9 @@ from __future__ import annotations
 
 import argparse
 import ast
+import hashlib
 import json
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -45,6 +47,62 @@ ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src" / "feelies"
 EVIDENCE = ROOT / "tools" / "arch" / "evidence"
 EXECUTED = EVIDENCE / "hotpath_executed.json"
+_STALE_PROFILE = "stale hot-path profile — run perfmeasure --mode profile"
+_EXTENDS = re.compile(r"(?m)^extends:\s*['\"]?([^'\"#\s]+)")
+
+
+def config_closure(start: Path) -> list[Path]:
+    """The profile config and each ``extends:`` parent, root first in walk order.
+
+    Default profile inputs: ``configs/bt_app.yaml``,
+    ``configs/bt_sig_benign_midcap.yaml``, ``platform.yaml``.
+    """
+    files: list[Path] = []
+    seen: set[Path] = set()
+    current = start if start.is_absolute() else ROOT / start
+    while True:
+        current = current.resolve()
+        if current in seen or not current.is_file():
+            break
+        seen.add(current)
+        files.append(current)
+        match = _EXTENDS.search(current.read_text(encoding="utf-8"))
+        if match is None:
+            break
+        nxt = match.group(1)
+        if nxt in {"null", "~", "None"}:
+            break
+        current = current.parent / nxt
+    return files
+
+
+def source_fingerprint(config_paths: list[Path]) -> str:
+    """sha256 of sorted ``(relative path, content sha256)`` pairs.
+
+    Pairs are every ``src/feelies/**/*.py`` plus ``config_paths``.
+    """
+    pairs: list[tuple[str, str]] = []
+    for path in sorted(SRC.rglob("*.py")):
+        rel = path.relative_to(ROOT).as_posix()
+        pairs.append((rel, hashlib.sha256(path.read_bytes()).hexdigest()))
+    for path in config_paths:
+        resolved = path.resolve() if path.is_absolute() else (ROOT / path).resolve()
+        rel = resolved.relative_to(ROOT).as_posix()
+        pairs.append((rel, hashlib.sha256(resolved.read_bytes()).hexdigest()))
+    pairs.sort()
+    payload = "".join(f"{rel}\n{digest}\n" for rel, digest in pairs)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _require_fresh_profile(prof: dict[str, Any]) -> None:
+    fingerprint = prof.get("source_fingerprint")
+    configs = prof.get("source_fingerprint_configs")
+    if not isinstance(fingerprint, str) or not isinstance(configs, list) or not configs:
+        raise SystemExit(_STALE_PROFILE)
+    paths = [ROOT / str(rel) for rel in configs]
+    if source_fingerprint(paths) != fingerprint:
+        raise SystemExit(_STALE_PROFILE)
+
 
 # --------------------------------------------------------------------------
 # Prohibition set.  The first six are named by P4; the rest extend it.
@@ -492,6 +550,7 @@ def _load_executed() -> tuple[dict[tuple[str, str], list[dict[str, Any]]], dict[
         )
     blob = json.loads(EXECUTED.read_text(encoding="utf-8"))
     prof = blob["profile"]
+    _require_fresh_profile(prof)
     by_name: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for rec in prof["executed"].values():
         by_name[(rec["file"], rec["func"])].append(rec)

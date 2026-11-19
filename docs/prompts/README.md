@@ -118,6 +118,8 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `risk/risk_wrapper.py`, `kernel/orchestrator.py` | risk_engine |
 | `composition/`, `portfolio/cross_sectional_tracker.py` | composition |
 | `portfolio/position_store.py`, `memory_position_store.py`, `strategy_position_store.py`, `lot_ledger.py`, `position_book_view.py` | position_management (PnL ledger) |
+| `portfolio/mark_rail.py` | position_engine |
+| `position/` | position_engine |
 | `storage/trade_journal.py`, `memory_trade_journal.py` | position_management (fill journal) |
 | `risk/` | risk_engine |
 | `risk/position_sizer.py`, `edge_weighted_sizer.py` | position_management (sizing economics) |

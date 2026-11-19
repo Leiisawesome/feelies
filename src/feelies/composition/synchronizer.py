@@ -21,6 +21,7 @@ from feelies.core.events import (
     HorizonFeatureSnapshot,
     HorizonTick,
     Signal,
+    decision_time_ns,
 )
 from feelies.core.identifiers import SequenceGenerator
 
@@ -187,7 +188,7 @@ class UniverseSynchronizer:
             return
         key = (sig.horizon_seconds, sig.symbol, sig.strategy_id)
         prev = self._signal_cache.get(key)
-        if prev is not None and sig.timestamp_ns < prev.timestamp_ns:
+        if prev is not None and decision_time_ns(sig) < decision_time_ns(prev):
             return
         self._signal_cache[key] = sig
 
@@ -235,19 +236,21 @@ class UniverseSynchronizer:
         candidates = [
             (kh, s)
             for kh, s in candidates
-            if s.timestamp_ns <= boundary_ts_ns and boundary_ts_ns - s.timestamp_ns <= max_age_ns
+            if decision_time_ns(s) <= boundary_ts_ns
+            and boundary_ts_ns - decision_time_ns(s) <= max_age_ns
         ]
         if not candidates:
             return None
 
         same_h = [(kh, s) for kh, s in candidates if kh == portfolio_h]
+        snap_ns = decision_time_ns(snap) if snap is not None else 0
         if same_h and snap is not None and snap.boundary_index >= boundary_index:
-            aligned = [s for kh, s in same_h if s.timestamp_ns >= snap.timestamp_ns]
+            aligned = [s for kh, s in same_h if decision_time_ns(s) >= snap_ns]
             if aligned:
-                return max(aligned, key=lambda s: s.timestamp_ns)
+                return max(aligned, key=decision_time_ns)
 
         # Cross-horizon feeders: latest observation at or before the barrier.
-        return max((s for _, s in candidates), key=lambda s: s.timestamp_ns)
+        return max((s for _, s in candidates), key=decision_time_ns)
 
     # ── Context construction ───────────────────────────────────────
 
@@ -272,7 +275,7 @@ class UniverseSynchronizer:
                         symbol=symbol,
                         strategy_id=sid,
                         portfolio_h=h,
-                        boundary_ts_ns=tick.timestamp_ns,
+                        boundary_ts_ns=decision_time_ns(tick),
                         snap=snap,
                         boundary_index=bi,
                     )
@@ -312,13 +315,14 @@ class UniverseSynchronizer:
             for (kh, ksym, _strategy_id), s in sorted_signal_cache:
                 if kh != h or ksym != symbol:
                     continue
-                # Never admit a signal stamped after the barrier.
-                if s.timestamp_ns > tick.timestamp_ns:
+                # Never admit a signal from after the nominal barrier.
+                barrier_ns = decision_time_ns(tick)
+                if decision_time_ns(s) > barrier_ns:
                     continue
                 # Stale signals cannot inflate completeness.
-                if tick.timestamp_ns - s.timestamp_ns > legacy_max_age_ns:
+                if barrier_ns - decision_time_ns(s) > legacy_max_age_ns:
                     continue
-                if snap is not None and s.timestamp_ns < snap.timestamp_ns:
+                if snap is not None and decision_time_ns(s) < decision_time_ns(snap):
                     continue
                 chosen = s
                 break
@@ -331,6 +335,7 @@ class UniverseSynchronizer:
 
         ctx = CrossSectionalContext(
             timestamp_ns=tick.timestamp_ns,
+            boundary_ts_ns=tick.boundary_ts_ns,
             sequence=self._ctx_seq.next(),
             correlation_id=f"xsect:{h}:{bi}",
             horizon_seconds=h,

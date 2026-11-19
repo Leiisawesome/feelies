@@ -150,6 +150,7 @@ def _next_live_event(feed: MassiveLiveFeed, timeout_s: int) -> NBBOQuote | Trade
             pytest.skip(str(exc))
 
 
+@pytest.mark.network
 def test_rest_ingest_uses_live_massive_data() -> None:
     massive = pytest.importorskip("massive")
 
@@ -187,6 +188,7 @@ def test_rest_ingest_uses_live_massive_data() -> None:
     assert any(isinstance(event, Trade) for event in events)
 
 
+@pytest.mark.network
 def test_websocket_feed_emits_live_massive_event() -> None:
     pytest.importorskip("websockets")
 
@@ -220,6 +222,7 @@ def test_websocket_feed_emits_live_massive_event() -> None:
         assert event.exchange_timestamp_ns > 0
 
 
+@pytest.mark.network
 @pytest.mark.paper_rth
 def test_multi_symbol_subscribe() -> None:
     pytest.importorskip("websockets")
@@ -251,6 +254,7 @@ def test_multi_symbol_subscribe() -> None:
     assert seen, f"expected quotes for {symbols}, got {seen}"
 
 
+@pytest.mark.network
 @pytest.mark.paper_rth
 @pytest.mark.slow
 def test_sustained_quotes_with_idle_ticks() -> None:

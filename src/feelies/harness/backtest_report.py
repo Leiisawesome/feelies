@@ -28,6 +28,7 @@ from feelies.core.events import (
 )
 from feelies.core.platform_config import PlatformConfig
 from feelies.harness.backtest_prep import QuoteTraceIndex
+from feelies.harness.regime_calibration import prior_trading_date
 from feelies.ingestion.massive_ingestor import IngestResult
 from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
@@ -106,6 +107,20 @@ def _report_header(title: str, symbol: str, date_range: str) -> str:
 
 def format_section(name: str) -> str:
     return f"\n  [{name.upper()}]"
+
+
+def regime_calibration_line(orchestrator: Orchestrator, date_range: str) -> str:
+    """One report line: prior-session provenance, or the uncalibrated fallback."""
+    raw = getattr(orchestrator, "regime_calibration_provenance", (None, 0))
+    provenance = raw() if callable(raw) else raw
+    source, n_quotes = provenance
+    if source is not None:
+        return f"    regime calibration: {source}, n={n_quotes}"
+    session_date = date_range.split(" to ", 1)[0]
+    prior = prior_trading_date(session_date)
+    return (
+        f"    regime calibration: UNCALIBRATED — prior session {prior} missing (fallback C, D-64)"
+    )
 
 
 def _kv(key: str, value: str, indent: int = 4) -> str:
@@ -416,6 +431,7 @@ def generate_report(
         lines.append("")
         for ds in day_sources:
             lines.append(_sub_kv(f"{ds.symbol} {ds.date}", f"{ds.event_count:,} ({ds.source})"))
+    lines.append(regime_calibration_line(orchestrator, date_range))
 
     lines.append(_divider())
 
@@ -804,6 +820,35 @@ def compute_parity_hash(orchestrator: Orchestrator) -> str:
     trade_seq = [
         {
             "order_id": str(r.order_id),
+            "symbol": str(r.symbol),
+            "strategy_id": str(r.strategy_id),
+            "side": str(r.side).split(".")[-1],
+            "quantity": int(r.filled_quantity),
+            "fill_price": str(r.fill_price),
+            "realized_pnl": str(r.realized_pnl),
+            "fees": str(r.fees),
+            "cost_bps": str(r.cost_bps),
+        }
+        for r in records
+    ]
+    payload = json.dumps(trade_seq, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def compute_economic_trade_hash(orchestrator: Orchestrator) -> str:
+    """SHA-256 of the trade sequence with ``order_id`` removed.
+
+    Same records and economic fields as :func:`compute_parity_hash`. The
+    parity hash stays the identity pin. This one stays put when only order
+    ids are rewritten.
+    """
+    from feelies.storage.trade_journal import TradeRecord
+
+    journal = orchestrator.trade_journal
+    assert journal is not None, "backtest orchestrator must attach trade_journal"
+    records: list[TradeRecord] = list(journal.query())
+    trade_seq = [
+        {
             "symbol": str(r.symbol),
             "strategy_id": str(r.strategy_id),
             "side": str(r.side).split(".")[-1],

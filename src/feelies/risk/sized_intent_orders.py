@@ -47,7 +47,7 @@ DroppedLegsCallback = Callable[[SizedPositionIntent, list[tuple[str, str]]], Non
 
 def _resolve_mark(symbol: str, current: object, positions: PositionStore) -> Decimal:
     """Return the best-available mark for translating USD -> shares."""
-    latest = getattr(positions, "latest_mark", None)
+    latest = getattr(positions, "reference_mid", None)
     if callable(latest):
         try:
             m = latest(symbol)
