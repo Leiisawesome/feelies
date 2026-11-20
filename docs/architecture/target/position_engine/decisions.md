@@ -1726,6 +1726,30 @@ KILLED A 9, B 16; and every other field of the baseline capture.
 Mechanism: one new pure module reached only by the two new test files; no
 production module, config, contract or CI file is edited.
 
+G1 values (P-95): N = 24. Pytest collects 22 ids from
+tests/forensics/test_exit_attribution.py (test_same, test_exit_changed,
+test_entry_changed, test_legacy_only_engine_in_position,
+test_legacy_only_risk_reject, test_engine_only_legacy_in_position,
+test_unexplained, test_legacy_reason_order_reason,
+test_legacy_reason_signal_flat, test_legacy_reason_signal_reverse,
+test_legacy_reason_unattributed, test_legacy_reason_end_of_tape,
+test_zero_crossing_split, test_mae_long, test_mae_short,
+test_net_after_fees, test_manifest_hash_difference_matches,
+test_refuses_signal_metadata_other_than_manifest_hash,
+test_refuses_signal_streams_differ,
+test_refuses_opening_order_with_zero_signals,
+test_refuses_opening_order_with_two_signals,
+test_refuses_engine_cross_check_mismatch) and 2 ids from
+tests/position_engine/test_p95_exit_attribution_tape.py
+(test_tape_f_favorable_exit_changed, test_tape_h_horizon_exit_changed).
+File 7 adds those 2 ids. N' = 24. Prepush selects pytest -m "not functional
+and not paper_rth and not battery_real and not universe_check"
+(scripts/ci_gate_expr.txt, scripts/prepush.py). None of the 24 carry those
+markers, so none are excluded. mypy scope is src/feelies
+(pyproject [tool.mypy] strict, no per-module ignore_errors; prepush runs
+mypy src/feelies). New .py files in that scope: 1
+(src/feelies/forensics/exit_attribution.py).
+
 ### D-66 pre-registered prediction
 
 ```
