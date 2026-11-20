@@ -1676,6 +1676,56 @@ D-248 — CI watch re-anchored after P-62; check job timeout 25 minutes
   - Supersedes: D-209's reference, threshold and timeout figure only; its
     method, sigma and rules stand.
 
+D-249 — P-95 attribution diff: amended classes, location, legacy exit reason, tests
+
+Decided by the operator, 2026-11-19 (chat 14; options a, b, c, d as
+recommended). Evidence: censuses P-95c3 and P-95c4 at ade584f9
+(engine.py:209-219 and 231-275: the engine creates a cell only from a fill
+and never gates an entry; bootstrap.py:750 and 1550: separate position and
+signal sequence streams; orchestrator.py:2341-2352 and 2476-2490: reversal
+orders carry no reason; pyproject.toml:173 and 182-196: forensics may import
+only feelies.core). Supersedes the class list of evaluation.md §3 as written
+before this entry.
+
+(a) Classes. Episodes are keyed by (symbol, strategy_id, entry Signal).
+SAME, EXIT_CHANGED, ENTRY_CHANGED, LEGACY_ONLY (replaces ENTRY_REFUSED),
+ENGINE_ONLY, UNEXPLAINED. A one-arm entry is explained when the other arm
+held a position on that key at the entry signal (reason ENGINE_IN_POSITION
+or LEGACY_IN_POSITION) or a rejecting RiskVerdict with the same
+correlation_id and symbol exists in the other arm (reason RISK:<verdict
+reason>). Otherwise it is UNEXPLAINED. UNEXPLAINED must be empty;
+non-empty is a defect. ENGINE_ONLY may be non-empty.
+(b) Location. Pure core src/feelies/forensics/exit_attribution.py,
+importing only feelies.core, not exported from feelies.forensics. Tests:
+tests/forensics/test_exit_attribution.py (hand-built event streams) and
+tests/position_engine/test_p95_exit_attribution_tape.py (one constructed
+tape through run_synthetic in both arms). The real-day runner lands in P-99.
+(c) Legacy exit reason: the exit order's non-empty reason; else the Signal
+with the same correlation_id, symbol and strategy_id (FLAT -> SIGNAL_FLAT,
+opposite direction -> SIGNAL_REVERSE); else UNATTRIBUTED (reported and
+counted, not a defect); no exit fill -> END_OF_TAPE.
+(d) Tests: classes exact on the hand-built streams and on the constructed
+tape; the tape's expected classes and reasons are written in the test
+before the implementation exists and are reviewed at the step's gate.
+
+Pre-registered prediction (P-95):
+Changes: full-suite passed rises by exactly N, where N is the number of
+test ids pytest collects from files 6 and 7 (recorded at G1, before the
+post capture); prepush, -n 4 and CI Tests passed rise by exactly N' = the
+subset of those N that prepush selects (recorded at G1 with the reason
+for any not selected); tests/position_engine count rises by the ids from
+file 7; ruff format file count 820 -> 823; mypy source-file count rises by
+the number of new .py files inside mypy's configured scope (scope and
+expected count recorded at G1 from the config).
+Holds: 0 failed; 44 skipped; 2 xfailed (full); prepush 5 skipped,
+59 deselected, 1 xfailed; determinism 148; parity 64 constants; fingerprint
+261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97, files 1;
+lint-imports 2 kept 0 broken; universe 1 passed (PYTHONHASHSEED 0);
+tests/docs 107; test_doc_integrity.py 13; tests/conformance/test_ci_*.py 15;
+KILLED A 9, B 16; and every other field of the baseline capture.
+Mechanism: one new pure module reached only by the two new test files; no
+production module, config, contract or CI file is edited.
+
 ### D-66 pre-registered prediction
 
 ```
