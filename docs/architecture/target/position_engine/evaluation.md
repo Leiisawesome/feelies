@@ -120,9 +120,12 @@ from the legacy path, so the arms diverge only through position state.
   for a long, worst ask for a short, entry fill to exit fill), computed the
   same way for both arms. The engine arm's PositionClosed.worst is reported
   beside it, not asserted equal.
+- An episode with no exit fill: holding time and maximum adverse excursion
+  run to the arm's last quote for the symbol; net result is realised cash
+  flow after fees, with no mark (D-249 G1).
 - Per class: count and per-arm totals.
 - The tool refuses to report (raises) when: the two arms' de-duplicated
-  Signal streams are not field-equal; an opening order has zero or more than
+  Signal streams are not field-equal (excluding metadata manifest_hash, D-249 G1); an opening order has zero or more than
   one correlated Signal; or the engine arm's rebuilt episodes disagree with
   its PositionClosed records (count, entry fills, exit fills).
 - No p-values and no "better" statement. Every report is labelled

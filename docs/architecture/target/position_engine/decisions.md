@@ -1750,6 +1750,18 @@ markers, so none are excluded. mypy scope is src/feelies
 mypy src/feelies). New .py files in that scope: 1
 (src/feelies/forensics/exit_attribution.py).
 
+G1 amendment (P-95, operator, 2026-11-20). (i) Signal field equality and
+the episode match key exclude Signal.metadata["manifest_hash"], which
+differs between the arms by construction (removing exit_policy changes the
+manifest hash); any other metadata difference still refuses. (ii) An
+episode with no exit fill in an arm: holding time and maximum adverse
+excursion run to that arm's last quote for the symbol; net result is
+realised cash flow after fees, with no mark. (iii) The constructed-tape
+test captures Signals with a test-only bus hook because run_synthetic's
+Records carry none. Recorded as a standalone docs commit before the
+implementation commit, not as the step branch's first commit (rule 8
+position noted).
+
 ### D-66 pre-registered prediction
 
 ```
