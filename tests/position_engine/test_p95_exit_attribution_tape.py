@@ -46,8 +46,6 @@ _FAV_TS = 1_774_533_731_020_000_000
 _FAV_PRICE = Decimal("100.07")
 _HORIZON_TS = 1_774_533_843_020_000_000
 _HORIZON_PRICE = Decimal("100.00")
-_LEGACY_HASH = "e0f6243f00c4c70bf92205bd092bd5ed7458b1adb86a36f306770d4e627a34a2"
-_ENGINE_HASH = "7346811902da264535ff4f6f37bf3e4c5e38313555519f1b7e3f58583fd7035e"
 _TAPE_WORST = PositionExtreme(
     cents=-124,
     sequence=123,
@@ -156,8 +154,9 @@ def _check_inputs(
         if item.name == "metadata":
             continue
         assert getattr(left, item.name) == getattr(right, item.name)
-    assert dict(left.metadata) == {"manifest_hash": _LEGACY_HASH}
-    assert dict(right.metadata) == {"manifest_hash": _ENGINE_HASH}
+    assert set(left.metadata) == {"manifest_hash"}
+    assert set(right.metadata) == {"manifest_hash"}
+    assert left.metadata["manifest_hash"] != right.metadata["manifest_hash"]
     assert right.direction is SignalDirection.LONG
     assert right.timestamp_ns == _SIGNAL_TS
     assert right.correlation_id == _SIGNAL_CID

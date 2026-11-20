@@ -1762,6 +1762,14 @@ Records carry none. Recorded as a standalone docs commit before the
 implementation commit, not as the step branch's first commit (rule 8
 position noted).
 
+G1b amendment (P-95, operator, 2026-11-20). The constructed-tape test no
+longer pins the two arms' manifest_hash values; it asserts each arm's
+Signal metadata holds only manifest_hash and that the two values differ.
+Reason: tests/determinism/test_parity_manifest.py rejects unregistered
+module-level 64-hex constants (F-P95-5), and those values belong to the
+fixture manifest, not to P-95. No attribute() expectation changes; N and N'
+stay 24. Recorded as a standalone commit before the implementation commit.
+
 ### D-66 pre-registered prediction
 
 ```
