@@ -1266,3 +1266,128 @@ def test_refuses_engine_cross_check_mismatch() -> None:
     )
     with pytest.raises(AttributionError):
         attribute(legacy, engine, day_count=1)
+
+
+def test_partial_exit_open_long() -> None:
+    sig = _sig(900, 1, SignalDirection.LONG, "s1")
+    entry_order, entry_ack, entry = _trade(
+        950, 1000, 1, 1, "e1", Side.BUY, 10, "10.00", "0.05", "s1"
+    )
+    trim_order, trim_ack, trim = _trade(
+        1400, 1500, 2, 2, "t1", Side.SELL, 4, "10.50", "0.02", "t1", reason="TRIM"
+    )
+    quotes = (
+        _quote(500, 1, "9.00", "9.01"),
+        _quote(1000, 2, "10.00", "10.01"),
+        _quote(1500, 3, "10.40", "10.41"),
+        _quote(2500, 4, "9.70", "9.71"),
+        _quote(3000, 5, "9.90", "9.91"),
+    )
+    orders = (entry_order, trim_order)
+    acks = (entry_ack, trim_ack)
+    episode = _episode(sig, "LONG", (entry,), (trim,), "1.93", 2000)
+    _check(
+        _arm((sig,), orders, acks, quotes),
+        _arm((sig,), orders, acks, quotes, closed=(_pc((entry,), (trim,), "END_OF_TAPE"),)),
+        _report(
+            (
+                _diff(
+                    "SAME",
+                    "END_OF_TAPE",
+                    "END_OF_TAPE",
+                    "",
+                    episode,
+                    episode,
+                    "0.30",
+                    "0.30",
+                    None,
+                ),
+            ),
+            (("SAME", 1, "1.93", "1.93"),),
+        ),
+    )
+
+
+def test_partial_exit_open_short() -> None:
+    sig = _sig(900, 1, SignalDirection.SHORT, "s1")
+    entry_order, entry_ack, entry = _trade(
+        950, 1000, 1, 1, "e1", Side.SELL, 10, "20.00", "0.05", "s1", is_short=True
+    )
+    cover_order, cover_ack, cover = _trade(
+        1400, 1500, 2, 2, "c1", Side.BUY, 6, "19.00", "0.03", "c1", reason="COVER_PART"
+    )
+    quotes = (
+        _quote(500, 1, "19.99", "20.00"),
+        _quote(1000, 2, "19.99", "20.00"),
+        _quote(1500, 3, "18.99", "19.00"),
+        _quote(2500, 4, "19.59", "20.40"),
+        _quote(3000, 5, "19.49", "19.50"),
+    )
+    orders = (entry_order, cover_order)
+    acks = (entry_ack, cover_ack)
+    episode = _episode(sig, "SHORT", (entry,), (cover,), "5.92", 2000)
+    _check(
+        _arm((sig,), orders, acks, quotes),
+        _arm(
+            (sig,),
+            orders,
+            acks,
+            quotes,
+            closed=(_pc((entry,), (cover,), "END_OF_TAPE", side="SHORT"),),
+        ),
+        _report(
+            (
+                _diff(
+                    "SAME",
+                    "END_OF_TAPE",
+                    "END_OF_TAPE",
+                    "",
+                    episode,
+                    episode,
+                    "0.40",
+                    "0.40",
+                    None,
+                ),
+            ),
+            (("SAME", 1, "5.92", "5.92"),),
+        ),
+    )
+
+
+def test_partial_exit_open_average_cost() -> None:
+    sig = _sig(900, 1, SignalDirection.LONG, "s1")
+    e1_order, e1_ack, e1 = _trade(950, 1000, 1, 1, "e1", Side.BUY, 10, "10.00", "0.01", "s1")
+    e2_order, e2_ack, e2 = _trade(1150, 1200, 2, 2, "e2", Side.BUY, 10, "11.00", "0.01", "s1")
+    t1_order, t1_ack, t1 = _trade(
+        1400, 1500, 3, 3, "t1", Side.SELL, 5, "12.00", "0.01", "t1", reason="TRIM"
+    )
+    quotes = (
+        _quote(500, 1, "9.00", "9.01"),
+        _quote(1000, 2, "10.60", "10.61"),
+        _quote(1200, 3, "10.90", "10.91"),
+        _quote(1500, 4, "11.90", "11.91"),
+        _quote(3000, 5, "11.00", "11.01"),
+    )
+    orders = (e1_order, e2_order, t1_order)
+    acks = (e1_ack, e2_ack, t1_ack)
+    episode = _episode(sig, "LONG", (e1, e2), (t1,), "7.47", 2000)
+    _check(
+        _arm((sig,), orders, acks, quotes),
+        _arm((sig,), orders, acks, quotes, closed=(_pc((e1, e2), (t1,), "END_OF_TAPE"),)),
+        _report(
+            (
+                _diff(
+                    "SAME",
+                    "END_OF_TAPE",
+                    "END_OF_TAPE",
+                    "",
+                    episode,
+                    episode,
+                    "-0.60",
+                    "-0.60",
+                    None,
+                ),
+            ),
+            (("SAME", 1, "7.47", "7.47"),),
+        ),
+    )
