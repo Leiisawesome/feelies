@@ -1770,6 +1770,30 @@ module-level 64-hex constants (F-P95-5), and those values belong to the
 fixture manifest, not to P-95. No attribute() expectation changes; N and N'
 stay 24. Recorded as a standalone commit before the implementation commit.
 
+G2 amendment (P-95, operator, 2026-11-21; Bugbot review comment 4651298800).
+An episode is closed only when its running quantity returns to zero. An
+episode whose running quantity is not zero at the arm's last quote for the
+symbol, with or without partial exits, is open: its exit reason is
+END_OF_TAPE in the legacy arm; its holding time and maximum adverse
+excursion run to that last quote; its net result is exit proceeds minus the
+episode's average entry price times the exited quantity, minus all entry and
+exit fees; the remaining quantity carries no mark. This replaces G1 (ii),
+which keyed the rule on "no exit fill" and so treated a partial exit as a
+close.
+Pre-registered prediction (P-95 fix), against baseline_post-P-95.json:
+Changes: full-suite passed 5504 -> 5507; prepush, -n 4 and CI Tests passed
+5485 -> 5488; total_sloc changes (direction not predicted).
+Holds: 0 failed; 44 skipped; 2 xfailed (full); prepush 5 skipped,
+59 deselected, 1 xfailed; determinism 148; parity 64 constants, changed 0;
+fingerprint 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+files 1; total_files 260; n_modules 209; n_edges 718; public_symbols 641;
+n_cycles 1; alphaleak 0; ruff format 823 files; mypy 260 source files;
+lint-imports 2 kept 0 broken; universe 1 passed (PYTHONHASHSEED 0);
+tests/docs 107; and every other field of the baseline capture.
+Mechanism: three added tests in tests/forensics/test_exit_attribution.py;
+a logic change inside src/feelies/forensics/exit_attribution.py with no new
+public name.
+
 D-250 — P-95 evidence-census delta accepted as explained
 
 Decided by the operator, 2026-11-21 (chat 14). The P-95 prediction (D-249)

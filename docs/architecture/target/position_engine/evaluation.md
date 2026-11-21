@@ -120,9 +120,12 @@ from the legacy path, so the arms diverge only through position state.
   for a long, worst ask for a short, entry fill to exit fill), computed the
   same way for both arms. The engine arm's PositionClosed.worst is reported
   beside it, not asserted equal.
-- An episode with no exit fill: holding time and maximum adverse excursion
-  run to the arm's last quote for the symbol; net result is realised cash
-  flow after fees, with no mark (D-249 G1).
+- An episode is closed only when its running quantity returns to zero. An
+  episode still open at the arm's last quote for the symbol, with or without
+  partial exits: legacy reason END_OF_TAPE; holding time and maximum adverse
+  excursion run to that last quote; net result is exit proceeds minus the
+  average entry price times the exited quantity, minus all fees; the
+  remaining quantity carries no mark (D-249 G2).
 - Per class: count and per-arm totals.
 - The tool refuses to report (raises) when: the two arms' de-duplicated
   Signal streams are not field-equal (excluding metadata manifest_hash, D-249 G1); an opening order has zero or more than
