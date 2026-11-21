@@ -37702,3 +37702,67 @@ OWNER:       campaign 15.
   F-P95-3:       file 7 captures Signals by patching EventBus.subscribe_all; relies on a run_synthetic cache miss (tapes and legacy variant unique to the file); fragile, unscheduled.
   F-P95-4:       file 5 first draft assigned to an attribute and failed tests/conformance/test_composition_root.py; fixed inside file 5 before IMPL
   F-P95-5:       file 7 pinned two fixture manifest hashes as module-level 64-hex constants, rejected by tests/determinism/test_parity_manifest.py; removed by the G1b amendment
+  FIX:           Bugbot 4651298800, D-249 G2. An open
+                 episode with a partial exit was treated
+                 as closed. SPEC
+                 7894772cd40567f31bccd8ce29294fc632c3fe4c.
+                 FAILFIRST
+                 d3877dab50d4b84d297477f64717b5b28e29ec70.
+                 Quoted:
+                 FAILED tests/forensics/test_exit_attribution.py::test_partial_exit_open_long
+                 FAILED tests/forensics/test_exit_attribution.py::test_partial_exit_open_short
+                 FAILED tests/forensics/test_exit_attribution.py::test_partial_exit_open_average_cost
+                 each AssertionError at
+                 test_exit_attribution.py:300, assert
+                 attribute(legacy, engine, day_count=1)
+                 == expected. FIX
+                 015e897d65f44783a3c72e8cf3892ef7b065e5f0:
+                 closed only when running quantity is
+                 zero. GATES on FIX: full PID 23480,
+                 exit 0, 5507 passed, 44 skipped, 2
+                 xfailed, 49 warnings in 1733.61s
+                 (0:28:53). Prepush PID 28808, exit 0,
+                 ruff check All checks passed; ruff
+                 format 823 files already formatted;
+                 mypy Success: no issues found in 260
+                 source files; lint-imports Contracts:
+                 2 kept, 0 broken; 5488 passed, 5
+                 skipped, 59 deselected, 1 xfailed, 49
+                 warnings in 1006.05s (0:16:46). -n 4
+                 PID 30388, exit 0, 5488 passed, 5
+                 skipped, 1 xfailed, 53 warnings in
+                 549.38s (0:09:09); marker expression
+                 reached pytest intact. Determinism
+                 148 passed, 1 warning in 11.32s.
+                 Universe PYTHONHASHSEED 0, 1 passed
+                 in 110.98s (0:01:50). Profile PID
+                 30652, exit 0. BASE
+                 6e4f11d533afba46d57c8d19f37eae037a8bbc34:
+                 post-P-95-fix on
+                 015e897d65f44783a3c72e8cf3892ef7b065e5f0,
+                 captured_at
+                 2026-11-21T10:37:47.219511+00:00,
+                 git.dirty false, PID 30412, exit 0,
+                 BASELINE GREEN. Full 5507 passed, 0
+                 failed, 44 skipped, 2 xfailed (5507
+                 passed, 44 skipped, 2 xfailed, 49
+                 warnings in 1644.64s (0:27:24));
+                 determinism 148 (148 passed, 1
+                 warning in 9.93s); fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. Evidence: alphaleak n 0;
+                 n_cycles 1, n_edges 718, n_modules
+                 209; public_symbols 641, total_files
+                 260, total_sloc 50932. compare
+                 parity-only against
+                 baseline_post-P-95.json, exit 0:
+                 64 -> 64, changed 0. VERDICT: parity
+                 HOLDS -- no constant moved.
+                 Predicted full 5504 -> 5507; prepush,
+                 -n 4 and CI Tests 5485 -> 5488;
+                 total_sloc changes | actual 5507
+                 passed, 0 failed, 44 skipped, 2
+                 xfailed; prepush and -n 4 5488
+                 passed; total_sloc 50921 -> 50932 |
+                 MATCH.
+  F-P95-7:       Bugbot 4651298800 (Medium): partial exits treated as closed; fixed by D-249 G2 in 015e897d65f44783a3c72e8cf3892ef7b065e5f0
