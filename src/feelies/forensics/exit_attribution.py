@@ -378,8 +378,15 @@ def _bind_closed(
     return tuple(bound)
 
 
+def _quantity(fills: tuple[Fill, ...]) -> int:
+    total = 0
+    for item in fills:
+        total += item.filled_quantity
+    return total
+
+
 def _legacy_reason(episode: _Episode, signals: tuple[Signal, ...]) -> str:
-    if not episode.exit_fills:
+    if _quantity(episode.entry_fills) != _quantity(episode.exit_fills):
         return "END_OF_TAPE"
     order = episode.exit_order
     if order is None:
@@ -432,7 +439,7 @@ def _symbol_quotes(quotes: Sequence[NBBOQuote], symbol: str) -> tuple[NBBOQuote,
 
 
 def _window_end(episode: _Episode, quotes: Sequence[NBBOQuote]) -> int:
-    if episode.exit_fills:
+    if episode.exit_fills and _quantity(episode.entry_fills) == _quantity(episode.exit_fills):
         return episode.exit_fills[-1].timestamp_ns
     symbol_quotes = _symbol_quotes(quotes, episode.symbol)
     if not symbol_quotes:
@@ -479,7 +486,13 @@ def _net(episode: _Episode) -> Decimal:
     exit_notional = _money(
         tuple(item.fill_price * item.filled_quantity for item in episode.exit_fills)
     )
-    return sign * (exit_notional - entry_notional) - fees
+    entered = _quantity(episode.entry_fills)
+    exited = _quantity(episode.exit_fills)
+    if entered == exited:
+        cost = entry_notional
+    else:
+        cost = entry_notional * Decimal(exited) / Decimal(entered)
+    return sign * (exit_notional - cost) - fees
 
 
 def _arm_episode(episode: _Episode, quotes: Sequence[NBBOQuote]) -> ArmEpisode:
