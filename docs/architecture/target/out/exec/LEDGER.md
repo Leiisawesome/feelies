@@ -37620,7 +37620,7 @@ OWNER:       campaign 15.
                  no constant moved. Predicted 5504
                  passed, 0 failed, 44 skipped, 2
                  xfailed; determinism 148; parity
-                 hold; fingerprint unchanged. MATCH.
+                 hold; fingerprint unchanged | MISMATCH (evidence-census fields not in the prediction: total_files 259 -> 260, n_modules 208 -> 209, n_edges 717 -> 718, public_symbols 633 -> 641, total_sloc 50406 -> 50921; explained by file 5; accepted, D-250).
                  Census of the new module:
                  total_files 259 -> 260,
                  public_symbols 633 -> 641,
@@ -37696,6 +37696,7 @@ OWNER:       campaign 15.
                  before IMPL (D-249 G1 amendment).
                  AMEND2 is a standalone commit
                  before IMPL (D-249 G1b amendment).
+                 Correction commit after the ledger commit: BASELINE verdict corrected from MATCH to MISMATCH (D-250).
   F-P95-1:       prompt defect, corrected before S0 (D-94 heading rule)
   F-P95-2:       prompt defect: fixture schedule (signals 240 s apart, T_seconds 120) closes every engine cell on an engine trigger before a legacy reversal; tape scope corrected to FAVORABLE and HORIZON; SAME covered by hand-built streams
   F-P95-3:       file 7 captures Signals by patching EventBus.subscribe_all; relies on a run_synthetic cache miss (tapes and legacy variant unique to the file); fragile, unscheduled.

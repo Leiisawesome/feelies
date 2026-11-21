@@ -1770,6 +1770,19 @@ module-level 64-hex constants (F-P95-5), and those values belong to the
 fixture manifest, not to P-95. No attribute() expectation changes; N and N'
 stay 24. Recorded as a standalone commit before the implementation commit.
 
+D-250 — P-95 evidence-census delta accepted as explained
+
+Decided by the operator, 2026-11-21 (chat 14). The P-95 prediction (D-249)
+named test, ruff and mypy counts and held "every other field of the
+baseline capture", but did not name the evidence-census fields a new
+module moves. The post capture (BASE 2721409a) shows total_files 259 -> 260,
+n_modules 208 -> 209, n_edges 717 -> 718, public_symbols 633 -> 641,
+total_sloc 50406 -> 50921; n_cycles 1 and alphaleak 0 unchanged. Each delta
+follows from src/feelies/forensics/exit_attribution.py alone (one module,
+one import of feelies.core, eight public names). Recorded as a baseline
+MISMATCH, accepted; the prediction is not amended. Future steps that add a
+module or public names predict these fields explicitly.
+
 ### D-66 pre-registered prediction
 
 ```
