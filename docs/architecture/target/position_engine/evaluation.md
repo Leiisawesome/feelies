@@ -86,21 +86,58 @@ The manifest fingerprint with the new field tuples and the level-3 constant stil
 
 ## 3. P-95 attribution diff
 
-Report-only tool; location fixed by the P-95 census. It runs one tape through two
-configurations that share the alpha's entry logic: legacy exits and engine-on.
+Report-only tool, src/feelies/forensics/exit_attribution.py (D-249). It
+compares one tape run through two configurations that share the alpha's
+entry logic: legacy exits, and engine-on (the same alpha with its
+exit_policy). The engine never decides an entry; entries in both arms come
+from the legacy path, so the arms diverge only through position state.
 
-- Episodes are matched by (symbol, strategy_id, entry signal sequence).
-- Each episode gets one class:
-  - SAME: identical fills;
-  - EXIT_CHANGED: same entry, different exit; carries the engine reason (ADVERSE / HORIZON /
-    INVALIDATION / FAVORABLE / EXTERNAL / END_OF_TAPE) and the legacy exit reason;
-  - ENTRY_REFUSED: the engine arm refused the entry; carries the refusal reason;
-  - ENGINE_ONLY: entry present only in the engine arm. Must be empty; non-empty is a defect.
-- Per episode: entry and exit prices, net result, holding time, maximum adverse excursion,
-  for both arms.
-- Per class: count and totals.
-- No p-values and no "better" statement. Every report is labelled descriptive, with its day count.
-- Tested first on a synthetic tape whose classes are constructed in advance.
+- Inputs per arm: Signals, OrderRequests, OrderAcks, RiskVerdicts and
+  quotes; the engine arm also supplies its PositionClosed records.
+- Episodes are rebuilt the same way in both arms: flat to flat per
+  (symbol, strategy_id) from OrderAck fills joined to OrderRequests on
+  order_id; a fill that crosses zero is split. The entry Signal is the
+  Signal with the opening order's correlation_id, symbol and strategy_id.
+- Episodes are matched by (symbol, strategy_id, entry Signal). Classes:
+  - SAME: identical entry and exit fills;
+  - EXIT_CHANGED: identical entry fills, different exit; carries the engine
+    reason (ADVERSE / HORIZON / INVALIDATION / FAVORABLE / EXTERNAL:<cause>
+    / END_OF_TAPE) and the legacy reason;
+  - ENTRY_CHANGED: both arms entered on the signal, entry fills differ;
+  - LEGACY_ONLY: entered in the legacy arm only;
+  - ENGINE_ONLY: entered in the engine arm only;
+  - UNEXPLAINED: a one-arm entry with no explanation. Must be empty;
+    non-empty is a defect.
+  A one-arm entry is explained by ENGINE_IN_POSITION / LEGACY_IN_POSITION
+  (the other arm held a position on that key at the entry signal) or
+  RISK:<reason> (a rejecting RiskVerdict with the same correlation_id and
+  symbol in the other arm).
+- Legacy exit reason: the exit order's non-empty reason; else the
+  correlated Signal (FLAT -> SIGNAL_FLAT, opposite -> SIGNAL_REVERSE); else
+  UNATTRIBUTED; no exit fill -> END_OF_TAPE.
+- Per episode, both arms: entry and exit fills, net result after fees,
+  holding time, maximum adverse excursion from the shared quotes (per share,
+  against the running average entry price of the shares held at each quote:
+  average entry price minus bid for a long, ask minus average entry price
+  for a short; the largest value over the episode, floored at zero; D-249
+  G3), computed the same way for both arms. The engine arm's
+  PositionClosed.worst is reported beside it, not asserted equal.
+- An episode is closed only when its running quantity returns to zero. An
+  episode still open at the arm's last quote for the symbol, with or without
+  partial exits: legacy reason END_OF_TAPE; holding time and maximum adverse
+  excursion run to that last quote; net result is exit proceeds minus the
+  average entry price times the exited quantity, minus all fees; the
+  remaining quantity carries no mark (D-249 G2).
+- Per class: count and per-arm totals.
+- The tool refuses to report (raises) when: the two arms' de-duplicated
+  Signal streams are not field-equal (excluding metadata manifest_hash, D-249 G1); an opening order has zero or more than
+  one correlated Signal; or the engine arm's rebuilt episodes disagree with
+  its PositionClosed records (count, entry fills, exit fills).
+- No p-values and no "better" statement. Every report is labelled
+  descriptive, with its day count.
+- Tested first on hand-built event streams (every class and every refusal)
+  and on one constructed synthetic tape whose classes are written in
+  advance.
 
 ## 4. Campaign 14E — calibration and evaluation (gate for campaign 15)
 
