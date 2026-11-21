@@ -461,10 +461,29 @@ def _mae(episode: _Episode, quotes: Sequence[NBBOQuote]) -> Decimal:
     )
     if not window:
         raise AttributionError("no quote inside the excursion window")
-    entry_px = episode.entry_fills[0].fill_price
-    if episode.side == "LONG":
-        return entry_px - min(quote.bid for quote in window)
-    return max(quote.ask for quote in window) - entry_px
+    events: list[tuple[int, int, bool, Fill]] = [
+        (fill.timestamp_ns, fill.sequence, False, fill) for fill in episode.entry_fills
+    ]
+    events.extend((fill.timestamp_ns, fill.sequence, True, fill) for fill in episode.exit_fills)
+    events.sort(key=lambda item: (item[0], item[1], item[2]))
+    worst = Decimal(0)
+    for quote in window:
+        average = Decimal(0)
+        held = 0
+        for timestamp_ns, _sequence, is_exit, fill in events:
+            if timestamp_ns > quote.timestamp_ns:
+                break
+            if is_exit:
+                held -= fill.filled_quantity
+                continue
+            held += fill.filled_quantity
+            average = (
+                average * (held - fill.filled_quantity) + fill.fill_price * fill.filled_quantity
+            ) / Decimal(held)
+        excursion = average - quote.bid if episode.side == "LONG" else quote.ask - average
+        if excursion > worst:
+            worst = excursion
+    return worst
 
 
 def _money(values: Sequence[Decimal]) -> Decimal:
