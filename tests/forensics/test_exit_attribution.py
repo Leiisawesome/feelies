@@ -1383,11 +1383,89 @@ def test_partial_exit_open_average_cost() -> None:
                     "",
                     episode,
                     episode,
-                    "-0.60",
-                    "-0.60",
+                    "0.00",
+                    "0.00",
                     None,
                 ),
             ),
             (("SAME", 1, "7.47", "7.47"),),
+        ),
+    )
+
+
+def test_mae_running_average_cost() -> None:
+    sig = _sig(900, 1, SignalDirection.LONG, "s1")
+    e1_order, e1_ack, e1 = _trade(950, 1000, 1, 1, "e1", Side.BUY, 10, "10.00", "0.01", "s1")
+    e2_order, e2_ack, e2 = _trade(1150, 1200, 2, 2, "e2", Side.BUY, 10, "11.00", "0.01", "s1")
+    x_order, x_ack, x = _trade(
+        1900, 2000, 3, 3, "x1", Side.SELL, 20, "11.50", "0.02", "x1", reason="OUT"
+    )
+    quotes = (
+        _quote(500, 1, "9.00", "9.01"),
+        _quote(1000, 2, "9.80", "9.81"),
+        _quote(1200, 3, "10.40", "10.41"),
+        _quote(1500, 4, "10.10", "10.11"),
+        _quote(2000, 5, "11.40", "11.41"),
+    )
+    orders = (e1_order, e2_order, x_order)
+    acks = (e1_ack, e2_ack, x_ack)
+    episode = _episode(sig, "LONG", (e1, e2), (x,), "19.96", 1000)
+    _check(
+        _arm((sig,), orders, acks, quotes),
+        _arm((sig,), orders, acks, quotes, closed=(_pc((e1, e2), (x,), "FAVORABLE"),)),
+        _report(
+            (
+                _diff(
+                    "SAME",
+                    "OUT",
+                    "FAVORABLE",
+                    "",
+                    episode,
+                    episode,
+                    "0.40",
+                    "0.40",
+                    None,
+                ),
+            ),
+            (("SAME", 1, "19.96", "19.96"),),
+        ),
+    )
+
+
+def test_mae_floor_zero() -> None:
+    sig = _sig(900, 1, SignalDirection.LONG, "s1")
+    entry_order, entry_ack, entry = _trade(
+        950, 1000, 1, 1, "e1", Side.BUY, 10, "10.00", "0.01", "s1"
+    )
+    x_order, x_ack, x = _trade(
+        1900, 2000, 2, 2, "x1", Side.SELL, 10, "10.20", "0.01", "x1", reason="OUT"
+    )
+    quotes = (
+        _quote(500, 1, "9.00", "9.01"),
+        _quote(1000, 2, "10.05", "10.06"),
+        _quote(1500, 3, "10.10", "10.11"),
+        _quote(2000, 4, "10.20", "10.21"),
+    )
+    orders = (entry_order, x_order)
+    acks = (entry_ack, x_ack)
+    episode = _episode(sig, "LONG", (entry,), (x,), "1.98", 1000)
+    _check(
+        _arm((sig,), orders, acks, quotes),
+        _arm((sig,), orders, acks, quotes, closed=(_pc((entry,), (x,), "FAVORABLE"),)),
+        _report(
+            (
+                _diff(
+                    "SAME",
+                    "OUT",
+                    "FAVORABLE",
+                    "",
+                    episode,
+                    episode,
+                    "0.00",
+                    "0.00",
+                    None,
+                ),
+            ),
+            (("SAME", 1, "1.98", "1.98"),),
         ),
     )
