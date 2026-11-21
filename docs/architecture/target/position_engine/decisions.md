@@ -1794,6 +1794,30 @@ Mechanism: three added tests in tests/forensics/test_exit_attribution.py;
 a logic change inside src/feelies/forensics/exit_attribution.py with no new
 public name.
 
+G3 amendment (P-95, operator, 2026-11-21). Maximum adverse excursion is per
+share, measured against the running average entry price of the shares held
+at each quote (fills with timestamp at or before the quote's timestamp are
+applied first; exits leave the average unchanged): average entry price minus
+bid for a long, ask minus average entry price for a short; the largest value
+over the episode's quotes, floored at zero. This replaces the first-fill,
+unfloored definition the P-95 implementation used, which the G2 test
+test_partial_exit_open_average_cost pinned at -0.60; that literal becomes
+0.00. Found at the P-95 fix report (T3 MAE line).
+Pre-registered prediction (P-95 fix2), against baseline_post-P-95-fix.json:
+Changes: full-suite passed 5507 -> 5509; prepush, -n 4 and CI Tests passed
+5488 -> 5490; total_sloc changes (direction not predicted).
+Holds: 0 failed; 44 skipped; 2 xfailed (full); prepush 5 skipped,
+59 deselected, 1 xfailed; determinism 148; parity 64 constants, changed 0;
+fingerprint 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+files 1; total_files 260; n_modules 209; n_edges 718; public_symbols 641;
+n_cycles 1; alphaleak 0; ruff format 823 files; mypy 260 source files;
+lint-imports 2 kept 0 broken; universe 1 passed (PYTHONHASHSEED 0);
+tests/docs 107; every existing MAE expectation other than the one literal
+above; and every other field of the baseline capture.
+Mechanism: two added tests and one changed literal in
+tests/forensics/test_exit_attribution.py; a change inside the MAE
+computation of src/feelies/forensics/exit_attribution.py, no new public name.
+
 D-250 — P-95 evidence-census delta accepted as explained
 
 Decided by the operator, 2026-11-21 (chat 14). The P-95 prediction (D-249)

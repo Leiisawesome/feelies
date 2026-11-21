@@ -116,10 +116,12 @@ from the legacy path, so the arms diverge only through position state.
   correlated Signal (FLAT -> SIGNAL_FLAT, opposite -> SIGNAL_REVERSE); else
   UNATTRIBUTED; no exit fill -> END_OF_TAPE.
 - Per episode, both arms: entry and exit fills, net result after fees,
-  holding time, maximum adverse excursion from the shared quotes (worst bid
-  for a long, worst ask for a short, entry fill to exit fill), computed the
-  same way for both arms. The engine arm's PositionClosed.worst is reported
-  beside it, not asserted equal.
+  holding time, maximum adverse excursion from the shared quotes (per share,
+  against the running average entry price of the shares held at each quote:
+  average entry price minus bid for a long, ask minus average entry price
+  for a short; the largest value over the episode, floored at zero; D-249
+  G3), computed the same way for both arms. The engine arm's
+  PositionClosed.worst is reported beside it, not asserted equal.
 - An episode is closed only when its running quantity returns to zero. An
   episode still open at the arm's last quote for the symbol, with or without
   partial exits: legacy reason END_OF_TAPE; holding time and maximum adverse
