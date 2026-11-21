@@ -37765,4 +37765,73 @@ OWNER:       campaign 15.
                  xfailed; prepush and -n 4 5488
                  passed; total_sloc 50921 -> 50932 |
                  MATCH.
+  FIX2 (D-249 G3): MAE used the first fill price and
+                 no zero floor. SPEC
+                 95380762f19c5725e9fb7cd863e555f11baa6ca7.
+                 FAILFIRST
+                 8363e41ba69de0d04228870224fc61711dec3b28.
+                 Quoted:
+                 E       +         legacy_mae=Decimal('-0.60'),
+                 E       +         legacy_mae=Decimal('0.20'),
+                 E       +         legacy_mae=Decimal('-0.05'),
+                 test_partial_exit_open_average_cost,
+                 test_mae_running_average_cost, and
+                 test_mae_floor_zero. Each
+                 AssertionError at
+                 test_exit_attribution.py:300, assert
+                 attribute(legacy, engine, day_count=1)
+                 == expected. FIX
+                 d388587aa207e69801eb99cc7d556c3145b1543c:
+                 running average entry price, floored at
+                 zero. GATES on FIX2: full PID 14968,
+                 exit 0, 5509 passed, 44 skipped, 2
+                 xfailed, 49 warnings in 1710.78s
+                 (0:28:30). Prepush PID 25132, exit 0,
+                 ruff check All checks passed; ruff
+                 format 823 files already formatted;
+                 mypy Success: no issues found in 260
+                 source files; lint-imports Contracts:
+                 2 kept, 0 broken; 5490 passed, 5
+                 skipped, 59 deselected, 1 xfailed, 49
+                 warnings in 1007.13s (0:16:47). -n 4
+                 PID 9476, exit 0, 5490 passed, 5
+                 skipped, 1 xfailed, 53 warnings in
+                 547.23s (0:09:07); marker expression
+                 not functional and not paper_rth and
+                 not battery_real and not universe_check
+                 reached pytest intact. Determinism
+                 148 passed, 1 warning in 10.32s.
+                 Universe PYTHONHASHSEED 0, 1 passed
+                 in 114.37s (0:01:54). Profile PID
+                 25216, exit 0. File 4: 27 passed.
+                 BASE
+                 99e2e540fd62225ec139be1cfe6d6c523fb428a0:
+                 post-P-95-fix2 on
+                 d388587aa207e69801eb99cc7d556c3145b1543c,
+                 captured_at
+                 2026-11-21T12:30:17.396999+00:00,
+                 git.dirty false, PID 3152, exit 0,
+                 BASELINE GREEN. Full 5509 passed, 0
+                 failed, 44 skipped, 2 xfailed (5509
+                 passed, 44 skipped, 2 xfailed, 49
+                 warnings in 1702.68s (0:28:22));
+                 determinism 148 (148 passed, 1
+                 warning in 10.23s); fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. Evidence: alphaleak n 0;
+                 n_cycles 1, n_edges 718, n_modules
+                 209; public_symbols 641, total_files
+                 260, total_sloc 50951. compare
+                 parity-only against
+                 baseline_post-P-95-fix.json, exit 0:
+                 64 -> 64, changed 0. VERDICT: parity
+                 HOLDS -- no constant moved.
+                 Predicted full 5507 -> 5509; prepush,
+                 -n 4 and CI Tests 5488 -> 5490;
+                 total_sloc changes | actual 5509
+                 passed, 0 failed, 44 skipped, 2
+                 xfailed; prepush and -n 4 5490
+                 passed; total_sloc 50932 -> 50951 |
+                 MATCH.
   F-P95-7:       Bugbot 4651298800 (Medium): partial exits treated as closed; fixed by D-249 G2 in 015e897d65f44783a3c72e8cf3892ef7b065e5f0
+  F-P95-8:       MAE used the first fill price and no zero floor; the G2 test pinned -0.60 on instruction (Claude mistake 108); fixed by D-249 G3 in d388587aa207e69801eb99cc7d556c3145b1543c
