@@ -37555,3 +37555,150 @@ OWNER:       campaign 15.
   F-T15p-3:      recorded (D-248): a detached log shows
                  stderr as NativeCommandError; the exit
                  file decides.
+
+## P-95 Attribution diff tool
+
+  VERDICT:       passed
+  DECISIONS:     D-249. G1 amendment (manifest_hash,
+                 open episodes) and G1b amendment
+                 (F-P95-5, manifest hashes not pinned).
+  E0:            24 failed, 1 warning in 1.45s, every
+                 failure NotImplementedError: P-95 stub,
+                 before attribute() was implemented.
+  TREE:          none.
+  SPEC:          98ec5073f5de27debadfb7eca84745e17633732f.
+                 D-249, evaluation section 3, plan row,
+                 prediction in D-249.
+  TEST:          36acf61b57612b03e102b925dd958c9029587efb.
+                 Stub and fail-first tests. N = 24,
+                 N' = 24.
+  AMEND:         6c0f4f45d4e0e9799e98b3791cc160dfa8c18040.
+                 Standalone docs commit before IMPL
+                 (D-249 G1 amendment).
+  AMEND2:        63c4a69a02c310dbb3c3e8f23c4e9786e120a66d.
+                 G1b amendment (F-P95-5). Standalone
+                 commit before IMPL.
+  IMPL:          99d9275700b7d99e2e943df99a7a04dc697a7ae6.
+                 attribute() in exit_attribution.py.
+  BASE:          2721409af3dbc467ef4f9b15b5425e179c05f79d.
+                 pre baseline_pre-P-95.json on
+                 98ec5073f5de27debadfb7eca84745e17633732f,
+                 captured_at
+                 2026-11-20T00:58:13.538656+00:00,
+                 git.dirty false. Full suite 5480
+                 passed, 0 failed, 44 skipped, 2
+                 xfailed (5480 passed, 44 skipped, 2
+                 xfailed, 49 warnings in 1741.71s
+                 (0:29:01)); determinism 148 (148
+                 passed, 1 warning in 10.27s); parity
+                 64; fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. Evidence: alphaleak n 0;
+                 imports n_cycles 1, n_edges 717,
+                 n_modules 208; modules public_symbols
+                 633, total_files 259, total_sloc
+                 50406. post
+                 baseline_post-P-95.json on
+                 99d9275700b7d99e2e943df99a7a04dc697a7ae6,
+                 captured_at
+                 2026-11-20T09:02:41.053531+00:00,
+                 git.dirty false. The untracked pre
+                 JSON was moved aside for that
+                 snapshot and restored after. Full
+                 suite 5504 passed, 0 failed, 44
+                 skipped, 2 xfailed (5504 passed, 44
+                 skipped, 2 xfailed, 49 warnings in
+                 1676.57s (0:27:56)); determinism 148
+                 (148 passed, 1 warning in 10.03s);
+                 same fingerprint, files 1. Evidence:
+                 alphaleak n 0; imports n_cycles 1,
+                 n_edges 718, n_modules 209; modules
+                 public_symbols 641, total_files 260,
+                 total_sloc 50921. compare
+                 parity-only, exit 0: 64 -> 64,
+                 changed 0. VERDICT: parity HOLDS --
+                 no constant moved. Predicted 5504
+                 passed, 0 failed, 44 skipped, 2
+                 xfailed; determinism 148; parity
+                 hold; fingerprint unchanged | MISMATCH (evidence-census fields not in the prediction: total_files 259 -> 260, n_modules 208 -> 209, n_edges 717 -> 718, public_symbols 633 -> 641, total_sloc 50406 -> 50921; explained by file 5; accepted, D-250).
+                 Census of the new module:
+                 total_files 259 -> 260,
+                 public_symbols 633 -> 641,
+                 total_sloc 50406 -> 50921,
+                 n_modules 208 -> 209, n_edges 717
+                 -> 718; n_cycles 1, alphaleak 0.
+  GATES:         Files 6 and 7: 24 passed, 1 warning
+                 in 0.76s. Parity-manifest and
+                 composition-root: 37 passed, 1
+                 warning in 3.88s. tests/docs before
+                 this heading: 107 passed, 1 warning
+                 in 0.57s. Full suite: uv run
+                 pytest -q, PID 1588, exit 0. 5504
+                 passed, 44 skipped, 2 xfailed, 49
+                 warnings in 1736.98s (0:28:56).
+                 Predicted 5504 passed, 0 failed, 44
+                 skipped, 2 xfailed. MATCH.
+                 Prepush: uv run python
+                 scripts/prepush.py, PID 11324,
+                 exit 0. ruff check All checks
+                 passed; ruff format 823 files
+                 already formatted; mypy Success:
+                 no issues found in 260 source
+                 files; lint-imports Contracts: 2
+                 kept, 0 broken. Serial 5485
+                 passed, 5 skipped, 59 deselected,
+                 1 xfailed, 49 warnings in 1021.14s
+                 (0:17:01). prepush: ok. Predicted
+                 5485 passed, 5 skipped, 59
+                 deselected, 1 xfailed; ruff format
+                 823; mypy 260; lint-imports 2 kept
+                 0 broken. MATCH. -n 4: PID 31972,
+                 exit 0. 5485 passed, 5 skipped, 1
+                 xfailed, 53 warnings in 541.85s
+                 (0:09:01). Marker expression
+                 reached pytest intact. Predicted
+                 5485 passed, 5 skipped, 1 xfailed.
+                 MATCH. Determinism: 148 passed, 1
+                 warning in 10.32s. Predicted 148.
+                 MATCH. Universe: PYTHONHASHSEED 0,
+                 1 passed in 117.83s (0:01:57).
+                 Predicted 1 passed. MATCH.
+                 Profile: uv run python
+                 tools/arch/perfmeasure.py --mode
+                 profile, PID 23416, exit 0. Wrote
+                 tools/arch/evidence/hotpath_executed.json.
+                 git ls-files --error-unmatch exit
+                 1 (not tracked).
+  CI:            pending.
+  MERGE:
+  BUGBOT:        pending.
+  DEVIATIONS:    none. The untracked pre JSON was
+                 moved aside for the post snapshot
+                 and restored after. A first
+                 prepush, PID 7840, exit 1, was
+                 superseded by the G1b amendment
+                 and the file-5 assignment fix; the
+                 gate above is the later run.
+  STANDING:      the contract is version 7 (T-15,
+                 D-248); stage E. PYTHONHASHSEED
+                 unset in local runs; the universe
+                 check ran at 0. No push, no PR.
+  EVIDENCE:      Detached runs: profile PID 23416,
+                 exit 0; full PID 1588, exit 0;
+                 prepush PID 11324, exit 0; n4 PID
+                 31972, exit 0; post-P-95 PID
+                 10068, exit 0, BASELINE GREEN.
+  NOTES:         SPEC 98ec5073, TEST 36acf61b,
+                 AMEND 6c0f4f45, AMEND2 63c4a69a,
+                 IMPL 99d92757, BASE 2721409a,
+                 ledger this commit. The AMEND
+                 commit is a standalone docs commit
+                 before IMPL (D-249 G1 amendment).
+                 AMEND2 is a standalone commit
+                 before IMPL (D-249 G1b amendment).
+                 Correction commit after the ledger commit: BASELINE verdict corrected from MATCH to MISMATCH (D-250).
+  F-P95-1:       prompt defect, corrected before S0 (D-94 heading rule)
+  F-P95-2:       prompt defect: fixture schedule (signals 240 s apart, T_seconds 120) closes every engine cell on an engine trigger before a legacy reversal; tape scope corrected to FAVORABLE and HORIZON; SAME covered by hand-built streams
+  F-P95-3:       file 7 captures Signals by patching EventBus.subscribe_all; relies on a run_synthetic cache miss (tapes and legacy variant unique to the file); fragile, unscheduled.
+  F-P95-4:       file 5 first draft assigned to an attribute and failed tests/conformance/test_composition_root.py; fixed inside file 5 before IMPL
+  F-P95-5:       file 7 pinned two fixture manifest hashes as module-level 64-hex constants, rejected by tests/determinism/test_parity_manifest.py; removed by the G1b amendment

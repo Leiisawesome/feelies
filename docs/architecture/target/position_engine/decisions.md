@@ -1676,6 +1676,113 @@ D-248 — CI watch re-anchored after P-62; check job timeout 25 minutes
   - Supersedes: D-209's reference, threshold and timeout figure only; its
     method, sigma and rules stand.
 
+D-249 — P-95 attribution diff: amended classes, location, legacy exit reason, tests
+
+Decided by the operator, 2026-11-19 (chat 14; options a, b, c, d as
+recommended). Evidence: censuses P-95c3 and P-95c4 at ade584f9
+(engine.py:209-219 and 231-275: the engine creates a cell only from a fill
+and never gates an entry; bootstrap.py:750 and 1550: separate position and
+signal sequence streams; orchestrator.py:2341-2352 and 2476-2490: reversal
+orders carry no reason; pyproject.toml:173 and 182-196: forensics may import
+only feelies.core). Supersedes the class list of evaluation.md §3 as written
+before this entry.
+
+(a) Classes. Episodes are keyed by (symbol, strategy_id, entry Signal).
+SAME, EXIT_CHANGED, ENTRY_CHANGED, LEGACY_ONLY (replaces ENTRY_REFUSED),
+ENGINE_ONLY, UNEXPLAINED. A one-arm entry is explained when the other arm
+held a position on that key at the entry signal (reason ENGINE_IN_POSITION
+or LEGACY_IN_POSITION) or a rejecting RiskVerdict with the same
+correlation_id and symbol exists in the other arm (reason RISK:<verdict
+reason>). Otherwise it is UNEXPLAINED. UNEXPLAINED must be empty;
+non-empty is a defect. ENGINE_ONLY may be non-empty.
+(b) Location. Pure core src/feelies/forensics/exit_attribution.py,
+importing only feelies.core, not exported from feelies.forensics. Tests:
+tests/forensics/test_exit_attribution.py (hand-built event streams) and
+tests/position_engine/test_p95_exit_attribution_tape.py (one constructed
+tape through run_synthetic in both arms). The real-day runner lands in P-99.
+(c) Legacy exit reason: the exit order's non-empty reason; else the Signal
+with the same correlation_id, symbol and strategy_id (FLAT -> SIGNAL_FLAT,
+opposite direction -> SIGNAL_REVERSE); else UNATTRIBUTED (reported and
+counted, not a defect); no exit fill -> END_OF_TAPE.
+(d) Tests: classes exact on the hand-built streams and on the constructed
+tape; the tape's expected classes and reasons are written in the test
+before the implementation exists and are reviewed at the step's gate.
+
+Pre-registered prediction (P-95):
+Changes: full-suite passed rises by exactly N, where N is the number of
+test ids pytest collects from files 6 and 7 (recorded at G1, before the
+post capture); prepush, -n 4 and CI Tests passed rise by exactly N' = the
+subset of those N that prepush selects (recorded at G1 with the reason
+for any not selected); tests/position_engine count rises by the ids from
+file 7; ruff format file count 820 -> 823; mypy source-file count rises by
+the number of new .py files inside mypy's configured scope (scope and
+expected count recorded at G1 from the config).
+Holds: 0 failed; 44 skipped; 2 xfailed (full); prepush 5 skipped,
+59 deselected, 1 xfailed; determinism 148; parity 64 constants; fingerprint
+261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97, files 1;
+lint-imports 2 kept 0 broken; universe 1 passed (PYTHONHASHSEED 0);
+tests/docs 107; test_doc_integrity.py 13; tests/conformance/test_ci_*.py 15;
+KILLED A 9, B 16; and every other field of the baseline capture.
+Mechanism: one new pure module reached only by the two new test files; no
+production module, config, contract or CI file is edited.
+
+G1 values (P-95): N = 24. Pytest collects 22 ids from
+tests/forensics/test_exit_attribution.py (test_same, test_exit_changed,
+test_entry_changed, test_legacy_only_engine_in_position,
+test_legacy_only_risk_reject, test_engine_only_legacy_in_position,
+test_unexplained, test_legacy_reason_order_reason,
+test_legacy_reason_signal_flat, test_legacy_reason_signal_reverse,
+test_legacy_reason_unattributed, test_legacy_reason_end_of_tape,
+test_zero_crossing_split, test_mae_long, test_mae_short,
+test_net_after_fees, test_manifest_hash_difference_matches,
+test_refuses_signal_metadata_other_than_manifest_hash,
+test_refuses_signal_streams_differ,
+test_refuses_opening_order_with_zero_signals,
+test_refuses_opening_order_with_two_signals,
+test_refuses_engine_cross_check_mismatch) and 2 ids from
+tests/position_engine/test_p95_exit_attribution_tape.py
+(test_tape_f_favorable_exit_changed, test_tape_h_horizon_exit_changed).
+File 7 adds those 2 ids. N' = 24. Prepush selects pytest -m "not functional
+and not paper_rth and not battery_real and not universe_check"
+(scripts/ci_gate_expr.txt, scripts/prepush.py). None of the 24 carry those
+markers, so none are excluded. mypy scope is src/feelies
+(pyproject [tool.mypy] strict, no per-module ignore_errors; prepush runs
+mypy src/feelies). New .py files in that scope: 1
+(src/feelies/forensics/exit_attribution.py).
+
+G1 amendment (P-95, operator, 2026-11-20). (i) Signal field equality and
+the episode match key exclude Signal.metadata["manifest_hash"], which
+differs between the arms by construction (removing exit_policy changes the
+manifest hash); any other metadata difference still refuses. (ii) An
+episode with no exit fill in an arm: holding time and maximum adverse
+excursion run to that arm's last quote for the symbol; net result is
+realised cash flow after fees, with no mark. (iii) The constructed-tape
+test captures Signals with a test-only bus hook because run_synthetic's
+Records carry none. Recorded as a standalone docs commit before the
+implementation commit, not as the step branch's first commit (rule 8
+position noted).
+
+G1b amendment (P-95, operator, 2026-11-20). The constructed-tape test no
+longer pins the two arms' manifest_hash values; it asserts each arm's
+Signal metadata holds only manifest_hash and that the two values differ.
+Reason: tests/determinism/test_parity_manifest.py rejects unregistered
+module-level 64-hex constants (F-P95-5), and those values belong to the
+fixture manifest, not to P-95. No attribute() expectation changes; N and N'
+stay 24. Recorded as a standalone commit before the implementation commit.
+
+D-250 — P-95 evidence-census delta accepted as explained
+
+Decided by the operator, 2026-11-21 (chat 14). The P-95 prediction (D-249)
+named test, ruff and mypy counts and held "every other field of the
+baseline capture", but did not name the evidence-census fields a new
+module moves. The post capture (BASE 2721409a) shows total_files 259 -> 260,
+n_modules 208 -> 209, n_edges 717 -> 718, public_symbols 633 -> 641,
+total_sloc 50406 -> 50921; n_cycles 1 and alphaleak 0 unchanged. Each delta
+follows from src/feelies/forensics/exit_attribution.py alone (one module,
+one import of feelies.core, eight public names). Recorded as a baseline
+MISMATCH, accepted; the prediction is not amended. Future steps that add a
+module or public names predict these fields explicitly.
+
 ### D-66 pre-registered prediction
 
 ```
