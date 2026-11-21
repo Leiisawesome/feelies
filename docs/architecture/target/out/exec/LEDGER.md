@@ -37669,9 +37669,35 @@ OWNER:       campaign 15.
                  tools/arch/evidence/hotpath_executed.json.
                  git ls-files --error-unmatch exit
                  1 (not tracked).
-  CI:            pending.
-  MERGE:
-  BUGBOT:        pending.
+  CI:            PR head 44909790955 success at ce2a171a
+                 (check 1033 s, value 84.51). Tests
+                 5490 passed, 5 skipped, 1 xfailed in
+                 926.23s; determinism 148 passed in
+                 10.96s; KILLED A 9, B 16.
+                 Superseded head run 44879082156 on
+                 3b741a5e (check 615 s, value 83.35)
+                 superseded.
+                 Merge run 44913229009 success at
+                 a0bab4dc (check 1059 s, value 83.60).
+                 Tests 5490 passed, 5 skipped, 1
+                 xfailed in 944.63s; determinism 148
+                 passed in 11.30s.
+  MERGE:         a0bab4dc0841781a08e867761ad6b722ab03963d,
+                 parents
+                 ade584f9bd42050eeeaf2fc9050e0fa3473d262c
+                 and
+                 ce2a171aa1db3c679ab4ea4b0f5104aec9ae8027,
+                 tree
+                 b7f99dcfd33181edd4f808ff487a20d9435e6c58
+                 = PR head tree. PR #315. Merged
+                 2026-11-21T14:18:09Z.
+  BUGBOT:        Bugbot 4651298800 (Medium) fixed in 015e897d; reply 4653044689.
+  CI WATCH:      head 1033 s, value 84.51; merge 1059 s,
+                 value 83.60. Two-run geometric mean
+                 84.05376850564167298440742443; D-209
+                 fired no (threshold 90.61, guard 1350 s,
+                 D-248). Superseded head run
+                 44879082156 check 615 s, value 83.35.
   DEVIATIONS:    none. The untracked pre JSON was
                  moved aside for the post snapshot
                  and restored after. A first
