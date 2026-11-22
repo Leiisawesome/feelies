@@ -96,8 +96,10 @@ from the legacy path, so the arms diverge only through position state.
   quotes; the engine arm also supplies its PositionClosed records.
 - Episodes are rebuilt the same way in both arms: flat to flat per
   (symbol, strategy_id) from OrderAck fills joined to OrderRequests on
-  order_id; a fill that crosses zero is split. The entry Signal is the
-  Signal with the opening order's correlation_id, symbol and strategy_id.
+  order_id; a fill that crosses zero is split. The entry Signal is linked
+  through the arm's signal-order trace (D-252); an arm without trace rows
+  uses the order's correlation_id, then the RiskVerdict at the order's
+  timestamp.
 - Episodes are matched by (symbol, strategy_id, entry Signal). Classes:
   - SAME: identical entry and exit fills;
   - EXIT_CHANGED: identical entry fills, different exit; carries the engine
@@ -111,10 +113,11 @@ from the legacy path, so the arms diverge only through position state.
   A one-arm entry is explained by ENGINE_IN_POSITION / LEGACY_IN_POSITION
   (the other arm held a position on that key at the entry signal) or
   RISK:<reason> (a rejecting RiskVerdict with the same correlation_id and
-  symbol in the other arm).
-- Legacy exit reason: the exit order's non-empty reason; else the
-  correlated Signal (FLAT -> SIGNAL_FLAT, opposite -> SIGNAL_REVERSE); else
-  UNATTRIBUTED; no exit fill -> END_OF_TAPE.
+  symbol in the other arm), or NO_ORDER:<reason> (the other arm's NO_ORDER
+  trace row for that signal, its first reason; D-252).
+- Legacy exit reason: the exit order's non-empty reason; else the Signal
+  linked to the exit order (FLAT -> SIGNAL_FLAT, opposite ->
+  SIGNAL_REVERSE; D-252); else UNATTRIBUTED; no exit fill -> END_OF_TAPE.
 - Per episode, both arms: entry and exit fills, net result after fees,
   holding time, maximum adverse excursion from the shared quotes (per share,
   against the running average entry price of the shares held at each quote:
