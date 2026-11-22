@@ -1,0 +1,3 @@
+extends: bt_position_arbitrary_not_calibrated.yaml
+alpha_specs:
+  - tests/position_engine/fixtures/sig_position_fixture_v1_legacy.alpha.yaml
