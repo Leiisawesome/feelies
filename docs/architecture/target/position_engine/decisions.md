@@ -1872,6 +1872,12 @@ lint-imports 2 kept 0 broken; universe 1 passed (PYTHONHASHSEED 0);
 tests/docs 107; and every other field of the baseline capture.
 Mechanism: new files outside src/ only; no existing file's behaviour changes.
 
+S2 values (P-99a): N 6, N' 6. Rule: scripts/ci_gate_expr.txt is
+`not functional and not paper_rth and not battery_real and not universe_check`;
+collect-only selects all 6 ids in tests/scripts/test_p95_attribution_report.py.
+test_e3_every_alpha_yaml_loads carries none of those markers, so the M=1 id
+is selected too, and prepush, -n 4 and CI Tests passed rise by N' + 1.
+
 ### D-66 pre-registered prediction
 
 ```
