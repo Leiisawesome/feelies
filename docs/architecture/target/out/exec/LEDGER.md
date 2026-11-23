@@ -37986,9 +37986,33 @@ OWNER:       campaign 15.
                  PYTHONHASHSEED 0, 1 passed in
                  170.86s (0:02:50). Profile PID
                  23332, exit 0.
-  CI:            pending until the merge.
-  MERGE:
-  BUGBOT:
+  CI:            PR head 45141739202 success at 7e9a989c
+                 (check 748 s, value 83.81). Tests
+                 5495 passed, 5 skipped, 1 xfailed in
+                 656.24s; determinism 148 passed in
+                 7.83s; KILLED A 9, B 16.
+                 Merge run 45148448927 success at
+                 07297212 (check 1046 s, value 84.07).
+                 Tests 5495 passed, 5 skipped, 1
+                 xfailed in 937.43s; determinism 148
+                 passed in 11.15s.
+  MERGE:         072972127c46603f0318cfcc95f5a767f1d6f27e,
+                 parents
+                 341015039c1568133f2579a950af520b94ce817b
+                 and
+                 7e9a989cf3e42410f8a312803ef6c71ff1c38dd7,
+                 tree
+                 2bbf5b060df3226e9abb7e3911ad0475b76ccd84
+                 = PR head tree. PR #316. Merged
+                 2026-11-23T09:35:29Z.
+  BUGBOT:        pass (3m12s); no issues found; no
+                 comments, no reviews.
+  CI WATCH:      head 748 s, value 83.81; merge 1046 s,
+                 value 84.07. Two-run geometric mean
+                 83.93989933279643861166982371; D-209
+                 fired no (threshold 90.61, guard 1350 s,
+                 D-248). post-P-62 pull_request runs 9
+                 of 12.
   DEVIATIONS:    Two pre captures git.dirty true,
                  moved to
                  %USERPROFILE%\feelies-probes\P-96\discarded\.
