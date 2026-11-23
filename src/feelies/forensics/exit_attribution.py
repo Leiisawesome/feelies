@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
+from typing import Protocol
 
 from feelies.core.events import (
     NBBOQuote,
@@ -20,7 +21,17 @@ from feelies.core.events import (
     Signal,
     SignalDirection,
 )
-from feelies.kernel.signal_order_trace import SignalOrderTraceRow
+
+
+class _SignalOrderTrace(Protocol):
+    """Trace-row attributes the D-252 linkage rules read."""
+
+    outcome: str
+    quote_correlation_id: str
+    symbol: str
+    strategy_id: str
+    signal_sequence: int
+    reasons: Sequence[str]
 
 
 class AttributionError(Exception):
@@ -48,7 +59,7 @@ class ArmEvents:
     risk_verdicts: Sequence[RiskVerdict]
     quotes: Sequence[NBBOQuote]
     position_closed: Sequence[PositionClosed] = field(default_factory=tuple)
-    signal_order_traces: Sequence[SignalOrderTraceRow] = field(default_factory=tuple)
+    signal_order_traces: Sequence[_SignalOrderTrace] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,7 +207,7 @@ def _correlated(signals: tuple[Signal, ...], order: OrderRequest) -> tuple[Signa
     )
 
 
-def _submitted_rows(arm: ArmEvents, order: OrderRequest) -> tuple[SignalOrderTraceRow, ...]:
+def _submitted_rows(arm: ArmEvents, order: OrderRequest) -> tuple[_SignalOrderTrace, ...]:
     return tuple(
         row
         for row in arm.signal_order_traces
@@ -207,7 +218,7 @@ def _submitted_rows(arm: ArmEvents, order: OrderRequest) -> tuple[SignalOrderTra
     )
 
 
-def _signals_for_row(signals: tuple[Signal, ...], row: SignalOrderTraceRow) -> tuple[Signal, ...]:
+def _signals_for_row(signals: tuple[Signal, ...], row: _SignalOrderTrace) -> tuple[Signal, ...]:
     return tuple(
         sig
         for sig in signals
