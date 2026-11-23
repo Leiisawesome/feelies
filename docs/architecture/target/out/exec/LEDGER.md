@@ -38050,3 +38050,225 @@ OWNER:       campaign 15.
                  8a0a90a33938dd1ebe450f08198ff0d419e05e68,
                  ledger this commit. Parked branch
                  exec/P-99a at 4846c15a.
+
+## P-99a Real-day P-95 report
+
+  VERDICT:       passed
+  DECISIONS:     D-253. P-99 split into P-99a
+                 (this rung, report only), P-99b
+                 and P-99c. S2 values: N 6, N' 7,
+                 M 1. Prediction not amended.
+  E0:            Six fail-first tests, before files
+                 4 and 5 and before the runner
+                 bodies. T1
+                 test_legacy_spec_equals_fixture_minus_exit_policy
+                 at test_p95_attribution_report.py:94:
+                 E   FileNotFoundError: [Errno 2] No such file or directory: 'tests\\position_engine\\fixtures\\sig_position_fixture_v1_legacy.alpha.yaml'
+                 T2
+                 test_legacy_config_differs_in_alpha_specs_only
+                 at test_p95_attribution_report.py:105,
+                 raised at config_yaml.py:57:
+                 E   feelies.core.errors.ConfigurationError: Failed to read config C:\Users\cheng.lei\OneDrive\Documents\GitHub\feelies\configs\bt_position_legacy_arm.yaml: [Errno 2] No such file or directory: 'C:\\Users\\cheng.lei\\OneDrive\\Documents\\GitHub\\feelies\\configs\\bt_position_legacy_arm.yaml'
+                 T3 test_exit_mix at line 121,
+                 exit_mix line 11; T4
+                 test_refusal_counts at line 136,
+                 refusal_counts line 15; T5
+                 test_suppression_counts at line
+                 150, suppression_counts line 21;
+                 T6 test_empty_inputs at line 155,
+                 exit_mix line 11:
+                 E   NotImplementedError: P-99a stub
+                 6 failed, 1 warning in 0.50s.
+                 0 passed.
+  TREE:          none.
+  SPEC:          052b21fa36a47fba2e9d93f16cf795a8030a5daf.
+                 D-253, plan rows P-99a/b/c,
+                 prediction in D-253.
+  TEST:          c353bb84147e3bb2716e186127bffc063a9d1424.
+                 Stub and fail-first tests.
+  IMPL:          7b933279f2225cd69794df19f03c3b5733adc6d8.
+                 Legacy arm and runner with trace
+                 linkage.
+  REPORT:        0c6aed7e57aebe36aac17a96cea987e98d6b5f01.
+                 Real-day report APP 2026-03-26.
+  BASE:          90ba039a93ea2edca32552ef4e28eea75cfb777a.
+                 pre baseline_pre-P-99a.json on
+                 052b21fa36a47fba2e9d93f16cf795a8030a5daf,
+                 captured_at
+                 2026-11-23T10:22:20.946273+00:00,
+                 git.dirty false, porcelain [],
+                 PID 8528, exit 0, BASELINE GREEN.
+                 Full 5514 passed, 0 failed, 44
+                 skipped, 2 xfailed (5514 passed,
+                 44 skipped, 2 xfailed, 49 warnings
+                 in 2556.87s (0:42:36));
+                 determinism 148 (148 passed, 1
+                 warning in 16.47s); parity 64;
+                 fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. Evidence: alphaleak n 0;
+                 n_cycles 1, n_edges 718, n_modules
+                 209; public_symbols 641, total_files
+                 260, total_sloc 51019. post
+                 baseline_post-P-99a.json on
+                 0c6aed7e57aebe36aac17a96cea987e98d6b5f01,
+                 captured_at
+                 2026-11-23T13:11:08.675958+00:00,
+                 git.dirty false, porcelain [],
+                 PID 10400, launched
+                 2026-11-23T21:11:08.1735357+08:00,
+                 exit 0, BASELINE GREEN. The
+                 untracked pre JSON was moved aside
+                 for that snapshot and restored
+                 after. Full 5521 passed, 0 failed,
+                 44 skipped, 2 xfailed (5521 passed,
+                 44 skipped, 2 xfailed, 49 warnings
+                 in 2117.48s (0:35:17));
+                 determinism 148 (148 passed, 1
+                 warning in 10.03s); same
+                 fingerprint, files 1. Evidence:
+                 alphaleak n 0; n_cycles 1, n_edges
+                 718, n_modules 209; public_symbols
+                 641, total_files 260, total_sloc
+                 51019. compare parity-only, exit 0:
+                 64 -> 64, changed 0. VERDICT: parity
+                 HOLDS -- no constant moved.
+                 JSON field diff besides label,
+                 captured_at, git.sha and elapsed
+                 seconds in the two tails:
+                 tests.passed 5514 -> 5521 and the
+                 same count on the tests tail line.
+                 Predicted full 5514 -> 5521;
+                 prepush, -n 4 and CI Tests
+                 5495 -> 5502; ruff format
+                 823 -> 825 | actual 5521 passed, 0
+                 failed, 44 skipped, 2 xfailed;
+                 prepush and -n 4 5502 passed;
+                 ruff format 825 | MATCH.
+  GATES:         File 7: 6 passed, 1 warning in
+                 0.42s. Attribution and tape: 34
+                 passed, 1 warning in 0.68s.
+                 Report runs both exit 0; SHA256 md
+                 33655F5DFA94640573802AB898C72309938BA282A3AE0AE772E660C2F480BA02
+                 and json
+                 B07BE7C4527F45F372CEBCCF8EE89EEE0D345C3880DF593BC707B4C5D5357E3A
+                 identical for the committed pair
+                 and run2. UNEXPLAINED 0. tests/docs
+                 before this heading: 107 passed,
+                 1 warning in 0.51s. Full suite:
+                 uv run pytest -q, PID 21348, exit
+                 0. 5521 passed, 44 skipped, 2
+                 xfailed, 49 warnings in 2863.24s
+                 (0:47:43). Predicted 5521 passed,
+                 0 failed, 44 skipped, 2 xfailed.
+                 MATCH. Prepush: uv run python
+                 scripts/prepush.py, PID 28224,
+                 exit 0. ruff check All checks
+                 passed; ruff format 825 files
+                 already formatted; mypy Success:
+                 no issues found in 260 source
+                 files; lint-imports Contracts: 2
+                 kept, 0 broken. 5502 passed, 5
+                 skipped, 59 deselected, 1 xfailed,
+                 49 warnings in 1631.33s (0:27:11).
+                 prepush: ok (ruff check, ruff
+                 format, mypy, lint-imports,
+                 pytest). Predicted 5502 passed, 5
+                 skipped, 59 deselected, 1 xfailed;
+                 ruff format 825; mypy 260;
+                 lint-imports 2 kept 0 broken.
+                 MATCH. -n 4: PID 27356, exit 0.
+                 5502 passed, 5 skipped, 1 xfailed,
+                 53 warnings in 876.82s (0:14:36);
+                 marker expression not functional
+                 and not paper_rth and not
+                 battery_real and not universe_check
+                 reached pytest intact. Determinism
+                 148 passed, 1 warning in 16.13s.
+                 Ruff check All checks passed. Ruff
+                 format 825 files already
+                 formatted. Mypy Success: no issues
+                 found in 260 source files.
+                 Lint-imports Contracts: 2 kept, 0
+                 broken. Analyzed 260 files, 720
+                 dependencies. Universe
+                 PYTHONHASHSEED 0, 1 passed in
+                 197.96s (0:03:17); HASHSEED_AFTER
+                 empty. Profile PID 22960, exit 0.
+  CI:            pending until the merge.
+  MERGE:         not started.
+  BUGBOT:        not read; CI has not run.
+  DEVIATIONS:    The untracked pre JSON was moved
+                 to
+                 %USERPROFILE%\feelies-probes\P-99a2\aside\
+                 so the post snapshot saw an empty
+                 porcelain, then restored before
+                 the captures commit. git.dirty
+                 false on both captures. No
+                 discarded capture.
+  STANDING:      phase-14 contract version 7.
+  EVIDENCE:      total_files 260; n_modules 209;
+                 n_edges 718; public_symbols 641;
+                 total_sloc 51019; n_cycles 1;
+                 alphaleak 0.
+  REPORT TABLES: docs/architecture/target/out/exec/P-99a_attribution_APP_2026-03-26.md
+                 lines 8-32. classes SAME 0 0 0;
+                 EXIT_CHANGED 1 295.76 -78.79;
+                 ENTRY_CHANGED 14 -151.54 -395.74;
+                 LEGACY_ONLY 17 -153.87 0;
+                 ENGINE_ONLY 19 0 -846.62;
+                 UNEXPLAINED 0 0 0. explanations
+                 EXIT_CHANGED '' 1; ENTRY_CHANGED
+                 '' 14; LEGACY_ONLY
+                 'NO_ORDER:resting_order_guard_blocked_duplicate_passive_order'
+                 1; LEGACY_ONLY 'RISK:per-alpha
+                 drawdown 5.28% >= limit 5.0% —
+                 alpha should be quarantined' 16;
+                 ENGINE_ONLY 'LEGACY_IN_POSITION'
+                 12; ENGINE_ONLY
+                 'NO_ORDER:resting_order_guard_blocked_duplicate_passive_order'
+                 7; SAME (none); UNEXPLAINED
+                 (none). legacy_reasons
+                 SIGNAL_REVERSE 32. exit_mix
+                 {"ADVERSE": 32, "HORIZON": 2}.
+                 refusals legacy {}; refusals
+                 engine {"NO_SCALE_IN": 3}.
+                 suppressions legacy 0 {};
+                 suppressions engine 7
+                 {"SYMBOL_QUIET": 7}. unexplained 0.
+  FINDINGS:      none.
+  NOTES:         commits in order: SPEC
+                 052b21fa36a47fba2e9d93f16cf795a8030a5daf,
+                 TEST
+                 c353bb84147e3bb2716e186127bffc063a9d1424,
+                 IMPL
+                 7b933279f2225cd69794df19f03c3b5733adc6d8,
+                 REPORT
+                 0c6aed7e57aebe36aac17a96cea987e98d6b5f01,
+                 BASE
+                 90ba039a93ea2edca32552ef4e28eea75cfb777a,
+                 ledger this commit. Parked branch
+                 exec/P-99a at 4846c15a, no traces,
+                 UNEXPLAINED 8; that report is not
+                 committed. S3 rules: none. The
+                 runner counts exit reasons,
+                 refusal reasons and suppression
+                 names and passes each arm's
+                 signal-order trace rows to
+                 attribute (D-252). An empty or
+                 missing sink is exit 5. No
+                 matching, linking or fallback
+                 rule. N' rule: scripts/ci_gate_expr.txt
+                 is not functional and not
+                 paper_rth and not battery_real
+                 and not universe_check. All 6 new
+                 tests collected under it. e3
+                 collected 18 ids with and without
+                 the marker before the legacy yaml
+                 existed, so the marker drops
+                 none; the new file adds one
+                 selected id. Profile log recorded
+                 a HorizonSignalEngine regime-gate
+                 warning on stderr and exit 0;
+                 hotpath_executed.json is
+                 gitignored.
