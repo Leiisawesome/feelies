@@ -1831,6 +1831,78 @@ one import of feelies.core, eight public names). Recorded as a baseline
 MISMATCH, accepted; the prediction is not amended. Future steps that add a
 module or public names predict these fields explicitly.
 
+D-252 — Attribution linkage via the signal-order trace; NO_ORDER explanations
+
+Decided by the operator, 2026-11-22 (chat 14; all options as recommended).
+Evidence: probe P-99ap on exec/P-99a at 4846c15a (8 UNEXPLAINED episodes,
+each with the other arm flat, RiskVerdict ALLOW, no order, and a NO_ORDER
+trace row resting_order_guard_blocked_duplicate_passive_order; the signal-61
+legacy exit is a reverse exit whose order correlation_id is the quote's);
+census P-96c at 34101503 (exit_attribution.py:197-230 links a live order
+through the RiskVerdict at the order's timestamp, a rule absent from D-249;
+388-402 legacy reason by order correlation_id; 425-432 explanations;
+orchestrator.py:3419-3433 trace rows carry quote_correlation_id and
+signal_sequence; pyproject.toml:173-174 allows feelies.forensics to import
+feelies.kernel).
+(a) P-99a is parked on exec/P-99a (4846c15a, unmerged); it is redone after
+P-96 merges, on a fresh branch with its own pre-registered prediction.
+(b) Linkage. ArmEvents gains signal_order_traces (default empty). When an
+arm has trace rows, an order's Signal is the one whose sequence, symbol and
+strategy_id equal those of the unique trace row with outcome ORDER_SUBMITTED,
+quote_correlation_id equal to the order's correlation_id, and the order's
+symbol and strategy_id. For an opening order, zero or several such rows, or
+no such Signal, is an AttributionError (no fallback). When an arm has no
+trace rows, the D-249 rule applies (the Signal with the order's
+correlation_id), then the fallback the P-95 implementation used, declared
+here: the Signal whose correlation_id equals that of the unique RiskVerdict
+for the order's symbol at the order's timestamp_ns.
+(c) Explanation of a one-arm entry, first that applies: the other arm held
+a position (ENGINE_IN_POSITION / LEGACY_IN_POSITION); a REJECT RiskVerdict
+in the other arm with the signal's correlation_id (RISK:<reason>); a
+NO_ORDER trace row in the other arm with signal_sequence, symbol and
+strategy_id equal to the signal's, first in stream order
+(NO_ORDER:<its first reason>); otherwise UNEXPLAINED.
+(d) Legacy exit reason: the exit order's non-empty reason; else the Signal
+linked to the exit order by (b) (FLAT -> SIGNAL_FLAT, opposite direction ->
+SIGNAL_REVERSE); no linked Signal -> UNATTRIBUTED; open at the arm's last
+quote -> END_OF_TAPE.
+(e) src/feelies/forensics/exit_attribution.py may import
+feelies.kernel.signal_order_trace (amends D-249 (b), which allowed
+feelies.core only).
+Also recorded: F-P99a-1 (legacy arm on APP 2026-03-26: a resting passive
+entry order blocked new entries for about 36 minutes, signals 71 to 89, and
+filled later; passive-order lifecycle, unscheduled); F-P95m-1 (the P-95
+merge report stated the CI-watch guard as 1215 s; the contract says 1350 s,
+exec-guardrail.mdc:156; the count of post-P-62 pull_request runs is 7 of
+12, including merge run 44913229009).
+Pre-registered prediction (P-96), against the pre capture:
+Changes: full-suite passed 5509 -> 5514; prepush, -n 4 and CI Tests passed
+5490 -> 5495; n_edges 718 (hold); total_sloc changes (direction not
+predicted).
+Holds: 0 failed; 44 skipped; 2 xfailed (full); prepush 5 skipped,
+59 deselected, 1 xfailed; determinism 148; parity 64 constants, changed 0;
+fingerprint 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+files 1; total_files 260; n_modules 209; public_symbols 641; n_cycles 1;
+alphaleak 0; ruff format 823 files; mypy 260 source files; lint-imports
+2 kept 0 broken; universe 1 passed (PYTHONHASHSEED 0); tests/docs 107; all
+29 existing P-95 tests pass unchanged; and every other field of the
+baseline capture.
+Mechanism: one new optional ArmEvents field and the linkage, explanation
+and legacy-reason rules above inside exit_attribution.py; five tests
+appended to tests/forensics/test_exit_attribution.py.
+
+E2 amendment (P-96, operator, 2026-11-23). (e) is withdrawn:
+tests/conformance/test_import_contracts.py pins engine-to-kernel imports at
+none (_KERNEL_IMPORT_RESIDUALS empty, line 36) and feelies.forensics is an
+engine module; the full suite failed test_engine_kernel_imports_equal_pin
+(F-P96-3). src/feelies/forensics/exit_attribution.py does not import
+feelies.kernel; ArmEvents.signal_order_traces holds any objects with the
+SignalOrderTraceRow attributes the D-252 rules read, typed by a private
+structural Protocol. D-249 (b) (feelies.core only) stands again. The
+prediction line "n_edges 718 -> 719" is replaced by "n_edges 718 (hold)";
+this is decided before the post capture because the design changed, not
+because of a measured value. Every other prediction line stands.
+
 ### D-66 pre-registered prediction
 
 ```

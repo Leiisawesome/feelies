@@ -37861,3 +37861,168 @@ OWNER:       campaign 15.
                  MATCH.
   F-P95-7:       Bugbot 4651298800 (Medium): partial exits treated as closed; fixed by D-249 G2 in 015e897d65f44783a3c72e8cf3892ef7b065e5f0
   F-P95-8:       MAE used the first fill price and no zero floor; the G2 test pinned -0.60 on instruction (Claude mistake 108); fixed by D-249 G3 in d388587aa207e69801eb99cc7d556c3145b1543c
+
+## P-96 Attribution linkage via the signal-order trace
+
+  VERDICT:       passed
+  DECISIONS:     D-252. E2 amendment (operator,
+                 2026-11-23) withdraws (e): no
+                 feelies.kernel import; a private
+                 structural Protocol types the trace
+                 rows. D-249 (b) stands again.
+                 Prediction line n_edges 718 -> 719
+                 replaced by n_edges 718 (hold) before
+                 the post capture.
+  E0:            Five fail-first tests, before the
+                 linkage change. T1
+                 test_trace_links_entry_and_flat_exit,
+                 T2 test_trace_links_reverse_exit, T3
+                 test_no_order_explains_engine_only:
+                 E   feelies.forensics.exit_attribution.AttributionError: opening order signal count
+                 at exit_attribution.py:231. T4
+                 test_trace_linkage_refuses_two_rows
+                 at test_exit_attribution.py:1775 and
+                 T5 test_trace_linkage_refuses_missing_row
+                 at test_exit_attribution.py:1819:
+                 E   Failed: DID NOT RAISE <class 'feelies.forensics.exit_attribution.AttributionError'>
+                 5 failed, 27 deselected, 1 warning
+                 in 0.49s. File 6 plus the tape file:
+                 5 failed, 29 passed, 1 warning in
+                 0.86s.
+  TREE:          none.
+  SPEC:          2cf343c9ba7e72655e8c1c722564f5dbf45417f5.
+                 D-252, evaluation section 3, plan row,
+                 prediction in D-252.
+  TEST:          36e8cd90811aea42556c22c54b0e754f9ea2d56c.
+                 Traces field and fail-first tests.
+  IMPL:          8c786de8879994e8cd1f91939f23cbf08039aaeb.
+                 Trace linkage and NO_ORDER
+                 explanations (D-252), still importing
+                 feelies.kernel.
+  AMEND-E2:      027cabba414dadce538db74f0cd527dffc4f25b9.
+                 D-252 E2, (e) withdrawn, n_edges hold.
+  FIX2:          cfd4c0aad5791ce9359924d30111231325308c92.
+                 Private _SignalOrderTrace Protocol;
+                 kernel import removed.
+  BASE:          8a0a90a33938dd1ebe450f08198ff0d419e05e68.
+                 pre baseline_pre-P-96.json on
+                 2cf343c9ba7e72655e8c1c722564f5dbf45417f5,
+                 captured_at
+                 2026-11-22T10:02:32.504201+00:00,
+                 git.dirty false, PID 31508, exit 0,
+                 BASELINE GREEN. Full 5509 passed, 0
+                 failed, 44 skipped, 2 xfailed (5509
+                 passed, 44 skipped, 2 xfailed, 49
+                 warnings in 1721.99s (0:28:41));
+                 determinism 148 (148 passed, 1
+                 warning in 10.95s); parity 64;
+                 fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. Evidence: alphaleak n 0;
+                 n_cycles 1, n_edges 718, n_modules
+                 209; public_symbols 641, total_files
+                 260, total_sloc 50951. post
+                 baseline_post-P-96.json on
+                 cfd4c0aad5791ce9359924d30111231325308c92,
+                 captured_at
+                 2026-11-23T04:40:14.863318+00:00,
+                 git.dirty false, PID 20420, exit 0,
+                 BASELINE GREEN. The untracked pre
+                 JSON was moved aside for that
+                 snapshot and restored after. Full
+                 5514 passed, 0 failed, 44 skipped, 2
+                 xfailed (5514 passed, 44 skipped, 2
+                 xfailed, 49 warnings in 2667.59s
+                 (0:44:27)); determinism 148 (148
+                 passed, 1 warning in 15.84s); same
+                 fingerprint, files 1. Evidence:
+                 alphaleak n 0; n_cycles 1, n_edges
+                 718, n_modules 209; public_symbols
+                 641, total_files 260, total_sloc
+                 51019. compare parity-only, exit 0:
+                 64 -> 64, changed 0. VERDICT: parity
+                 HOLDS -- no constant moved.
+                 Predicted full 5509 -> 5514; prepush,
+                 -n 4 and CI Tests 5490 -> 5495;
+                 n_edges 718 (hold); total_sloc
+                 changes | actual 5514 passed, 0
+                 failed, 44 skipped, 2 xfailed;
+                 prepush and -n 4 5495 passed;
+                 n_edges 718 -> 718; total_sloc 50951
+                 -> 51019 | MATCH.
+  GATES:         File 6: 32 passed, 1 warning in
+                 0.17s. Tape file: 2 passed, 1
+                 warning in 0.63s. Import pin: 3
+                 passed, 1 warning in 1.16s.
+                 tests/docs before this heading: 107
+                 passed, 1 warning in 0.49s. Full
+                 suite: uv run pytest -q, PID 27680,
+                 exit 0. 5514 passed, 44 skipped, 2
+                 xfailed, 49 warnings in 2086.20s
+                 (0:34:46). Predicted 5514 passed, 0
+                 failed, 44 skipped, 2 xfailed.
+                 MATCH. Prepush: uv run python
+                 scripts/prepush.py, PID 29368, exit
+                 0. ruff check All checks passed;
+                 ruff format 823 files already
+                 formatted; mypy Success: no issues
+                 found in 260 source files;
+                 lint-imports Contracts: 2 kept, 0
+                 broken. 5495 passed, 5 skipped, 59
+                 deselected, 1 xfailed, 49 warnings
+                 in 1673.17s (0:27:53). prepush: ok.
+                 Predicted 5495 passed, 5 skipped, 59
+                 deselected, 1 xfailed; ruff format
+                 823; mypy 260; lint-imports 2 kept
+                 0 broken. MATCH. -n 4: PID 15592,
+                 exit 0. 5495 passed, 5 skipped, 1
+                 xfailed, 53 warnings in 840.43s
+                 (0:14:00); marker expression not
+                 functional and not paper_rth and
+                 not battery_real and not
+                 universe_check reached pytest
+                 intact. Determinism 148 passed, 1
+                 warning in 13.53s. Universe
+                 PYTHONHASHSEED 0, 1 passed in
+                 170.86s (0:02:50). Profile PID
+                 23332, exit 0.
+  CI:            pending until the merge.
+  MERGE:
+  BUGBOT:
+  DEVIATIONS:    Two pre captures git.dirty true,
+                 moved to
+                 %USERPROFILE%\feelies-probes\P-96\discarded\.
+                 baseline_pre-P-96.json SHA256
+                 246315D1C67386C4138A244A6F95FFD1649CE89B133670FEA472FFB085063C56.
+                 baseline_pre-P-96-retake.json SHA256
+                 32BAFF324C6B34DBFA1A07C34C9ED11F06CE2757ADC6BF550DAEC46C47BBA958.
+                 Third capture operator-authorised
+                 on a clean tree and kept. T4 and T5
+                 corrected before the TEST commit.
+                 Full suite then failed the kernel
+                 import pin; D-252 E2 withdrew (e)
+                 before the post capture.
+  STANDING:      phase-14 contract version 7.
+  EVIDENCE:      total_files 260; n_modules 209;
+                 n_edges 718 -> 718; public_symbols
+                 641; total_sloc 50951 -> 51019;
+                 n_cycles 1; alphaleak 0.
+  F-P96-1:       two pre captures dirty: the parked P-99a untracked files stayed in the working tree on instruction (Claude mistake 113); moved to %USERPROFILE%\feelies-probes\P-99a\parked\; third capture operator-authorised on a clean tree; discarded captures kept in %USERPROFILE%\feelies-probes\P-96\discarded\
+  F-P96-2:       T4 and T5 first built with the verdict off every order timestamp, so the old code refused them too (Claude mistake 114); corrected before the TEST commit by placing the verdict at the entry order's timestamp
+  F-P96-3:       full suite red on test_engine_kernel_imports_equal_pin: D-252 (e) added an engine-to-kernel import the repo pins at none (Claude mistake 115); withdrawn by D-252 E2 before the post capture; exit_attribution.py uses a private structural Protocol instead
+  F-P99a-1:      legacy arm on APP 2026-03-26: a resting passive entry order blocked new entries for about 36 minutes, signals 71 to 89, and filled later; passive-order lifecycle, unscheduled
+  F-P95m-1:      the P-95 merge report stated the CI-watch guard as 1215 s; the contract says 1350 s, exec-guardrail.mdc:156; the count of post-P-62 pull_request runs is 7 of 12, including merge run 44913229009
+  NOTES:         commits in order: SPEC
+                 2cf343c9ba7e72655e8c1c722564f5dbf45417f5,
+                 TEST
+                 36e8cd90811aea42556c22c54b0e754f9ea2d56c,
+                 FIX
+                 8c786de8879994e8cd1f91939f23cbf08039aaeb,
+                 AMEND-E2
+                 027cabba414dadce538db74f0cd527dffc4f25b9,
+                 FIX2
+                 cfd4c0aad5791ce9359924d30111231325308c92,
+                 BASE
+                 8a0a90a33938dd1ebe450f08198ff0d419e05e68,
+                 ledger this commit. Parked branch
+                 exec/P-99a at 4846c15a.
