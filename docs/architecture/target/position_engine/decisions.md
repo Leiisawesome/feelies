@@ -1877,7 +1877,7 @@ exec-guardrail.mdc:156; the count of post-P-62 pull_request runs is 7 of
 12, including merge run 44913229009).
 Pre-registered prediction (P-96), against the pre capture:
 Changes: full-suite passed 5509 -> 5514; prepush, -n 4 and CI Tests passed
-5490 -> 5495; n_edges 718 -> 719; total_sloc changes (direction not
+5490 -> 5495; n_edges 718 (hold); total_sloc changes (direction not
 predicted).
 Holds: 0 failed; 44 skipped; 2 xfailed (full); prepush 5 skipped,
 59 deselected, 1 xfailed; determinism 148; parity 64 constants, changed 0;
@@ -1890,6 +1890,18 @@ baseline capture.
 Mechanism: one new optional ArmEvents field and the linkage, explanation
 and legacy-reason rules above inside exit_attribution.py; five tests
 appended to tests/forensics/test_exit_attribution.py.
+
+E2 amendment (P-96, operator, 2026-11-23). (e) is withdrawn:
+tests/conformance/test_import_contracts.py pins engine-to-kernel imports at
+none (_KERNEL_IMPORT_RESIDUALS empty, line 36) and feelies.forensics is an
+engine module; the full suite failed test_engine_kernel_imports_equal_pin
+(F-P96-3). src/feelies/forensics/exit_attribution.py does not import
+feelies.kernel; ArmEvents.signal_order_traces holds any objects with the
+SignalOrderTraceRow attributes the D-252 rules read, typed by a private
+structural Protocol. D-249 (b) (feelies.core only) stands again. The
+prediction line "n_edges 718 -> 719" is replaced by "n_edges 718 (hold)";
+this is decided before the post capture because the design changed, not
+because of a measured value. Every other prediction line stands.
 
 ### D-66 pre-registered prediction
 
