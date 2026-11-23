@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 from decimal import Decimal
+from typing import Literal
 
 import pytest
 
@@ -32,6 +33,7 @@ from feelies.forensics.exit_attribution import (
     Fill,
     attribute,
 )
+from feelies.kernel.signal_order_trace import SignalOrderTraceRow
 
 _ALPHA = "alpha"
 
@@ -1469,3 +1471,350 @@ def test_mae_floor_zero() -> None:
             (("SAME", 1, "1.98", "1.98"),),
         ),
     )
+
+
+def _trace(
+    quote_timestamp_ns: int,
+    quote_correlation_id: str,
+    quote_sequence: int,
+    signal_sequence: int,
+    signal_timestamp_ns: int,
+    strategy_id: str,
+    symbol: str,
+    signal_direction: str,
+    trading_intent: str,
+    outcome: Literal["ORDER_SUBMITTED", "NO_ORDER"],
+    reasons: tuple[str, ...],
+) -> SignalOrderTraceRow:
+    return SignalOrderTraceRow(
+        quote_timestamp_ns=quote_timestamp_ns,
+        quote_correlation_id=quote_correlation_id,
+        quote_sequence=quote_sequence,
+        signal_sequence=signal_sequence,
+        signal_timestamp_ns=signal_timestamp_ns,
+        strategy_id=strategy_id,
+        symbol=symbol,
+        signal_direction=signal_direction,
+        trading_intent=trading_intent,
+        outcome=outcome,
+        reasons=reasons,
+    )
+
+
+def _traced(arm: ArmEvents, traces: tuple[SignalOrderTraceRow, ...]) -> ArmEvents:
+    return dataclasses.replace(arm, signal_order_traces=traces)
+
+
+def _entry_trace() -> SignalOrderTraceRow:
+    return _trace(
+        950,
+        "SYN:950:3",
+        3,
+        7,
+        900,
+        _ALPHA,
+        "SYN",
+        "LONG",
+        "ENTRY_LONG",
+        "ORDER_SUBMITTED",
+        ("order_id=e1",),
+    )
+
+
+def _common_quotes() -> tuple[NBBOQuote, ...]:
+    return (
+        _quote(500, 1, "9.00", "9.01"),
+        _quote(1000, 2, "9.90", "9.91"),
+        _quote(1500, 3, "9.80", "9.81"),
+        _quote(2000, 4, "9.95", "9.96"),
+    )
+
+
+def test_trace_links_entry_and_flat_exit() -> None:
+    s1 = _sig(900, 7, SignalDirection.LONG, "snap:SYN:1")
+    s2 = _sig(1900, 8, SignalDirection.FLAT, "snap:SYN:2")
+    entry_order, entry_ack, entry = _trade(
+        950, 1000, 1, 1, "e1", Side.BUY, 10, "10.00", "0.05", "SYN:950:3"
+    )
+    exit_order, exit_ack, exit_fill = _trade(
+        1950, 2000, 2, 2, "x1", Side.SELL, 10, "10.50", "0.05", "SYN:1950:8"
+    )
+    exit_trace = _trace(
+        1950,
+        "SYN:1950:8",
+        8,
+        8,
+        1900,
+        _ALPHA,
+        "SYN",
+        "FLAT",
+        "EXIT",
+        "ORDER_SUBMITTED",
+        ("order_id=x1",),
+    )
+    quotes = _common_quotes()
+    signals = (s1, s2)
+    orders = (entry_order, exit_order)
+    acks = (entry_ack, exit_ack)
+    traces = (_entry_trace(), exit_trace)
+    verdicts = (_verdict(901, 1, "snap:SYN:1", RiskAction.ALLOW, ""),)
+    episode = _episode(s1, "LONG", (entry,), (exit_fill,), "4.90", 1000)
+    _check(
+        _traced(_arm(signals, orders, acks, quotes, verdicts), traces),
+        _traced(
+            _arm(
+                signals,
+                orders,
+                acks,
+                quotes,
+                verdicts,
+                closed=(_pc((entry,), (exit_fill,), "FAVORABLE"),),
+            ),
+            traces,
+        ),
+        _report(
+            (
+                _diff(
+                    "SAME",
+                    "SIGNAL_FLAT",
+                    "FAVORABLE",
+                    "",
+                    episode,
+                    episode,
+                    "0.20",
+                    "0.20",
+                    None,
+                ),
+            ),
+            (("SAME", 1, "4.90", "4.90"),),
+        ),
+    )
+
+
+def test_trace_links_reverse_exit() -> None:
+    s1 = _sig(900, 7, SignalDirection.LONG, "snap:SYN:1")
+    s2 = _sig(1900, 8, SignalDirection.SHORT, "snap:SYN:2")
+    entry_order, entry_ack, entry = _trade(
+        950, 1000, 1, 1, "e1", Side.BUY, 10, "10.00", "0.05", "SYN:950:3"
+    )
+    exit_order, exit_ack, exit_fill = _trade(
+        1950, 2000, 2, 2, "x1", Side.SELL, 10, "10.50", "0.05", "SYN:1950:8"
+    )
+    exit_trace = _trace(
+        1950,
+        "SYN:1950:8",
+        8,
+        8,
+        1900,
+        _ALPHA,
+        "SYN",
+        "SHORT",
+        "REVERSE_LONG_TO_SHORT",
+        "ORDER_SUBMITTED",
+        ("reverse_exit_only_submitted", "exit_order_id=x1"),
+    )
+    quotes = _common_quotes()
+    signals = (s1, s2)
+    orders = (entry_order, exit_order)
+    acks = (entry_ack, exit_ack)
+    traces = (_entry_trace(), exit_trace)
+    verdicts = (_verdict(901, 1, "snap:SYN:1", RiskAction.ALLOW, ""),)
+    episode = _episode(s1, "LONG", (entry,), (exit_fill,), "4.90", 1000)
+    _check(
+        _traced(_arm(signals, orders, acks, quotes, verdicts), traces),
+        _traced(
+            _arm(
+                signals,
+                orders,
+                acks,
+                quotes,
+                verdicts,
+                closed=(_pc((entry,), (exit_fill,), "FAVORABLE"),),
+            ),
+            traces,
+        ),
+        _report(
+            (
+                _diff(
+                    "SAME",
+                    "SIGNAL_REVERSE",
+                    "FAVORABLE",
+                    "",
+                    episode,
+                    episode,
+                    "0.20",
+                    "0.20",
+                    None,
+                ),
+            ),
+            (("SAME", 1, "4.90", "4.90"),),
+        ),
+    )
+
+
+def test_no_order_explains_engine_only() -> None:
+    s1 = _sig(900, 7, SignalDirection.LONG, "snap:SYN:1")
+    entry_order, entry_ack, entry = _trade(
+        950, 1000, 1, 1, "e1", Side.BUY, 10, "10.00", "0.05", "SYN:950:3"
+    )
+    exit_order, exit_ack, exit_fill = _trade(
+        1950,
+        2000,
+        2,
+        2,
+        "x1",
+        Side.SELL,
+        10,
+        "10.50",
+        "0.05",
+        "SYN:1950:8",
+        reason="FAVORABLE_EXCURSION",
+    )
+    no_order = _trace(
+        950,
+        "SYN:950:3",
+        3,
+        7,
+        900,
+        _ALPHA,
+        "SYN",
+        "LONG",
+        "ENTRY_LONG",
+        "NO_ORDER",
+        ("resting_order_guard_blocked_duplicate_passive_order", "symbol=SYN"),
+    )
+    quotes = _common_quotes()
+    signals = (s1,)
+    verdicts = (_verdict(901, 1, "snap:SYN:1", RiskAction.ALLOW, ""),)
+    episode = _episode(s1, "LONG", (entry,), (exit_fill,), "4.90", 1000)
+    _check(
+        _traced(_arm(signals, (), (), quotes, verdicts), (no_order,)),
+        _traced(
+            _arm(
+                signals,
+                (entry_order, exit_order),
+                (entry_ack, exit_ack),
+                quotes,
+                verdicts,
+                closed=(_pc((entry,), (exit_fill,), "FAVORABLE"),),
+            ),
+            (_entry_trace(),),
+        ),
+        _report(
+            (
+                _diff(
+                    "ENGINE_ONLY",
+                    "",
+                    "FAVORABLE",
+                    "NO_ORDER:resting_order_guard_blocked_duplicate_passive_order",
+                    None,
+                    episode,
+                    None,
+                    "0.20",
+                    None,
+                ),
+            ),
+            (("ENGINE_ONLY", 1, "0.00", "4.90"),),
+        ),
+    )
+
+
+def test_trace_linkage_refuses_two_rows() -> None:
+    s1 = _sig(900, 7, SignalDirection.LONG, "snap:SYN:1")
+    s2 = _sig(1900, 8, SignalDirection.FLAT, "snap:SYN:2")
+    entry_order, entry_ack, entry = _trade(
+        950, 1000, 1, 1, "e1", Side.BUY, 10, "10.00", "0.05", "SYN:950:3"
+    )
+    exit_order, exit_ack, _exit_fill = _trade(
+        1950, 2000, 2, 2, "x1", Side.SELL, 10, "10.50", "0.05", "SYN:1950:8"
+    )
+    exit_trace = _trace(
+        1950,
+        "SYN:1950:8",
+        8,
+        8,
+        1900,
+        _ALPHA,
+        "SYN",
+        "FLAT",
+        "EXIT",
+        "ORDER_SUBMITTED",
+        ("order_id=x1",),
+    )
+    second = _trace(
+        950,
+        "SYN:950:3",
+        3,
+        8,
+        1900,
+        _ALPHA,
+        "SYN",
+        "LONG",
+        "ENTRY_LONG",
+        "ORDER_SUBMITTED",
+        ("order_id=e1",),
+    )
+    quotes = _common_quotes()
+    signals = (s1, s2)
+    orders = (entry_order, exit_order)
+    acks = (entry_ack, exit_ack)
+    traces = (_entry_trace(), second, exit_trace)
+    verdicts = (_verdict(950, 1, "snap:SYN:1", RiskAction.ALLOW, ""),)
+    legacy = _traced(_arm(signals, orders, acks, quotes, verdicts), traces)
+    engine = _traced(
+        _arm(
+            signals,
+            orders,
+            acks,
+            quotes,
+            verdicts,
+            closed=(_pc((entry,), (_fill("10.50", 10, 2000, "0.05", 2),), "FAVORABLE"),),
+        ),
+        traces,
+    )
+    with pytest.raises(AttributionError):
+        attribute(legacy, engine, day_count=1)
+
+
+def test_trace_linkage_refuses_missing_row() -> None:
+    s1 = _sig(900, 7, SignalDirection.LONG, "snap:SYN:1")
+    s2 = _sig(1900, 8, SignalDirection.FLAT, "snap:SYN:2")
+    entry_order, entry_ack, entry = _trade(
+        950, 1000, 1, 1, "e1", Side.BUY, 10, "10.00", "0.05", "SYN:950:3"
+    )
+    exit_order, exit_ack, _exit_fill = _trade(
+        1950, 2000, 2, 2, "x1", Side.SELL, 10, "10.50", "0.05", "SYN:1950:8"
+    )
+    exit_trace = _trace(
+        1950,
+        "SYN:1950:8",
+        8,
+        8,
+        1900,
+        _ALPHA,
+        "SYN",
+        "FLAT",
+        "EXIT",
+        "ORDER_SUBMITTED",
+        ("order_id=x1",),
+    )
+    quotes = _common_quotes()
+    signals = (s1, s2)
+    orders = (entry_order, exit_order)
+    acks = (entry_ack, exit_ack)
+    traces = (exit_trace,)
+    verdicts = (_verdict(950, 1, "snap:SYN:1", RiskAction.ALLOW, ""),)
+    legacy = _traced(_arm(signals, orders, acks, quotes, verdicts), traces)
+    engine = _traced(
+        _arm(
+            signals,
+            orders,
+            acks,
+            quotes,
+            verdicts,
+            closed=(_pc((entry,), (_fill("10.50", 10, 2000, "0.05", 2),), "FAVORABLE"),),
+        ),
+        traces,
+    )
+    with pytest.raises(AttributionError):
+        attribute(legacy, engine, day_count=1)

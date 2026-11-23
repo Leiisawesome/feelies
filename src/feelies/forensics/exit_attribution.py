@@ -20,6 +20,7 @@ from feelies.core.events import (
     Signal,
     SignalDirection,
 )
+from feelies.kernel.signal_order_trace import SignalOrderTraceRow
 
 
 class AttributionError(Exception):
@@ -47,6 +48,7 @@ class ArmEvents:
     risk_verdicts: Sequence[RiskVerdict]
     quotes: Sequence[NBBOQuote]
     position_closed: Sequence[PositionClosed] = field(default_factory=tuple)
+    signal_order_traces: Sequence[SignalOrderTraceRow] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True, slots=True)
