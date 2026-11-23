@@ -196,22 +196,32 @@ def _correlated(signals: tuple[Signal, ...], order: OrderRequest) -> tuple[Signa
     )
 
 
-def _opening_signal(
+def _submitted_rows(arm: ArmEvents, order: OrderRequest) -> tuple[SignalOrderTraceRow, ...]:
+    return tuple(
+        row
+        for row in arm.signal_order_traces
+        if row.outcome == "ORDER_SUBMITTED"
+        and row.quote_correlation_id == order.correlation_id
+        and row.symbol == order.symbol
+        and row.strategy_id == order.strategy_id
+    )
+
+
+def _signals_for_row(signals: tuple[Signal, ...], row: SignalOrderTraceRow) -> tuple[Signal, ...]:
+    return tuple(
+        sig
+        for sig in signals
+        if sig.sequence == row.signal_sequence
+        and sig.symbol == row.symbol
+        and sig.strategy_id == row.strategy_id
+    )
+
+
+def _verdict_signals(
     signals: tuple[Signal, ...],
     order: OrderRequest,
     verdicts: Sequence[RiskVerdict],
-) -> Signal:
-    """The entry signal for an opening order.
-
-    Hand-built streams stamp the order with the signal's correlation id.
-    A live order is stamped with the triggering quote, and the signal id is
-    on the risk verdict emitted at that order's timestamp.
-    """
-    matched = _correlated(signals, order)
-    if len(matched) > 1:
-        raise AttributionError("opening order signal count")
-    if len(matched) == 1:
-        return matched[0]
+) -> tuple[Signal, ...]:
     linked: list[Signal] = []
     seen: list[tuple[object, ...]] = []
     for verdict in verdicts:
@@ -227,6 +237,25 @@ def _opening_signal(
                 continue
             seen.append(identity)
             linked.append(sig)
+    return tuple(linked)
+
+
+def _opening_signal(arm: ArmEvents, signals: tuple[Signal, ...], order: OrderRequest) -> Signal:
+    """Entry signal for an opening order (D-249, D-252)."""
+    if arm.signal_order_traces:
+        rows = _submitted_rows(arm, order)
+        if len(rows) != 1:
+            raise AttributionError("opening order signal count")
+        found = _signals_for_row(signals, rows[0])
+        if len(found) != 1:
+            raise AttributionError("opening order signal count")
+        return found[0]
+    matched = _correlated(signals, order)
+    if len(matched) > 1:
+        raise AttributionError("opening order signal count")
+    if len(matched) == 1:
+        return matched[0]
+    linked = _verdict_signals(signals, order, arm.risk_verdicts)
     if len(linked) != 1:
         raise AttributionError("opening order signal count")
     return linked[0]
@@ -312,7 +341,7 @@ def _episodes(arm: ArmEvents, signals: tuple[Signal, ...]) -> tuple[_Episode, ..
             qty = ack.filled_quantity
             signed = qty if order.side == Side.BUY else -qty
             if pos == 0 or current is None:
-                signal = _opening_signal(signals, order, arm.risk_verdicts)
+                signal = _opening_signal(arm, signals, order)
                 side = "LONG" if signed > 0 else "SHORT"
                 current = _Open(signal, side, [_fill(ack, qty, ack.fees)], [], [])
                 pos = signed
@@ -327,7 +356,7 @@ def _episodes(arm: ArmEvents, signals: tuple[Signal, ...]) -> tuple[_Episode, ..
                 built.append(closed)
             if reopen is not None:
                 reopen_ack, excess, fee = reopen
-                signal = _opening_signal(signals, order, arm.risk_verdicts)
+                signal = _opening_signal(arm, signals, order)
                 side = "LONG" if signed > 0 else "SHORT"
                 current = _Open(signal, side, [_fill(reopen_ack, excess, fee)], [], [])
                 pos = excess if signed > 0 else -excess
@@ -387,7 +416,15 @@ def _quantity(fills: tuple[Fill, ...]) -> int:
     return total
 
 
-def _legacy_reason(episode: _Episode, signals: tuple[Signal, ...]) -> str:
+def _direction_reason(direction: SignalDirection, opposite: SignalDirection) -> str:
+    if direction == SignalDirection.FLAT:
+        return "SIGNAL_FLAT"
+    if direction == opposite:
+        return "SIGNAL_REVERSE"
+    return "UNATTRIBUTED"
+
+
+def _legacy_reason(episode: _Episode, signals: tuple[Signal, ...], arm: ArmEvents) -> str:
     if _quantity(episode.entry_fills) != _quantity(episode.exit_fills):
         return "END_OF_TAPE"
     order = episode.exit_order
@@ -395,13 +432,26 @@ def _legacy_reason(episode: _Episode, signals: tuple[Signal, ...]) -> str:
         raise AttributionError("exit fill without an order")
     if order.reason:
         return order.reason
-    matched = _correlated(signals, order)
     opposite = SignalDirection.SHORT if episode.side == "LONG" else SignalDirection.LONG
+    if arm.signal_order_traces:
+        rows = _submitted_rows(arm, order)
+        if len(rows) != 1:
+            return "UNATTRIBUTED"
+        found = _signals_for_row(signals, rows[0])
+        if len(found) != 1:
+            return "UNATTRIBUTED"
+        return _direction_reason(found[0].direction, opposite)
+    matched = _correlated(signals, order)
     if any(sig.direction == SignalDirection.FLAT for sig in matched):
         return "SIGNAL_FLAT"
     if any(sig.direction == opposite for sig in matched):
         return "SIGNAL_REVERSE"
-    return "UNATTRIBUTED"
+    if matched:
+        return "UNATTRIBUTED"
+    linked = _verdict_signals(signals, order, arm.risk_verdicts)
+    if len(linked) != 1:
+        return "UNATTRIBUTED"
+    return _direction_reason(linked[0].direction, opposite)
 
 
 def _position_before(arm: ArmEvents, symbol: str, strategy_id: str, timestamp_ns: int) -> int:
@@ -426,6 +476,20 @@ def _reject_reason(arm: ArmEvents, signal: Signal) -> str | None:
     return None
 
 
+def _no_order_reason(arm: ArmEvents, signal: Signal) -> str | None:
+    for row in arm.signal_order_traces:
+        if row.outcome != "NO_ORDER":
+            continue
+        if (
+            row.signal_sequence != signal.sequence
+            or row.symbol != signal.symbol
+            or row.strategy_id != signal.strategy_id
+        ):
+            continue
+        return row.reasons[0]
+    return None
+
+
 def _one_arm_explanation(other: ArmEvents, signal: Signal, label: str) -> str:
     held = _position_before(other, signal.symbol, signal.strategy_id, signal.timestamp_ns)
     if held != 0:
@@ -433,6 +497,9 @@ def _one_arm_explanation(other: ArmEvents, signal: Signal, label: str) -> str:
     reason = _reject_reason(other, signal)
     if reason is not None:
         return f"RISK:{reason}"
+    no_order = _no_order_reason(other, signal)
+    if no_order is not None:
+        return f"NO_ORDER:{no_order}"
     return ""
 
 
@@ -625,7 +692,7 @@ def attribute(
                 engine_reason="" if engine_ep is None else engine_ep.engine_reason,
                 legacy_reason=""
                 if legacy_ep is None
-                else _legacy_reason(legacy_ep, legacy_signals),
+                else _legacy_reason(legacy_ep, legacy_signals, legacy),
                 explanation=explanation,
                 legacy=None if legacy_ep is None else _arm_episode(legacy_ep, legacy.quotes),
                 engine=None if engine_ep is None else _arm_episode(engine_ep, engine.quotes),
