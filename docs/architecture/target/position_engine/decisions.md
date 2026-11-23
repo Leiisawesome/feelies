@@ -1943,6 +1943,8 @@ lint-imports 2 kept 0 broken; universe 1 passed (PYTHONHASHSEED 0);
 tests/docs 107; and every other field of the baseline capture.
 Mechanism: new files outside src/ only; no existing file's behaviour changes.
 
+S2 values (P-99a): N 6, N' 7, M 1
+
 ### D-66 pre-registered prediction
 
 ```
