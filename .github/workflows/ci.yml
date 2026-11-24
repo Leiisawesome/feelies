@@ -349,6 +349,9 @@ jobs:
       - name: Battery members (real session)
         run: uv run pytest tests/position_engine -m battery_real -q
 
+      - name: Replay the position oracle
+        run: uv run pytest tests/acceptance/test_backtest_position_oracle.py -q -m ""
+
       - name: Replay the locked APP baseline under an unpinned hash seed
         # The step above runs at PYTHONHASHSEED=0, and until now that was the
         # only seed the oracle was ever run under — so the strongest regression
@@ -369,6 +372,11 @@ jobs:
         env:
           PYTHONHASHSEED: random
         run: uv run pytest tests/acceptance/test_backtest_app_baseline.py -q -m ""
+
+      - name: Replay the position oracle under an unpinned hash seed
+        env:
+          PYTHONHASHSEED: random
+        run: uv run pytest tests/acceptance/test_backtest_position_oracle.py -q -m ""
 
   reference-battery:
     name: reference battery
