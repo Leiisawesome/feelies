@@ -38195,9 +38195,34 @@ OWNER:       campaign 15.
                  PYTHONHASHSEED 0, 1 passed in
                  197.96s (0:03:17); HASHSEED_AFTER
                  empty. Profile PID 22960, exit 0.
-  CI:            pending until the merge.
-  MERGE:         not started.
-  BUGBOT:        not read; CI has not run.
+  CI:            PR head 45314447408 success at 478b3e4c
+                 (check 892 s, value 78.96). Tests
+                 5502 passed, 5 skipped, 1 xfailed in
+                 788.79s; determinism 148 passed in
+                 9.99s; KILLED A 9, B 16.
+                 Merge run 45326209530 success at
+                 c7d53d8d (check 723 s, value 85.18).
+                 Tests 5502 passed, 5 skipped, 1
+                 xfailed in 636.29s; determinism 148
+                 passed in 7.47s.
+  MERGE:         RESULT SHA
+                 c7d53d8df3ecdbfed843b0d41939450de93a70ab,
+                 parents
+                 63c7ccbae01f09a45d02a00f2cabad8152c86a42
+                 and
+                 478b3e4c8609213e774bf9205026719542307f96,
+                 tree
+                 40eb220b16bd3ee75e1832f395daa6c840b28957
+                 = PR head tree. PR #317. Merged
+                 2026-11-24T04:24:40Z.
+  BUGBOT:        pass (3m35s); no issues found; no
+                 comments, no reviews.
+  CI WATCH:      head 892 s, value 78.96; merge 723 s,
+                 value 85.18. Two-run geometric mean
+                 82.01105291361646699340566463; D-209
+                 fired no (threshold 90.61, guard 1350 s,
+                 D-248). post-P-62 pull_request runs 11
+                 of 12.
   DEVIATIONS:    The untracked pre JSON was moved
                  to
                  %USERPROFILE%\feelies-probes\P-99a2\aside\
