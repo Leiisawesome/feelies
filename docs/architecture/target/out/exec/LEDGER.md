@@ -38678,3 +38678,29 @@ OWNER:       campaign 15.
                  regime-gate warning on stderr
                  and exit 0; hotpath_executed.json
                  is gitignored.
+  CI:            PR head 45522699620 success at 499dbf78
+                 (check 1046 s, value 84.60). Tests
+                 5503 passed, 5 skipped, 1 xfailed in
+                 936.51s; determinism 148 passed in
+                 11.07s.
+                 Merge run 45528593174 success at
+                 efd6e9dd (check 571 s, value 80.40).
+                 Tests 5503 passed, 5 skipped, 1
+                 xfailed in 498.45s; determinism 148
+                 passed in 6.20s.
+  MERGE:         RESULT SHA
+                 efd6e9dd1700219db6c70298decae345a4b85ddb,
+                 parents
+                 49b2979fcd6a333787ea6be97e1c165b7c3d8b37
+                 and
+                 499dbf787da0f288d001ed7de5d1653a95f11986,
+                 tree
+                 b11cac83c91dd34a0adb3ceb0c792f1d7e782f57
+                 = PR head tree. PR #318. Merged
+                 2026-11-25T01:49:44Z.
+  CI WATCH:      head 1046 s, value 84.60; merge 571 s,
+                 value 80.40. Two-run geometric mean
+                 82.47326839649317547834506691; D-209
+                 fired no (threshold 90.61, guard 1350 s,
+                 D-248).
+  FINDINGS:      F-P99b-4 D-248 expired before P-99b. Counting every completed pull_request run of ci.yml from 43574285462 in id order, run 12 is 45148448927 (P-96 merge, 2026-11-23); 17 runs existed at P-99b's head run 45522699620. The chat-14 handoff listed 11 and omitted 43592880400, 44478118422, 44915195513, 45151795137 and 45328168685 (arch/exec runs via PR #249). 90.61 stands until an operator D-entry; the ci_watch.py re-derivation is scheduled for P-99c (operator decision, chat 15).
