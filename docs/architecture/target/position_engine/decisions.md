@@ -2098,7 +2098,7 @@ broken; ruff format 826 files; universe 1 passed (PYTHONHASHSEED 0);
 tests/docs 107; tests/conformance/test_ci_watch.py and
 test_ci_watch_extract.py green; and every other field of the baseline capture.
 Mechanism: a committed CSV and contract text; no code path reads either.
-Result: written at S2 from tools/exec/ci_watch.py output.
+Result: reference 82.87 sigma 0.0211 threshold 86.66 runs 25 groups 6 Run set: 25 runs, 2026-11-14T01:34:40Z..2026-11-25T06:54:46Z, CSV SHA256 A75DE756EB12BE71EF3027CBB85FC2808409B44CE277093FB5CD002156C9E729. Contract figure: 86.66.
 END D-256
 
 ### D-66 pre-registered prediction

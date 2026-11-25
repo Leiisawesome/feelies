@@ -152,9 +152,9 @@ The Claude chat rollover limit is 3 merged steps (playbook v1.3; D-202).
 - CI watch (D-209, D-248). Every merge report prints the check job's seconds
   and the ratio Tests / Determinism for the PR-head run and for the merge
   run, each from pytest's final summary line in that check job's log, and
-  the geometric mean of the two ratios. A mean above 90.61, or a check job
+  the geometric mean of the two ratios. A mean above 86.66, or a check job
   above 90% of the check job's timeout-minutes (1350 s at 25), fires: the
-  merge proceeds, and the next code rung waits on a tooling census. 90.61
+  merge proceeds, and the next code rung waits on a tooling census. 86.66
   moves only by an operator D-entry.
 
 ## Engine independence
