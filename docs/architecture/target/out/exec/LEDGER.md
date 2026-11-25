@@ -38704,3 +38704,242 @@ OWNER:       campaign 15.
                  fired no (threshold 90.61, guard 1350 s,
                  D-248).
   FINDINGS:      F-P99b-4 D-248 expired before P-99b. Counting every completed pull_request run of ci.yml from 43574285462 in id order, run 12 is 45148448927 (P-96 merge, 2026-11-23); 17 runs existed at P-99b's head run 45522699620. The chat-14 handoff listed 11 and omitted 43592880400, 44478118422, 44915195513, 45151795137 and 45328168685 (arch/exec runs via PR #249). 90.61 stands until an operator D-entry; the ci_watch.py re-derivation is scheduled for P-99c (operator decision, chat 15).
+
+## P-99c1 Findings register, plan reconciliation, contract v8
+
+  VERDICT:       passed
+  DECISIONS:     D-255. Prediction not amended.
+                 Operator approved P-99c1 at the
+                 boundary gate.
+  E0:            none. Docs only; no fail-first
+                 test.
+  TREE:          git diff --stat
+                 arch/exec..exec/P-99c1:
+                  .cursor/rules/exec-guardrail.mdc                   |   6 +-
+                  .../target/out/exec/P-99c_findings_register.csv    | 297 +++++++++++
+                  .../target/out/exec/P-99c_findings_register.md     | 184 +++++++
+                  .../target/out/exec/P-99c_make_register.ps1        | 557 +++++++++++++++++++++
+                  .../target/out/exec/baseline_post-P-99c1.json      | 117 +++++
+                  .../target/out/exec/baseline_pre-P-99c1.json       | 117 +++++
+                  .../target/out/phase14_position_engine.md          |  36 +-
+                  .../target/position_engine/decisions.md            |  61 +++
+                  8 files changed, 1358 insertions(+), 17 deletions(-)
+  SPEC:          c5e06db85a91e5c48f0ce5cbbf498f11b1388ba8.
+                 D-255, prediction in D-255.
+  TEST:          none.
+  IMPL:          none.
+  REPORT:        none.
+  BASE:          321cd40089000f0ade8d438238503d3741116421.
+                 pre baseline_pre-P-99c1.json on
+                 c5e06db85a91e5c48f0ce5cbbf498f11b1388ba8,
+                 captured_at
+                 2026-11-25T04:21:50.051230+00:00,
+                 git.dirty false, porcelain [],
+                 PID 6712, launched
+                 2026-11-25T12:21:49+08:00,
+                 exit 0, BASELINE GREEN.
+                 Full 5523 passed, 0 failed, 44
+                 skipped, exit 0 (5523 passed,
+                 44 skipped, 2 xfailed, 49 warnings
+                 in 2345.88s (0:39:05));
+                 determinism 148 passed, 0 failed,
+                 exit 0 (148 passed, 1 warning in
+                 10.08s); parity 64 constants
+                 across 25 modules; fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. Evidence: alphaleak n 0;
+                 available True; n_cycles 1,
+                 n_edges 718, n_modules 209;
+                 public_symbols 641, total_files
+                 260, total_sloc 51019. SHA256
+                 before the move and after the
+                 move:
+                 2A06BED34D48D6DF3A131A7B9C8CC9FED4D1FCCE8ECD84877B82D9EF736442EC.
+                 post baseline_post-P-99c1.json on
+                 91499c2e847ff1e60079a5f786d6503a67aaf464,
+                 captured_at
+                 2026-11-25T05:36:32.934923+00:00,
+                 git.dirty false, porcelain [],
+                 PID 22516, launched
+                 2026-11-25T13:36:32+08:00,
+                 exit 0, BASELINE GREEN. The
+                 untracked pre JSON was restored
+                 before that compare. SHA256 after
+                 the restore equals the same
+                 value. Full 5523 passed, 0 failed,
+                 44 skipped, exit 0 (5523 passed,
+                 44 skipped, 2 xfailed, 49 warnings
+                 in 2071.66s (0:34:31));
+                 determinism 148 passed, 0 failed,
+                 exit 0 (148 passed, 1 warning in
+                 10.17s); same fingerprint, files 1.
+                 Evidence: alphaleak n 0; available
+                 True; n_cycles 1, n_edges 718,
+                 n_modules 209; public_symbols 641,
+                 total_files 260, total_sloc 51019.
+                 compare parity-only, exit 0:
+                 constants 64 -> 64, changed 0.
+                 VERDICT: parity HOLDS -- no
+                 constant moved. parity_equal True.
+                 JSON field diff count 5, all
+                 identity or elapsed time:
+                 captured_at, label, git.sha, and
+                 the seconds in tests.tail and
+                 determinism.tail. Count text in
+                 both tails matches, including
+                 2 xfailed. Register counts,
+                 script exit 0:
+                 CLOSED 56, CARRIED-14E 10,
+                 CARRIED-PAPER-LIVE 18,
+                 OPERATOR-POLICY 6, BACKLOG 26,
+                 ACCEPTED 20, RECORD 161,
+                 total 297. Predicted register
+                 CLOSED 34 + 22 = 56,
+                 CARRIED-14E 10,
+                 CARRIED-PAPER-LIVE 18,
+                 OPERATOR-POLICY 6, BACKLOG 26,
+                 ACCEPTED 20, RECORD 161,
+                 total 297 | actual those counts |
+                 MATCH. Predicted full suite
+                 5523 passed, 0 failed, 44 skipped,
+                 2 xfailed | actual pre and post
+                 as above | MATCH. Predicted
+                 prepush 5503 passed, 5 skipped,
+                 60 deselected, 1 xfailed |
+                 actual 5503 passed, 5 skipped,
+                 60 deselected, 1 xfailed,
+                 49 warnings in 1010.55s
+                 (0:16:50) | MATCH. Predicted
+                 -n 4 5503 | actual 5503 passed,
+                 5 skipped, 1 xfailed, 53 warnings
+                 in 619.99s (0:10:19) (xdist
+                 printed no deselected count) |
+                 MATCH. Holds, each MATCH:
+                 determinism 148; parity 64,
+                 changed 0; fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1; total_files 260;
+                 n_modules 209; n_edges 718;
+                 public_symbols 641; total_sloc
+                 51019; n_cycles 1; alphaleak 0;
+                 mypy 260 source files
+                 (Success: no issues found in 260
+                 source files); lint-imports
+                 2 kept, 0 broken (Contracts: 2
+                 kept, 0 broken.); ruff format
+                 826 files (826 files already
+                 formatted); universe 1 passed
+                 (PYTHONHASHSEED 0; 1 passed in
+                 116.94s (0:01:56)); tests/docs
+                 107 (107 passed, 1 warning in
+                 0.45s). Every other measured
+                 field of the two captures holds;
+                 the five JSON diffs are label,
+                 captured_at, git.sha, and elapsed
+                 seconds in the two tails.
+  GATES:         Preflight P3: git grep D-255 at
+                 140b2a3b, P3-EXIT=1, no hits.
+                 P4: git grep Version 7, until
+                 P-99, retired or replaced, under
+                 tests tools scripts with the
+                 stated exclusions, P4-EXIT=1,
+                 no hits. P5: make_register2.ps1
+                 SHA256
+                 D255C181F92599A8A64FC0E0CD4427E14979513EFCDA0F897B1911FD2A6A8321;
+                 register2.csv SHA256
+                 48079A7BCACB08EC11FFFF696C55E812473EEC4962D2B32392D30D4A673E9569,
+                 the expected hash. The generator
+                 left register2.csv at that same
+                 hash (REGISTER2_BEFORE and
+                 REGISTER2_AFTER). Prepush PID
+                 23488, launched
+                 2026-11-25T13:04:26+08:00,
+                 exit 0. ruff check All checks
+                 passed!; ruff format 826 files
+                 already formatted; mypy Success:
+                 no issues found in 260 source
+                 files; lint-imports Contracts:
+                 2 kept, 0 broken. 5503 passed,
+                 5 skipped, 60 deselected,
+                 1 xfailed, 49 warnings in
+                 1010.55s (0:16:50). prepush: ok
+                 (ruff check, ruff format, mypy,
+                 lint-imports, pytest). -n 4
+                 PID 22440, launched
+                 2026-11-25T13:22:26+08:00,
+                 exit 0. The process command line
+                 was: pytest.exe -m "not functional and not paper_rth and not battery_real and not universe_check" -q -n 4
+                 5503 passed, 5 skipped,
+                 1 xfailed, 53 warnings in
+                 619.99s (0:10:19). Universe
+                 PYTHONHASHSEED 0, PID 3148,
+                 launched
+                 2026-11-25T13:33:12+08:00,
+                 exit 0, 1 passed in 116.94s
+                 (0:01:56). tests/docs PID 24792,
+                 launched
+                 2026-11-25T13:35:24+08:00,
+                 exit 0: 107 passed, 1 warning
+                 in 0.45s. Profile PID 32352,
+                 launched
+                 2026-11-25T12:19:48+08:00,
+                 and profile-post PID 4524,
+                 launched
+                 2026-11-25T13:35:35+08:00,
+                 both exit 0 and wrote
+                 tools/arch/evidence/hotpath_executed.json.
+  CI:            pending. No dispatch this
+                 session.
+  MERGE:         not filled.
+  BUGBOT:        not read. CI has not completed.
+  CI WATCH:      not run.
+  DEVIATIONS:    The untracked pre JSON was moved
+                 to
+                 %USERPROFILE%\feelies-probes\P-99c\runs\
+                 so the tree was empty, then
+                 restored before the captures
+                 commit. SHA256 before the move,
+                 after the move, and after the
+                 restore:
+                 2A06BED34D48D6DF3A131A7B9C8CC9FED4D1FCCE8ECD84877B82D9EF736442EC.
+                 git.dirty false on both
+                 captures. No discarded capture.
+  STANDING:      phase-14 contract version 8.
+  EVIDENCE:      total_files 260; n_modules 209;
+                 n_edges 718; public_symbols 641;
+                 total_sloc 51019; n_cycles 1;
+                 alphaleak 0.
+  REPORT TABLES: CLOSED 56. CARRIED-14E 10.
+                 CARRIED-PAPER-LIVE 18.
+                 OPERATOR-POLICY 6. BACKLOG 26.
+                 ACCEPTED 20. RECORD 161.
+                 total 297. file4
+                 P-99c_make_register.ps1 SHA256
+                 8A7B7B53A9929D03EA1F1CC70E8E8C60045216740DE36A04CA99AD25AE9154F7.
+                 file5
+                 P-99c_findings_register.csv
+                 SHA256
+                 6E5CA7D40EFCA6DE761EBAB24945E14C837424DC6FED7BF04061EDA0873A462D.
+                 file6
+                 P-99c_findings_register.md
+                 SHA256
+                 1E0F7A3EC74451E6772ECCFED6483E3CA4070D18BEB20A3D1D86EB98404DF0DD.
+  FINDINGS:      none.
+  NOTES:         The gate print of the plan diff
+                 elided row text with '...'; the
+                 --stat (36 lines in the plan:
+                 14 rows x 2 + 8) is the record.
+                 commits in order: SPEC
+                 c5e06db85a91e5c48f0ce5cbbf498f11b1388ba8,
+                 REGISTER
+                 3343132151a7a2bf1d9322b81e86bf507beff920,
+                 DOCS
+                 91499c2e847ff1e60079a5f786d6503a67aaf464,
+                 BASE
+                 321cd40089000f0ade8d438238503d3741116421,
+                 ledger this commit. No src/ or
+                 tests/ edit. Profile logs
+                 recorded a HorizonSignalEngine
+                 regime-gate warning on stderr
+                 and exit 0; hotpath_executed.json
+                 is gitignored.

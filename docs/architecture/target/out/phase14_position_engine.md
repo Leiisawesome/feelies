@@ -62,26 +62,26 @@ Each rung opens with a report-only census; the block is written from that eviden
 
 | Rung | Stage | Lands | Gate | Parity |
 |---|---|---|---|---|
-| P-00 | — | this plan and the spec pack (docs only) | ledger + docs tests green | hold |
+| P-00 | — | DONE (merged; result faec2ce7, exec/P-00). this plan and the spec pack (docs only) | ledger + docs tests green | hold |
 | P-10 | surface | DONE (merged 6e9fa06f). Contract surface in one rung, because the static emission, S-09, S-12 and manifest checks make types, producers and subscribers one unit: five event types, wiring rows, streams `mark_rail` / `slice_position` / `position`, 13th independence module, `MarkRail` and `PositionEngine` stubs, `PositionRecordSink`, mode refusal in the seam, T1–T7 | T1–T7; S14 probes engine 13; enabled APP run unchanged | held; manifest pin moved |
-| P-11a | docs | fold P-10 decisions D-01..D-06 into the spec and this plan (A-16, A-17) | docs tests | hold |
-| P-11 | rail | book mark rule: executable-side valuation, retain last valid mark on crossed/locked/zero-side, stale flag; named `reference_mid` for sizing consumers the census identifies | engine 7 contract tests; pre-registered prediction per evaluation.md §2, including whether any fill moves | measured; operator declares or reverts |
-| P-12 | rail | post-exit hypothetical views valued at the executable side, not the mid (D-23) | census; pre-registered prediction per evaluation.md §2 | measured |
-| P-13 | A | implemented on exec/P-13. Causal regime calibration from the prior session (D-63), uncalibrated fallback at min(scales) (D-64), widened member 2 (D-65), one-time legacy-oracle re-pin (D-66) | pre-registered prediction; provenance 2026-03-25, n=50636 | declared break: fills 20→10, net 103.93→24.61, trade hash re-pinned |
-| P-15 | schema | `exit_policy` in `alphas/SCHEMA.md` (schema bump), loader keys, load checks L1–L8, mode rule | fail-first per load check | hold |
-| P-16 | docs | evaluation architecture: three oracles, pre-registered breaks, P-95, campaign 14E gate, stage-letter mechanism, fixture defect (D-14..D-20) | docs tests | hold |
-| P-20 | A | synthetic tape generator and its own test | generator verified driftless, on lattice | hold |
+| P-11a | docs | DONE (merged; result bce94403, exec/P-11a). fold P-10 decisions D-01..D-06 into the spec and this plan (A-16, A-17) | docs tests | hold |
+| P-11 | rail | DONE (merged 06c9dc5e). book mark rule: executable-side valuation, retain last valid mark on crossed/locked/zero-side, stale flag; named `reference_mid` for sizing consumers the census identifies | engine 7 contract tests; pre-registered prediction per evaluation.md §2, including whether any fill moves | measured; operator declares or reverts |
+| P-12 | rail | DONE (merged ed7e96ca). post-exit hypothetical views valued at the executable side, not the mid (D-23) | census; pre-registered prediction per evaluation.md §2 | measured |
+| P-13 | A | DONE (merged 91f7433f, PR #259). implemented on exec/P-13. Causal regime calibration from the prior session (D-63), uncalibrated fallback at min(scales) (D-64), widened member 2 (D-65), one-time legacy-oracle re-pin (D-66) | pre-registered prediction; provenance 2026-03-25, n=50636 | declared break: fills 20→10, net 103.93→24.61, trade hash re-pinned |
+| P-15 | schema | DONE (merged 2281f065). `exit_policy` in `alphas/SCHEMA.md` (schema bump), loader keys, load checks L1–L8, mode rule | fail-first per load check | hold |
+| P-16 | docs | DONE (merged a08a7d08, PR #250). evaluation architecture: three oracles, pre-registered breaks, P-95, campaign 14E gate, stage-letter mechanism, fixture defect (D-14..D-20) | docs tests | hold |
+| P-20 | A | DONE (merged a0f7c63a). synthetic tape generator and its own test | generator verified driftless, on lattice | hold |
 | P-21a | A | DONE. Fixture schedule, stage-gate hook, markers, member-1 seams, D-29/D-32 | hook self-tests; fixture schedule | hold |
-| P-21b | A | harness (scenarios.py), APP config, CI battery_real step; members 1, 2, 4 | 1, 2, 4-birth red NONVACUOUS; 4-rail green | hold |
-| P-21c | A | spec closure for members 3, 5, 6 (contracts §9, D-40..D-48); docs only | docs tests | hold |
+| P-21b | A | DONE (merged 98518981). harness (scenarios.py), APP config, CI battery_real step; members 1, 2, 4 | 1, 2, 4-birth red NONVACUOUS; 4-rail green | hold |
+| P-21c | A | DONE (merged c2508a4e). spec closure for members 3, 5, 6 (contracts §9, D-40..D-48); docs only | docs tests | hold |
 | P-21d | A | DONE (merged dfc9b9a5, PR #257). members 3, 5; tape injectors set_quote, excise | each red for its stated reason | hold |
 | P-21e | A | DONE (merged 37aa506c, PR #258). member 6 spec closure; shift_from, remove_side_run; doc integrity; capture ignore | red for its stated reason | hold |
 | P-21f | A | DONE (merged fa537c59, PR #260). Member 6 tests (A1–A6, real + synthetic) + member 4 unusable-side clause; green_from per battery.md | red via NONVACUOUS (member 6) and UNUSABLE_SIDE (member 4 clause) | hold |
-| P-22 | A | split: P-22s/P-22a1/P-22a2f/P-22a2/P-22b | see P-22s, P-62a, P-22a1, P-22a2f, P-22a2, P-22b | hold |
+| P-22 | A | DONE via its parts (P-22s, P-62a, P-22a1, P-22a2f, P-22a2, P-22b). split: P-22s/P-22a1/P-22a2f/P-22a2/P-22b | see P-22s, P-62a, P-22a1, P-22a2f, P-22a2, P-22b | hold |
 | P-22s | A | DONE (merged 3b3beced, PR #261). Spec closure G1–G9, member 11 pull-forward, member 1 immutability and member 2 D>0 clauses. Docs only. Parity prediction NONE; captures skipped. | docs tests | NONE |
 | P-62a | A | DONE (merged 6c00c5d0, PR #262). Admit source_layer=POSITION on the engine-8 copy path (MARKET, slice-scoped, through check_order); ADVERSE_EXCURSION in the stop-slippage set. Prediction NONE. | POSITION requirement on the copy path; ADVERSE_EXCURSION in the stop-slippage set | NONE |
-| P-22a1 | A | G10/N1–N7 spec, additive schema, engine/rail resolution, attribution, reference rail (D-62), import guard, member 1/2/11 clauses. Prediction NONE for the 64 constants. | S-09 pin moves as predicted; members 1/2/11 gated NONVACUOUS at A; member 4 rail and unusable-side green on the reference rail | NONE |
-| P-22a2f | A | G11 rejected-exit re-emission, PRECONDITION level, m2 dwell and m11 constructions, A3 END_OF_TAPE branch, F-P13b strict xfail. Tests and spec only (D-106..D-109). | PRECONDITION red at every stage; members gate at A with PRECONDITION passing; 64/64 hold; baseline GREEN | hold |
+| P-22a1 | A | DONE (merged 55bcf212, PR #263). G10/N1–N7 spec, additive schema, engine/rail resolution, attribution, reference rail (D-62), import guard, member 1/2/11 clauses. Prediction NONE for the 64 constants. | S-09 pin moves as predicted; members 1/2/11 gated NONVACUOUS at A; member 4 rail and unusable-side green on the reference rail | NONE |
+| P-22a2f | A | DONE (merged 7f7a2360, PR #264). G11 rejected-exit re-emission, PRECONDITION level, m2 dwell and m11 constructions, A3 END_OF_TAPE branch, F-P13b strict xfail. Tests and spec only (D-106..D-109). | PRECONDITION red at every stage; members gate at A with PRECONDITION passing; 64/64 hold; baseline GREEN | hold |
 | P-22a2 | A | DONE (merged e5e363f2, PR #265). Reference engine; members 1–6 and 11 green on the reference at stage E | stage E synthetic 44/44, real 9/9; stage A member outcomes unchanged except added self-tests | NONE |
 | tooling | A | DONE (merged 25215bc8, PR #267; merged eae14b6c, PR #266). Opt-in broker/network markers, paper guard, profile fingerprint, single-source pre-push gate, nightly dispatcher on main. Resolves D-110. Backlog: a permanent CI order check (pytest-randomly or a reversed pass). | opt-in hook; paper guard; prepush.py | NONE |
 | P-22b | A | DONE (merged e98cff2d, PR #268). Broken engines B1–B11 killed by their named members; kill runner; battery holes J1–J6 closed | 11/11 PROPERTY kills; reference control 0 failures | NONE |
@@ -89,7 +89,7 @@ Each rung opens with a report-only census; the block is written from that eviden
 | P-23 | — | DONE (D-189). R1 by P-23b2 (merged a2f1fa32, PR #278). R2 by P-23b (merged 3eae11bd, PR #270). R3 by P-23a (merged 02d4719f, PR #269; f643416b): ACKNOWLEDGED stamps the publication clock (backtest_router.py:240). Every platform-emitted timestamp_ns is the simulated clock at emission; market-derived records also carry the source quote's exchange time. | timestamp_ns at or before the clock at publication | break |
 | P-23a | — | DONE (merged 02d4719f, PR #269). Two-class timestamps, causality invariants, publication-clock stamps, cross-class age compares. Pre-registered break of EXPECTED_MARKET_FILL_HASH and EXPECTED_RISK_VERDICT_HASH | I1 and I3 hold; I2 only PENDING; oracle 10 / 24.61 / 18f6bb4e | break |
 | P-23b | — | DONE (merged 3eae11bd, PR #270). R2 prices a deferred aggressive fill on the quote prevailing at arrival. Legacy oracle unchanged (10 / 24.61 / 18f6bb4e). | pre-registered break | break |
-| P-23d | — | Option C (D-161, D-162). The drain uniform is keyed on market content only (symbol, vendor sequence number, exchange timestamp, side, level). Orders at the same side, level and event share one draw. `order_id` and `ticks_at_level` are not inputs. Order ids are unchanged. | operator exemption of the legacy oracle | break |
+| P-23d | — | DONE (merged 6139f5cc, PR #271). Option C (D-161, D-162). The drain uniform is keyed on market content only (symbol, vendor sequence number, exchange timestamp, side, level). Orders at the same side, level and event share one draw. `order_id` and `ticks_at_level` are not inputs. Order ids are unchanged. | operator exemption of the legacy oracle | break |
 | P-23c1 | — | DONE (merged e1e636a4, PR #272). GateDecision, DeRiskRequirement, and PositionSnapshot are action-class on the publication clock (D-168). The policy-deadline compare operand is unchanged. PENDING I2 is empty. Oracle unchanged: 10 / 26.61 / c95f4e5c. | PENDING empty; I2 holds on the reference run | hold |
 | P-23c2 | — | DONE (merged 1c6d9263, PR #273). A held single-alpha signal is released only by an NBBOQuote of its own symbol, and is priced and sized from that quote (D-172). Global horizon closure is kept (D-173). Timer closure and immediate actuation are deferred (D-174). Oracle unchanged: 10 / 26.61 / c95f4e5c. | own-symbol release | hold |
 | P-23e | — | DONE (merged 6a3928f4, PR #274). One regime calibration per symbol, fitted on that symbol's own prior-session quotes, with the cap applied per symbol (D-175). D-63's lookahead rule is unchanged (D-176). The pooled fit is only the fallback for a symbol with no own prior quotes (D-177). Oracle unchanged: 10 / 26.61 / c95f4e5c. | per-symbol prior-session prefix | hold |
@@ -142,6 +142,14 @@ Each rung opens with a report-only census; the block is written from that eviden
 
 Order inside a stage is fixed; stages do not overlap; no stage begins while an earlier
 gate is red.
+
+## Reconciliation (P-99c1, D-255)
+
+Every ladder row above P-99c is DONE. Fourteen rows were stamped at P-99c1
+from their ledger entries and merges (D-255). Ledger entries with no row of
+their own: P-10b (CI format fix for P-10), T-1, and the CORRECTION,
+EXEMPTION, FINDING and RECORD entries. Findings: P-99c_findings_register.md
+in docs/architecture/target/out/exec/.
 
 ## Deferred from P-23
 
