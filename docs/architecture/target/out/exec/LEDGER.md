@@ -38297,3 +38297,384 @@ OWNER:       campaign 15.
                  warning on stderr and exit 0;
                  hotpath_executed.json is
                  gitignored.
+
+## P-99b Position oracle pinned
+
+  VERDICT:       passed
+  DECISIONS:     D-254. Prediction not amended.
+                 Operator approved P-99b at the
+                 gate. S2 values stay N 6, N' 7,
+                 M 1.
+  E0:            Fail-first, placeholders None,
+                 before the pin commit. Replay
+                 tests\acceptance\test_backtest_position_oracle.py:259:
+                 E       AssertionError: fills 98 != None; net -1321.150000000000000000000000 != None; parity 52e4fc3cf674658bfe03a3ea94a4930fbfdd7e73ffe1b3e7e279378a2f89d924 != None; economic 61a12456fcd669c48512f4d5e76ea29119387d2aea917aa89252e89bdbc81b36 != None; closed_hash 8ac400ed64e66dec78e659f6ab45fed14499c6178af2f791aa4c42e21eb46f06 != None
+                 E         fills=98 net=-1321.150000000000000000000000 parity=52e4fc3cf674658bfe03a3ea94a4930fbfdd7e73ffe1b3e7e279378a2f89d924 economic=61a12456fcd669c48512f4d5e76ea29119387d2aea917aa89252e89bdbc81b36 closed_count=34 closed_hash=8ac400ed64e66dec78e659f6ab45fed14499c6178af2f791aa4c42e21eb46f06 calibrated=True source=2026-03-25 n=50636
+                 E         net beside -1321.15: -1321.150000000000000000000000
+                 E       assert not ['fills 98 != None', 'net -1321.150000000000000000000000 != None', 'parity 52e4fc3cf674658bfe03a3ea94a4930fbfdd7e73ffe...17aa89252e89bdbc81b36 != None', 'closed_hash 8ac400ed64e66dec78e659f6ab45fed14499c6178af2f791aa4c42e21eb46f06 != None']
+                 Config hash
+                 tests\acceptance\test_backtest_position_oracle.py:275:
+                 E       AssertionError: dc3dc322464f37db91fc6a8f852c038b745e58e023895cb467e5874dc28badb5
+                 E       assert 'dc3dc322464f37db91fc6a8f852c038b745e58e023895cb467e5874dc28badb5' == None
+                 FAILED tests/acceptance/test_backtest_position_oracle.py::test_app_20260326_position_oracle_from_disk_cache
+                 FAILED tests/acceptance/test_backtest_position_oracle.py::test_position_oracle_config_contract_hash
+                 2 failed in 24.11s. The message
+                 line shows the first-run gates
+                 held: closed_count 34,
+                 calibrated True, source
+                 2026-03-25, n 50636. The
+                 data-version and fee asserts
+                 sit above that assert and did
+                 not fail. Decimal
+                 ("-1321.150000000000000000000000")
+                 minus Decimal("-1321.15")
+                 printed 0E-24.
+  TREE:          none.
+  SPEC:          62a3b99f4ab6d704cbee74f19e9891866a658acc.
+                 D-254, plan row P-99b,
+                 prediction in D-254.
+  TEST:          1327204cbb7df9373ce18228a1cef4ad46cedad1.
+                 Position oracle with placeholder
+                 pins (fail first).
+  IMPL:          ab216db451bcfbbaab4b850dd48bd26c6ef141e5.
+                 Pins, four exemption entries,
+                 two parity-oracle CI steps.
+                 No src/ edit.
+  REPORT:        none.
+  BASE:          55f3de230ad6bb89c7edbb28615423c14b316a65.
+                 pre baseline_pre-P-99b.json on
+                 62a3b99f4ab6d704cbee74f19e9891866a658acc,
+                 captured_at
+                 2026-11-24T05:57:48.812468+00:00,
+                 git.dirty false, porcelain [],
+                 PID 23940, launched
+                 2026-11-24T13:57:48.2760913+08:00,
+                 exit 0, BASELINE GREEN.
+                 Full 5521 passed, 0 failed, 44
+                 skipped, exit 0 (5521 passed,
+                 44 skipped, 2 xfailed, 49 warnings
+                 in 1674.52s (0:27:54));
+                 determinism 148 passed, 0 failed,
+                 exit 0 (148 passed, 1 warning in
+                 15.47s); parity 64; fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. Evidence: alphaleak n 0;
+                 n_cycles 1, n_edges 718, n_modules
+                 209; public_symbols 641, total_files
+                 260, total_sloc 51019. SHA256
+                 before the move and after the
+                 move:
+                 7ED1ADFB3CFED9F5E942F6015D85192D29B0F9023B414EBEFEBA61D14B16E417.
+                 post baseline_post-P-99b.json on
+                 ab216db451bcfbbaab4b850dd48bd26c6ef141e5,
+                 captured_at
+                 2026-11-24T07:29:53.249500+00:00,
+                 git.dirty false, porcelain [],
+                 PID 15412, launched
+                 2026-11-24T15:29:52.7420138+08:00,
+                 exit 0, BASELINE GREEN. The
+                 untracked pre JSON was restored
+                 before that compare. SHA256 after
+                 the restore equals the same
+                 value. Full 5523 passed, 0 failed,
+                 44 skipped, exit 0 (5523 passed,
+                 44 skipped, 2 xfailed, 49 warnings
+                 in 1725.59s (0:28:45));
+                 determinism 148 passed, 0 failed,
+                 exit 0 (148 passed, 1 warning in
+                 10.01s); same fingerprint, files 1.
+                 Evidence: alphaleak n 0; n_cycles
+                 1, n_edges 718, n_modules 209;
+                 public_symbols 641, total_files
+                 260, total_sloc 51019. compare
+                 parity-only, exit 0:
+                 constants 64 -> 64, changed 0.
+                 VERDICT: parity HOLDS -- no
+                 constant moved. JSON field diff
+                 besides identity and timing:
+                 tests.passed 5521 -> 5523 and the
+                 same count on the tests tail.
+                 Other diffs: captured_at, label,
+                 git.sha, and elapsed seconds in
+                 the two tails. Predicted full
+                 5521 -> 5523; failed 0; skipped
+                 44; xfailed 2; prepush and -n 4
+                 and CI Tests 5502 -> 5503;
+                 prepush deselected 59 -> 60;
+                 ruff format 825 -> 826 |
+                 actual 5523 passed, 0 failed, 44
+                 skipped, 2 xfailed; prepush
+                 5503 passed, 5 skipped, 60
+                 deselected, 1 xfailed, 49 warnings
+                 in 999.91s (0:16:39); -n 4
+                 5503 passed, 5 skipped, 1 xfailed,
+                 53 warnings in 582.78s (0:09:42)
+                 (xdist printed no deselected
+                 count); ruff format 826 files
+                 already formatted | MATCH.
+                 CI Tests not run this session.
+                 Holds, each MATCH: determinism
+                 148; parity 64, changed 0;
+                 fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1; total_files 260;
+                 n_modules 209; n_edges 718;
+                 public_symbols 641; total_sloc
+                 51019; n_cycles 1; alphaleak 0;
+                 mypy 260 source files
+                 (Success: no issues found in 260
+                 source files); lint-imports
+                 2 kept, 0 broken (Contracts: 2
+                 kept, 0 broken.); universe
+                 1 passed (1 passed in 116.54s
+                 (0:01:56)); tests/docs 107
+                 (107 passed, 1 warning in 0.52s);
+                 KILLED A 9, B 16; legacy oracle
+                 and ECONOMIC_TRADE_HASH_RFIX /
+                 RSYN unchanged because changed 0.
+  GATES:         Run A relaunch PID 25384,
+                 2026-11-24T14:30:09.6061296+08:00,
+                 exit 1, the E0 failures. Run B:
+                 2 passed, 1 warning in 22.30s,
+                 exit 0. Run C: 2 passed in
+                 22.33s, exit 0. Pins, copied from
+                 run A and reproduced by B and C:
+                 fills 98; net
+                 -1321.150000000000000000000000;
+                 parity
+                 52e4fc3cf674658bfe03a3ea94a4930fbfdd7e73ffe1b3e7e279378a2f89d924;
+                 economic
+                 61a12456fcd669c48512f4d5e76ea29119387d2aea917aa89252e89bdbc81b36;
+                 config
+                 dc3dc322464f37db91fc6a8f852c038b745e58e023895cb467e5874dc28badb5;
+                 closed 34,
+                 8ac400ed64e66dec78e659f6ab45fed14499c6178af2f791aa4c42e21eb46f06.
+                 Rules printed before the IMPL
+                 commit, each inside D-254:
+                 _load_runner 55: loader spec
+                 present. _missing_cache 112:
+                 FEELIES_REQUIRE_BASELINE_CACHE
+                 in {1,true,yes} fails, otherwise
+                 skip. _closed_hash 145:
+                 json.dumps([dataclasses.asdict(e)
+                 for e in closed], sort_keys=True,
+                 separators=(",", ":"),
+                 default=str), SHA-256 of the
+                 UTF-8 bytes. replay 158: missing
+                 config fails. replay 167: cache
+                 miss goes to _missing_cache.
+                 replay 183: cache_data_version ==
+                 _BASELINE_DATA_VERSION. replay
+                 200: ingest mix rc == 0. replay
+                 225: exit_code == 0. replay 228:
+                 journal is not None. replay 233:
+                 recorder is not None. replay 245:
+                 OrderAck fees equal
+                 position-store cumulative fees.
+                 replay 246: provenance equals
+                 ("2026-03-25", 50636). replay
+                 249, 251, 253, 255, 257, 259,
+                 261: fills, net, parity,
+                 economic, closed count 34,
+                 closed hash, calibration view.
+                 replay 263: that list is empty;
+                 the message prints net beside
+                 -1321.15 and does not require
+                 equality. config 276: missing
+                 config fails. config 279:
+                 compute_config_hash(
+                 PlatformConfig.from_yaml(...))
+                 equals the config pin.
+                 Agreement check (this session,
+                 read-only). Env: Get-ChildItem
+                 Env: | Where-Object Name -like
+                 'FEELIES_*' printed no rows.
+                 No FEELIES_ENGINE, no
+                 FEELIES_RAIL, no
+                 FEELIES_STAGE_FILE. git grep
+                 -n -E 'FEELIES_ENGINE|FEELIES_RAIL'
+                 exec/P-99b -- tests, excluding
+                 tests/position_engine/reference/,
+                 mutants.py, kill.py, and
+                 test_reference_engine.py: exit 0,
+                 56 hits. None in any
+                 conftest.py. None in
+                 tests/acceptance/. Hits:
+                 exec/P-99b:tests/conformance/test_causality_invariant.py:169:    monkeypatch.setenv("FEELIES_ENGINE", _REFERENCE_ENGINE)
+                 exec/P-99b:tests/conformance/test_causality_invariant.py:170:    monkeypatch.setenv("FEELIES_RAIL", _REFERENCE_RAIL)
+                 exec/P-99b:tests/harness/test_economic_trade_hash_pins.py:66:    monkeypatch.setenv("FEELIES_ENGINE", "tests.position_engine.reference.engine.PositionEngine")
+                 exec/P-99b:tests/harness/test_economic_trade_hash_pins.py:67:    monkeypatch.setenv("FEELIES_RAIL", "tests.position_engine.reference.rail.ReferenceRail")
+                 exec/P-99b:tests/position_engine/scenarios.py:1717:    Unset ``FEELIES_ENGINE`` and ``FEELIES_RAIL`` resolve to the production
+                 exec/P-99b:tests/position_engine/scenarios.py:1718:    stub paths. Unset ``FEELIES_RAIL_DWELL_NS`` and
+                 exec/P-99b:tests/position_engine/scenarios.py:1719:    ``FEELIES_RAIL_SLIPPAGE_TICKS`` resolve to ``0``. The last element is
+                 exec/P-99b:tests/position_engine/scenarios.py:1728:        os.environ.get("FEELIES_ENGINE", "").strip() or "feelies.position.engine.PositionEngine"
+                 exec/P-99b:tests/position_engine/scenarios.py:1730:    rail = os.environ.get("FEELIES_RAIL", "").strip() or "feelies.portfolio.mark_rail.MarkRail"
+                 exec/P-99b:tests/position_engine/scenarios.py:1731:    dwell = os.environ.get("FEELIES_RAIL_DWELL_NS", "").strip() or "0"
+                 exec/P-99b:tests/position_engine/scenarios.py:1732:    slip = os.environ.get("FEELIES_RAIL_SLIPPAGE_TICKS", "").strip() or "0"
+                 exec/P-99b:tests/position_engine/scenarios.py:2202:    "FEELIES_ENGINE",
+                 exec/P-99b:tests/position_engine/scenarios.py:2203:    "FEELIES_RAIL",
+                 exec/P-99b:tests/position_engine/scenarios.py:2204:    "FEELIES_RAIL_DWELL_NS",
+                 exec/P-99b:tests/position_engine/scenarios.py:2205:    "FEELIES_RAIL_SLIPPAGE_TICKS",
+                 exec/P-99b:tests/position_engine/scenarios.py:2223:    """Resolved engine. ``FEELIES_ENGINE`` when set, otherwise the production stub."""
+                 exec/P-99b:tests/position_engine/scenarios.py:2224:    path = os.environ.get("FEELIES_ENGINE", "").strip()
+                 exec/P-99b:tests/position_engine/scenarios.py:2231:        raise RuntimeError(f"FEELIES_ENGINE {path} is not a class")
+                 exec/P-99b:tests/position_engine/scenarios.py:2236:    path = os.environ.get("FEELIES_RAIL", "").strip()
+                 exec/P-99b:tests/position_engine/scenarios.py:2241:        raise RuntimeError(f"FEELIES_RAIL {path} is not a class")
+                 exec/P-99b:tests/position_engine/scenarios.py:2524:    dwell = os.environ.get("FEELIES_RAIL_DWELL_NS", "").strip() or "0"
+                 exec/P-99b:tests/position_engine/scenarios.py:2525:    slip = os.environ.get("FEELIES_RAIL_SLIPPAGE_TICKS", "").strip() or "0"
+                 exec/P-99b:tests/position_engine/test_battery_m2_no_lookahead.py:114:    monkeypatch.setenv("FEELIES_RAIL_DWELL_NS", str(dwell))
+                 exec/P-99b:tests/position_engine/test_battery_m2_no_lookahead.py:153:    monkeypatch.setenv("FEELIES_RAIL_DWELL_NS", str(dwell))
+                 exec/P-99b:tests/position_engine/test_battery_m2_no_lookahead.py:203:    """The class named by FEELIES_RAIL, built as bootstrap builds the rail."""
+                 exec/P-99b:tests/position_engine/test_battery_m2_no_lookahead.py:204:    monkeypatch.setenv("FEELIES_RAIL_DWELL_NS", str(dwell))
+                 exec/P-99b:tests/position_engine/test_battery_m2_no_lookahead.py:205:    path = os.environ.get("FEELIES_RAIL", "").strip() or "feelies.portfolio.mark_rail.MarkRail"
+                 exec/P-99b:tests/position_engine/test_battery_m7_monotonicity.py:76:    monkeypatch.setenv("FEELIES_RAIL_SLIPPAGE_TICKS", str(slippage))
+                 exec/P-99b:tests/position_engine/test_battery_m7_monotonicity.py:77:    monkeypatch.setenv("FEELIES_RAIL_DWELL_NS", str(dwell))
+                 exec/P-99b:tests/position_engine/test_hook_capabilities.py:31:    env.pop("FEELIES_ENGINE", None)
+                 exec/P-99b:tests/position_engine/test_hook_capabilities.py:32:    env.pop("FEELIES_RAIL", None)
+                 exec/P-99b:tests/position_engine/test_kill_runner.py:53:    dotted = os.environ.get("FEELIES_ENGINE", "")
+                 exec/P-99b:tests/position_engine/test_p39b_rail_seams.py:57:    monkeypatch.delenv("FEELIES_RAIL_DWELL_NS", raising=False)
+                 exec/P-99b:tests/position_engine/test_p39b_rail_seams.py:58:    monkeypatch.delenv("FEELIES_RAIL_SLIPPAGE_TICKS", raising=False)
+                 exec/P-99b:tests/position_engine/test_p39b_rail_seams.py:79:        "FEELIES_RAIL",
+                 exec/P-99b:tests/position_engine/test_p39b_rail_seams.py:96:    monkeypatch.delenv("FEELIES_RAIL_DWELL_NS", raising=False)
+                 exec/P-99b:tests/position_engine/test_p39b_rail_seams.py:97:    monkeypatch.delenv("FEELIES_RAIL_SLIPPAGE_TICKS", raising=False)
+                 exec/P-99b:tests/position_engine/test_p39b_rail_seams.py:119:        monkeypatch.delenv("FEELIES_RAIL_DWELL_NS", raising=False)
+                 exec/P-99b:tests/position_engine/test_p39b_rail_seams.py:121:        monkeypatch.setenv("FEELIES_RAIL_DWELL_NS", dwell)
+                 exec/P-99b:tests/position_engine/test_p39b_rail_seams.py:123:        monkeypatch.delenv("FEELIES_RAIL_SLIPPAGE_TICKS", raising=False)
+                 exec/P-99b:tests/position_engine/test_p39b_rail_seams.py:125:        monkeypatch.setenv("FEELIES_RAIL_SLIPPAGE_TICKS", slip)
+                 exec/P-99b:tests/position_engine/test_reference_rail.py:184:    monkeypatch.setenv("FEELIES_RAIL_DWELL_NS", str(dwell))
+                 exec/P-99b:tests/position_engine/test_reference_rail.py:199:    monkeypatch.setenv("FEELIES_RAIL_DWELL_NS", "1000")
+                 exec/P-99b:tests/position_engine/test_reference_rail.py:217:    monkeypatch.setenv("FEELIES_RAIL_DWELL_NS", "0")
+                 exec/P-99b:tests/position_engine/test_reference_rail.py:228:    monkeypatch.setenv("FEELIES_RAIL_SLIPPAGE_TICKS", "4")
+                 exec/P-99b:tests/position_engine/test_reference_rail.py:246:    env["FEELIES_RAIL_DWELL_NS"] = "2000000000"
+                 exec/P-99b:tests/position_engine/test_reference_rail.py:247:    env["FEELIES_RAIL_SLIPPAGE_TICKS"] = "4"
+                 exec/P-99b:tests/position_engine/test_scenarios.py:1425:    env["FEELIES_ENGINE"] = _PROBE_ENGINE
+                 exec/P-99b:tests/position_engine/test_scenarios.py:1426:    env["FEELIES_RAIL"] = _PROBE_RAIL
+                 exec/P-99b:tests/position_engine/test_scenarios.py:1446:    monkeypatch.setenv("FEELIES_ENGINE", _PROBE_ENGINE)
+                 exec/P-99b:tests/position_engine/test_scenarios.py:1447:    monkeypatch.setenv("FEELIES_RAIL", _PROBE_RAIL)
+                 exec/P-99b:tests/position_engine/test_scenarios.py:1489:    monkeypatch.setenv("FEELIES_ENGINE", _PROBE_ENGINE)
+                 exec/P-99b:tests/position_engine/test_scenarios.py:1490:    monkeypatch.setenv("FEELIES_RAIL", _PROBE_RAIL)
+                 exec/P-99b:tests/position_engine/test_scenarios.py:1585:        monkeypatch.setenv("FEELIES_ENGINE", "tests.position_engine.engine_a.Engine")
+                 exec/P-99b:tests/position_engine/test_scenarios.py:1587:        monkeypatch.setenv("FEELIES_ENGINE", "tests.position_engine.engine_b.Engine")
+                 exec/P-99b:tests/position_engine/test_scenarios.py:1590:        monkeypatch.setenv("FEELIES_ENGINE", "tests.position_engine.engine_a.Engine")
+                 Oracle env reads: the file's
+                 only os.environ read is line 112,
+                 FEELIES_REQUIRE_BASELINE_CACHE.
+                 No other environment variable.
+                 Quoted lines:
+                 101: ``FEELIES_REQUIRE_BASELINE_CACHE=1`` converts the skip into a failure, which
+                 112: if os.environ.get("FEELIES_REQUIRE_BASELINE_CACHE", "").strip().lower() in {
+                 118: "FEELIES_REQUIRE_BASELINE_CACHE is set, so the parity oracle must "
+                 Lines 101 and 118 name that same
+                 variable and are not a second
+                 read. PASS.
+                 Prepush exit 0.
+                 ruff check All checks passed!;
+                 ruff format 826 files already
+                 formatted; mypy Success: no
+                 issues found in 260 source
+                 files; lint-imports Contracts:
+                 2 kept, 0 broken. 5503 passed,
+                 5 skipped, 60 deselected,
+                 1 xfailed, 49 warnings in
+                 999.91s (0:16:39). prepush: ok
+                 (ruff check, ruff format, mypy,
+                 lint-imports, pytest). -n 4
+                 exit 0. The process command line
+                 was: uv run pytest -m "not functional and not paper_rth and not battery_real and not universe_check" -q -n 4
+                 and python -m pytest carried the
+                 same -m expression. 5503 passed,
+                 5 skipped, 1 xfailed, 53 warnings
+                 in 582.78s (0:09:42). Universe
+                 PYTHONHASHSEED 0, exit 0,
+                 1 passed in 116.54s (0:01:56).
+                 Battery synthetic exit 0:
+                 117 passed, 11 deselected,
+                 1 warning in 461.54s (0:07:41).
+                 Battery real exit 0:
+                 14 passed, 5555 deselected,
+                 1 warning in 397.69s (0:06:37).
+                 Kill shard A exit 0, 9 KILLED
+                 lines: B1, B4, B10, B12, B15,
+                 B16, B17, B18, B19. Kill shard A
+                 --control exit 0: CONTROL 0
+                 failures. Kill shard B exit 0,
+                 16 KILLED lines: B2, B3, B5, B6,
+                 B7, B8, B9, B11, B13, B14, B20,
+                 B21, B22, B23, B24, B25. Kill
+                 shard B --control exit 0:
+                 CONTROL 0 failures. tests/docs
+                 exit 0: 107 passed, 1 warning
+                 in 0.52s. Profile and
+                 profile-post both exit 0 and
+                 wrote tools/arch/evidence/hotpath_executed.json.
+  CI:            pending. No dispatch this
+                 session.
+  MERGE:         not filled.
+  BUGBOT:        not read. CI has not completed.
+  CI WATCH:      not run.
+  DEVIATIONS:    The untracked pre JSON was moved
+                 to
+                 %USERPROFILE%\feelies-probes\P-99b\runs\
+                 so the tree was empty, then
+                 restored before the captures
+                 commit. SHA256 before the move,
+                 after the move, and after the
+                 restore:
+                 7ED1ADFB3CFED9F5E942F6015D85192D29B0F9023B414EBEFEBA61D14B16E417.
+                 git.dirty false on both
+                 captures. No discarded capture.
+                 A PowerShell conditional printed
+                 STOP: dirty capture while
+                 git.dirty was false; that
+                 attempt did not move the file.
+                 First run A, PID 2712, exit 4,
+                 log 1026 bytes:
+                 pytest: error: argument -m: expected one argument.
+                 Relaunched only after
+                 PID_2712_ALIVE False and
+                 LIVE_COUNT 0 (PID 25384). See
+                 F-P99b-1.
+  STANDING:      phase-14 contract version 7.
+  EVIDENCE:      total_files 260; n_modules 209;
+                 n_edges 718; public_symbols 641;
+                 total_sloc 51019; n_cycles 1;
+                 alphaleak 0.
+  REPORT TABLES: fills 98. net
+                 -1321.150000000000000000000000.
+                 parity
+                 52e4fc3cf674658bfe03a3ea94a4930fbfdd7e73ffe1b3e7e279378a2f89d924.
+                 economic
+                 61a12456fcd669c48512f4d5e76ea29119387d2aea917aa89252e89bdbc81b36.
+                 config
+                 dc3dc322464f37db91fc6a8f852c038b745e58e023895cb467e5874dc28badb5.
+                 closed count 34. closed hash
+                 8ac400ed64e66dec78e659f6ab45fed14499c6178af2f791aa4c42e21eb46f06.
+                 net beside -1321.15: same
+                 (difference 0E-24).
+  FINDINGS:      F-P99b-1 PowerShell drops a bare -m "" on a native command (first run A launch exited 4 before collection; relaunched after the process was dead). The contract's local commands should quote the empty marker. CI runs bash and is unaffected. Unscheduled.
+                 F-P99b-2 The production engine's economic trade hash on APP 2026-03-26 via bt_position_arbitrary_not_calibrated equals ECONOMIC_TRADE_HASH_RFIX (61a12456...1b36) and its fill count equals R-FIX's 98: production and reference agree on the real day's order_id-excluded trade journal (step 1 confirms the oracle ran production). The two pins are redundant on this day; input to P-99c's review of D-254 (5).
+                 F-P99b-3 POSITION_ORACLE_NET_PNL carries 24 decimal places from Decimal arithmetic; equality is by value. Cosmetic.
+  NOTES:         net equals the P-99a engine-arm
+                 sum -1321.15 exactly
+                 (difference 0E-24); CI time
+                 budget: each oracle replay
+                 22-24 s locally. Measured:
+                 run A 24.11s, run B 22.30s,
+                 run C 22.33s. commits in order:
+                 SPEC
+                 62a3b99f4ab6d704cbee74f19e9891866a658acc,
+                 TEST
+                 1327204cbb7df9373ce18228a1cef4ad46cedad1,
+                 IMPL
+                 ab216db451bcfbbaab4b850dd48bd26c6ef141e5,
+                 BASE
+                 55f3de230ad6bb89c7edbb28615423c14b316a65,
+                 ledger this commit. No src/
+                 edit. Four exemption entries
+                 after ECONOMIC_TRADE_HASH_EIGHT.
+                 Two parity-oracle steps, no
+                 timeout change. Profile logs
+                 recorded a HorizonSignalEngine
+                 regime-gate warning on stderr
+                 and exit 0; hotpath_executed.json
+                 is gitignored.

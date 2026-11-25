@@ -1945,6 +1945,66 @@ Mechanism: new files outside src/ only; no existing file's behaviour changes.
 
 S2 values (P-99a): N 6, N' 7, M 1
 
+D-254 — P-99b position oracle: design and pre-registration
+
+Decided by the operator, 2026-11-24 (chat 15; options 1a-6a as recommended).
+Evidence: censuses P-99b-C1, C2, C3, C4 at 49b2979f.
+(1) The position oracle replays APP 2026-03-26 through
+configs/bt_position_arbitrary_not_calibrated.yaml with the production engine
+and pins: trade-journal fill count; net PnL (position-store realized plus
+unrealized, minus the fees of every OrderAck); the trade parity hash
+(compute_parity_hash); the economic trade hash (compute_economic_trade_hash);
+the raw config hash (compute_config_hash on PlatformConfig.from_yaml); and the
+PositionClosed stream: its count, and the SHA-256 of
+json.dumps([dataclasses.asdict(e) for e in closed], sort_keys=True,
+separators=(",", ":"), default=str) over the events in publication order.
+(2) Its four 64-hex constants are exempt in
+tests/determinism/test_parity_manifest.py _UNREGISTERED_HASH_EXEMPTIONS. The
+manifest and its fingerprint are unchanged.
+(3) The test is standalone and mirrors
+tests/acceptance/test_backtest_app_baseline.py. It imports
+_BASELINE_DATA_VERSION from that module. PositionClosed is captured by a
+subscription on the orchestrator bus made inside the platform_factory wrapper.
+No src/ edit.
+(4) New file tests/acceptance/test_backtest_position_oracle.py. The replay
+test is marked functional and runs in the parity-oracle CI job in two new
+steps, PYTHONHASHSEED 0 (job env) and random. The cache-free config-hash test
+is unmarked and runs in check.
+(5) ECONOMIC_TRADE_HASH_RFIX and its test are unchanged.
+(6) The constants are not named _BASELINE_* and the file is not added to
+tools/exec/baseline.py ACCEPTANCE, so the parity compare holds; a moved pin
+fails the full-suite capture and the parity-oracle job.
+Under evaluation.md §2: new constants created, none moved.
+Pre-registered prediction (P-99b), against the pre capture:
+Changes: full-suite passed 5521 -> 5521 + 2 = 5523 (the replay test and the
+config-hash test); prepush passed 5502 -> 5502 + 1 = 5503 and deselected
+59 -> 59 + 1 = 60 (the replay test is functional); -n 4 and CI Tests passed
+5502 -> 5502 + 1 = 5503; ruff format file count 825 -> 825 + 1 = 826.
+Holds: 0 failed; 44 skipped; 2 xfailed (full); prepush 5 skipped, 1 xfailed;
+determinism 148; parity 64 constants, changed 0; fingerprint
+261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97, files 1;
+total_files 260; n_modules 209; n_edges 718; public_symbols 641; total_sloc
+51019; n_cycles 1; alphaleak 0 (the census scans src/ only); mypy 260 source
+files; lint-imports 2 kept 0 broken; universe 1 passed (PYTHONHASHSEED 0);
+tests/docs 107; KILLED A 9, B 16; legacy oracle 10 / 26.61 /
+ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e / economic
+b6bc1db5c7c48465d186d30f8c19003e011a6b75e88f22bee239ea47a63fc839;
+ECONOMIC_TRADE_HASH_RFIX
+61a12456fcd669c48512f4d5e76ea29119387d2aea917aa89252e89bdbc81b36;
+ECONOMIC_TRADE_HASH_RSYN
+72ee12faec3b32d4e67f66f1ede2a86eb2d19e89da3417b95ec639a64bc8f0d7; and every
+other field of the baseline capture.
+First-run gates, fixed before the run: PositionClosed count 34 (P-99a report:
+engine-side episodes 1 + 14 + 19); regime calibration source 2026-03-25 with
+50636 quotes; data version equals _BASELINE_DATA_VERSION; OrderAck fees equal
+position-store cumulative fees. Any miss is a STOP.
+Reported, not a gate: the oracle net beside -1321.15 (sum of engine_net in the
+P-99a report); a difference is explained in the ledger NOTES.
+New values: fill count, net and the four hashes are read from run A
+(PYTHONHASHSEED 0) and must reproduce exactly in run B (random) and run C (0).
+Mechanism: one new test file, four exemption entries and two CI steps; no
+src/ edit; no existing pin is computed differently.
+
 ### D-66 pre-registered prediction
 
 ```
