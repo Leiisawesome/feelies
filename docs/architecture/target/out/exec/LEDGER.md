@@ -38943,3 +38943,29 @@ OWNER:       campaign 15.
                  regime-gate warning on stderr
                  and exit 0; hotpath_executed.json
                  is gitignored.
+  CI:            PR head 45559833751 success at d7cc9e5f
+                 (check 1037 s, value 81.70). Tests
+                 5503 passed, 5 skipped, 1 xfailed,
+                 50 warnings in 924.90s; determinism
+                 148 passed, 1 warning in 11.32s.
+                 Merge run 45562223335 success at
+                 09d0462e (check 735 s, value 81.63).
+                 Tests 5503 passed, 5 skipped, 1
+                 xfailed, 50 warnings in 644.04s;
+                 determinism 148 passed, 1 warning
+                 in 7.89s.
+  MERGE:         RESULT SHA
+                 09d0462ebe1a8dac392bb836b727c6f53ba41f3a,
+                 parents
+                 140b2a3bbc20302897596dd4b07269ba632d5191
+                 and
+                 d7cc9e5fe301b590ef60291f026d97cc26c00de1,
+                 tree
+                 60e90603bcca93d9b0a7d03c2389f642738b08cd
+                 = PR head tree. PR #319. Merged
+                 2026-11-25T06:39:17Z.
+  CI WATCH:      head 1037 s, value 81.70; merge 735 s,
+                 value 81.63. Two-run geometric mean
+                 81.66499249984659124287543690; D-209
+                 fired no (threshold 90.61, guard 1350 s,
+                 D-248).
