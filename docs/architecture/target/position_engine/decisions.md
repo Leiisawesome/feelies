@@ -2005,6 +2005,67 @@ New values: fill count, net and the four hashes are read from run A
 Mechanism: one new test file, four exemption entries and two CI steps; no
 src/ edit; no existing pin is computed differently.
 
+D-255 — P-99c campaign close: design, findings disposition, contract v8
+
+Decided by the operator, 2026-11-25 (chat 15; P-99c options 1a-6a, then
+dispositions 1a and F-P23b-c 2a). Evidence: censuses P-99c-C1 to C5 at
+140b2a3b; register2.csv SHA256 48079A7B...9569.
+Close design: (1a) the findings register is generated, not transcribed:
+docs/architecture/target/out/exec/P-99c_make_register.ps1 reads decisions.md,
+the plan and LEDGER.md from "## P-00" at 140b2a3b, finds every id matching
+\bF-[A-Z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)?\b, and classes each CHECK, CLOSED,
+EXCEPTION or RECORD by the rules recorded in the script; the operator decides
+CHECK and EXCEPTION ids only; RECORD ids are single-rung observations kept as
+recorded. (2a) The standing contract stays in force until campaign 14E's
+contract replaces it; version 8. (3a) D-248 is re-derived in P-99c2 with
+tools/exec/ci_watch.py under an operator gh-read authorisation. (4a) PR #249
+merges to main after P-99c2, by the operator. (5a) Worktree, remote-branch and
+parked-branch cleanup is on campaign 14E's setup checklist; exec/P-99a is kept
+as an archive tag. (6a) P-99c runs as P-99c1 (this rung) and P-99c2.
+Dispositions (each CHECK and EXCEPTION id exactly once):
+CLOSED (22): F-P23e-6, F-P23f-1, F-P23f-7, F-P23f-8, F-P29b-1, F-P29b-4,
+F-P30-18, F-P30-19, F-P30-27, F-P49-2, F-P50-1, F-P50-3, F-P52-3, F-P39-2,
+F-P50-2, F-P95-1, F-P95-2, F-P95-5, F-P96-1, F-P96-2, F-R2, F-R3.
+CARRIED-PAPER-LIVE (18): F-P13b, F-P22a2h, F-P23a2-2, F-P23a2-9, F-P23b2-16,
+F-P23b2-17, F-P23b3-2, F-P23c-c, F-P23c-i, F-P23e-7, F-P23f-2, F-P24-10,
+F-P24-11, F-S1a, F-S1b, F-T14-1, F-T1a, F-T1c.
+CARRIED-14E (10): F-P13, F-P23c-f, F-P23c-g, F-P23c-l, F-P23c-m, F-P23e-8,
+F-P23e-9, F-P23f-9, F-P99a-1, F-P99b-2.
+OPERATOR-POLICY (6): F-P23b2-18, F-P23g-13, F-P23g-2, F-P23g-9, F-T2-10,
+F-T2-7.
+BACKLOG (26): F-D1-3, F-P22a2f, F-P23b-c, F-P23b3-4, F-P23d-f, F-P23d-g,
+F-P23e-4, F-P23g-14, F-P23g2-12, F-P39-1, F-P51-1, F-P52-1, F-P52-4, F-P52-5,
+F-P59-2, F-P95-3, F-P95m-1, F-P96-3, F-P99b-1, F-P99b-4, F-T10-2, F-T13-1,
+F-T15p-1, F-T15p-2, F-T15p-3, F-T6b-1.
+ACCEPTED (20): F-D1-1, F-P13c, F-P23c-a, F-P23c-b, F-P23c-d, F-P23c-h,
+F-P23c-j, F-P23e-2, F-P23e-5, F-P23f-3, F-P23f-4, F-P23f-5, F-P23f-6,
+F-P23g-15, F-P23g-16, F-P23g-18, F-P23g-20, F-P23g-8, F-P99b-3, F-T10-1.
+Notes: F-P23b-c (HIGH): check whether D-191 closed it. F-P96-3 and F-P99b-4:
+close at P-99c2 after a repo check. F-T15p-1: campaign 14E setup checklist.
+F-T2-7 and F-T2-10: close when PR #249 merges to main.
+A disposition is the operator's reading of the cited register line; no id is
+CLOSED unless a line in the repo states its closure.
+Plan reconciliation: rows P-00, P-11a, P-11, P-12, P-13, P-15, P-16, P-20,
+P-21b, P-21c, P-22a1, P-22a2f and P-23d are stamped DONE from their ledger
+entries and first-parent merges (census P-99c-C3 Q2); P-22 is DONE via its
+parts.
+Contract: version 7 -> 8; in force until campaign 14E's contract replaces it;
+cites playbook v1.3.
+Pre-registered prediction (P-99c1), against the pre capture:
+Changes: register counts CLOSED 34 + 22 = 56, CARRIED-14E 10,
+CARRIED-PAPER-LIVE 18, OPERATOR-POLICY 6, BACKLOG 26, ACCEPTED 20, RECORD 161,
+total 297.
+Holds: full suite 5523 passed, 0 failed, 44 skipped, 2 xfailed; prepush 5503
+passed, 5 skipped, 60 deselected, 1 xfailed; -n 4 5503; determinism 148;
+parity 64 constants, changed 0; fingerprint
+261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97, files 1;
+total_files 260; n_modules 209; n_edges 718; public_symbols 641; total_sloc
+51019; n_cycles 1; alphaleak 0; mypy 260 source files; lint-imports 2 kept 0
+broken; ruff format 826 files; universe 1 passed (PYTHONHASHSEED 0);
+tests/docs 107; and every other field of the baseline capture.
+Mechanism: docs, a script that no test or tool runs, and the contract's header
+text; no code path reads any of them.
+
 ### D-66 pre-registered prediction
 
 ```
