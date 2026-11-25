@@ -38969,3 +38969,255 @@ OWNER:       campaign 15.
                  81.66499249984659124287543690; D-209
                  fired no (threshold 90.61, guard 1350 s,
                  D-248).
+
+## P-99c2 CI watch re-derived
+
+  VERDICT:       passed
+  DECISIONS:     D-256. Prediction not amended.
+  E0:            none. Docs and one CSV; no
+                 fail-first test.
+  TREE:          git diff --stat
+                 arch/exec..exec/P-99c2, before
+                 this ledger commit:
+                  .cursor/rules/exec-guardrail.mdc                   |   4 +-
+                  .../target/out/exec/baseline_post-P-99c2.json      | 117 +++++++++++++++++++++
+                  .../target/out/exec/baseline_pre-P-99c2.json       | 117 +++++++++++++++++++++
+                  .../target/out/exec/ci_watch_runs_P-99c2.csv       |  26 +++++
+                  .../target/position_engine/decisions.md            |  35 ++++++
+                  5 files changed, 297 insertions(+), 2 deletions(-)
+  SPEC:          087edf507437568f68cc4a41243af569e2a72252.
+                 D-256, prediction in D-256.
+  TEST:          none.
+  IMPL:          fb188b6915f59cf8134f44a03a0a49a3a4ce315e.
+                 Contract lines 155 and 157:
+                 90.61 -> 86.66. CSV
+                 ci_watch_runs_P-99c2.csv.
+  REPORT:        reference 82.87 sigma 0.0211
+                 threshold 86.66 runs 25 groups 6.
+                 Half-up of the raw threshold
+                 86.65825089264706093672 is 86.66.
+  BASE:          344c3c47f0c11383e168ceada7f81916037b0ebd.
+                 pre baseline_pre-P-99c2.json on
+                 087edf507437568f68cc4a41243af569e2a72252,
+                 captured_at
+                 2026-11-25T07:15:16.097280+00:00,
+                 git.dirty false, porcelain [],
+                 PID 24332, launched
+                 2026-11-25T15:15:15+08:00,
+                 exit 0, BASELINE GREEN.
+                 Full 5523 passed, 0 failed, 44
+                 skipped, exit 0 (5523 passed,
+                 44 skipped, 2 xfailed, 49 warnings
+                 in 1733.11s (0:28:53));
+                 determinism 148 passed, 0 failed,
+                 exit 0 (148 passed, 1 warning in
+                 10.22s); parity 64 constants
+                 across 25 modules; fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. Evidence: alphaleak n 0;
+                 available True; n_cycles 1,
+                 n_edges 718, n_modules 209;
+                 public_symbols 641, total_files
+                 260, total_sloc 51019. SHA256
+                 before the move and after the
+                 move:
+                 CC1EB40EE2A6353C26D54FAFB40CB879285611891EA6EB75DD475378ED617C9A.
+                 post baseline_post-P-99c2.json on
+                 fb188b6915f59cf8134f44a03a0a49a3a4ce315e,
+                 captured_at
+                 2026-11-25T08:29:22.297314+00:00,
+                 git.dirty false, porcelain [],
+                 PID 820, launched
+                 2026-11-25T16:29:21+08:00,
+                 exit 0, BASELINE GREEN. The
+                 untracked pre JSON was restored
+                 before that compare. SHA256 after
+                 the restore equals the same
+                 value. Full 5523 passed, 0 failed,
+                 44 skipped, exit 0 (5523 passed,
+                 44 skipped, 2 xfailed, 49 warnings
+                 in 1691.17s (0:28:11));
+                 determinism 148 passed, 0 failed,
+                 exit 0 (148 passed, 1 warning in
+                 9.97s); same fingerprint, files 1.
+                 Evidence: alphaleak n 0; available
+                 True; n_cycles 1, n_edges 718,
+                 n_modules 209; public_symbols 641,
+                 total_files 260, total_sloc 51019.
+                 compare parity-only, exit 0:
+                 constants 64 -> 64, changed 0.
+                 VERDICT: parity HOLDS -- no
+                 constant moved. JSON field diff
+                 count 5, all identity or elapsed
+                 time: captured_at, label, git.sha,
+                 and the seconds in tests.tail and
+                 determinism.tail. Count text in
+                 both tails matches, including
+                 2 xfailed. Predicted full suite
+                 5523 passed, 0 failed, 44 skipped,
+                 2 xfailed | actual pre and post
+                 as above | MATCH. Predicted
+                 prepush 5503 passed, 5 skipped,
+                 60 deselected, 1 xfailed |
+                 actual 5503 passed, 5 skipped,
+                 60 deselected, 1 xfailed,
+                 49 warnings in 999.33s
+                 (0:16:39) | MATCH. Predicted
+                 -n 4 5503 | actual 5503 passed,
+                 5 skipped, 1 xfailed, 53 warnings
+                 in 559.72s (0:09:19) (xdist
+                 printed no deselected count) |
+                 MATCH. Holds, each MATCH:
+                 determinism 148; parity 64,
+                 changed 0; fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1; total_files 260;
+                 n_modules 209; n_edges 718;
+                 public_symbols 641; total_sloc
+                 51019; n_cycles 1; alphaleak 0;
+                 mypy 260 source files
+                 (Success: no issues found in 260
+                 source files); lint-imports
+                 2 kept, 0 broken (Contracts: 2
+                 kept, 0 broken.); ruff format
+                 826 files (826 files already
+                 formatted); universe 1 passed
+                 (PYTHONHASHSEED 0; 1 passed in
+                 111.86s (0:01:51)); tests/docs
+                 107 (107 passed, 1 warning in
+                 0.46s); test_ci_watch.py and
+                 test_ci_watch_extract.py green
+                 (3 passed, 1 warning in 0.17s).
+                 Every other measured field of
+                 the two captures holds; the five
+                 JSON diffs are label,
+                 captured_at, git.sha, and elapsed
+                 seconds in the two tails.
+  GATES:         Preflight P1: arch/exec at
+                 981da1fcee370cf940414399e95ff5574cd4fa4c,
+                 equal to origin/arch/exec, clean,
+                 no exec/P-99c2. P2: no pytest,
+                 baseline.py or perfmeasure.
+                 P3: D-256 grep exit 1, no hits;
+                 90.61 under tests tools scripts
+                 with the stated exclusions,
+                 exit 1, no hits; guardrail
+                 90.61 at lines 155 and 157.
+                 P4: E2 lines filtered for D-252
+                 printed none (the E2 amendment
+                 is the paragraph inside D-252
+                 at 981da1fc, decisions.md:1894;
+                 def test_engine_kernel_imports_equal_pin
+                 at tests/conformance/test_import_contracts.py:131).
+                 The post capture's full-suite
+                 pass is the run evidence.
+                 P5 final list, 2026-11-25T15:11:44+08:00,
+                 all ten completed, none queued
+                 or in progress. P6: branch
+                 exec/P-99c2 at that HEAD.
+                 Profile PID 4216, launched
+                 2026-11-25T15:12:31+08:00,
+                 exit 0, wrote
+                 tools/arch/evidence/hotpath_executed.json.
+                 Extract PID 24276, launched
+                 2026-11-25T15:52:03+08:00,
+                 exit 0.
+                 CROSS_CHECK=PASS api=25
+                 run_list=25 dropped=0
+                 total_count=25. DATA_ROWS=25.
+                 Created range
+                 2026-11-14T01:34:40Z..2026-11-25T06:54:46Z.
+                 CSV SHA256
+                 A75DE756EB12BE71EF3027CBB85FC2808409B44CE277093FB5CD002156C9E729,
+                 equal after the byte copy.
+                 derive printed: reference 82.87
+                 sigma 0.0211 threshold 86.66
+                 runs 25 groups 6. Contract
+                 figure 86.66. Prepush PID 6952,
+                 launched
+                 2026-11-25T15:54:32+08:00,
+                 exit 0. ruff check All checks
+                 passed!; ruff format 826 files
+                 already formatted; mypy Success:
+                 no issues found in 260 source
+                 files; lint-imports Contracts:
+                 2 kept, 0 broken. 5503 passed,
+                 5 skipped, 60 deselected,
+                 1 xfailed, 49 warnings in
+                 999.33s (0:16:39). prepush: ok
+                 (ruff check, ruff format, mypy,
+                 lint-imports, pytest). -n 4
+                 PID 29528, launched
+                 2026-11-25T16:12:03+08:00,
+                 exit 0. The process command line
+                 was: pytest -m "not functional and not paper_rth and not battery_real and not universe_check" -q -n 4
+                 5503 passed, 5 skipped,
+                 1 xfailed, 53 warnings in
+                 559.72s (0:09:19). Universe
+                 PYTHONHASHSEED 0, PID 25108,
+                 launched
+                 2026-11-25T16:23:20+08:00,
+                 exit 0, 1 passed in 111.86s
+                 (0:01:51). tests/docs exit 0:
+                 107 passed, 1 warning in 0.46s.
+                 ci_watch tests exit 0: 3 passed,
+                 1 warning in 0.17s. Profile-post
+                 PID 24052, launched
+                 2026-11-25T16:26:44+08:00,
+                 exit 0 and wrote
+                 tools/arch/evidence/hotpath_executed.json.
+  CI:            pending. No dispatch this
+                 session.
+  MERGE:         not filled.
+  BUGBOT:        not read. CI has not completed.
+  CI WATCH:      derivation above. Head and
+                 merge ratios not run.
+  DEVIATIONS:    The untracked pre JSON was moved
+                 to
+                 %USERPROFILE%\feelies-probes\P-99c2\runs\
+                 so the tree was empty, then
+                 restored before the captures
+                 commit. SHA256 before the move,
+                 after the move, and after the
+                 restore:
+                 CC1EB40EE2A6353C26D54FAFB40CB879285611891EA6EB75DD475378ED617C9A.
+                 git.dirty false on both
+                 captures. No discarded capture.
+                 The first universe wrapper
+                 (PID 15156, launched
+                 2026-11-25T16:22:58+08:00)
+                 redirected only Remove-Item.
+                 Its process tree was stopped
+                 before an exit file existed,
+                 and the check was launched once
+                 more with the redirect on
+                 pytest (PID 25108). git add of
+                 the CSV warned that CRLF will
+                 be replaced by LF the next time
+                 Git touches it; the working-tree
+                 SHA256 stayed
+                 A75DE756EB12BE71EF3027CBB85FC2808409B44CE277093FB5CD002156C9E729
+                 and the commit left porcelain
+                 empty.
+  STANDING:      phase-14 contract version 8.
+                 CI-watch threshold 86.66
+                 (D-256). Guard 1350 s unchanged.
+  EVIDENCE:      total_files 260; n_modules 209;
+                 n_edges 718; public_symbols 641;
+                 total_sloc 51019; n_cycles 1;
+                 alphaleak 0.
+  FINDINGS:      F-P99b-4 closed by D-256.
+                 F-P96-3 closed by D-256.
+  NOTES:         commits in order: SPEC
+                 087edf507437568f68cc4a41243af569e2a72252,
+                 IMPL
+                 fb188b6915f59cf8134f44a03a0a49a3a4ce315e,
+                 BASE
+                 344c3c47f0c11383e168ceada7f81916037b0ebd,
+                 ledger this commit. No src/ or
+                 tests/ edit. Profile logs
+                 recorded a HorizonSignalEngine
+                 regime-gate warning on stderr
+                 and exit 0; hotpath_executed.json
+                 is gitignored. Run set: 25 runs,
+                 2026-11-14T01:34:40Z..2026-11-25T06:54:46Z.

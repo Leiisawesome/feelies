@@ -2066,6 +2066,41 @@ tests/docs 107; and every other field of the baseline capture.
 Mechanism: docs, a script that no test or tool runs, and the contract's header
 text; no code path reads any of them.
 
+BEGIN D-256
+D-256 — CI watch re-derived (D-248 expired); P-99c2
+
+Decided by the operator, 2026-11-25 (chat 15; P-99c option 3a; gh-read
+authorised for this rung). Evidence: F-P99b-4 (run 12 since P-62 was
+45148448927); censuses P-99b-C5 and P-99c-C1.
+Method (D-209, unchanged): tools/exec/ci_watch_extract.ps1 -CreatedFrom
+2026-11-14 -CreatedTo 2026-11-25 -Attempt latest, run after no pull_request
+run of ci.yml was in progress or queued; output committed as
+docs/architecture/target/out/exec/ci_watch_runs_P-99c2.csv; then
+uv run python tools/exec/ci_watch.py derive <that csv> (window 12, z 3,
+per_check 2). The printed reference, sigma and threshold replace D-248's;
+the contract's threshold figure (exec-guardrail.mdc lines 155 and 157)
+becomes the threshold rounded half-up to two decimals. The 1350 s guard and
+the check job timeout are unchanged. Supersedes D-248's reference and
+threshold; D-209's method, sigma rule and z stand.
+Findings: F-P99b-4 closed by this entry. F-P96-3 closed: D-252 E2 removed the
+engine-to-kernel import and test_engine_kernel_imports_equal_pin passes in
+this rung's captures.
+Pre-registered prediction (P-99c2), against the pre capture:
+Changes: contract lines 155 and 157 carry the new threshold in place of 90.61
+(value fixed by the method above, not predicted); one new CSV.
+Holds: full suite 5523 passed, 0 failed, 44 skipped, 2 xfailed; prepush 5503
+passed, 5 skipped, 60 deselected, 1 xfailed; -n 4 5503; determinism 148;
+parity 64 constants, changed 0; fingerprint
+261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97, files 1;
+total_files 260; n_modules 209; n_edges 718; public_symbols 641; total_sloc
+51019; n_cycles 1; alphaleak 0; mypy 260 source files; lint-imports 2 kept 0
+broken; ruff format 826 files; universe 1 passed (PYTHONHASHSEED 0);
+tests/docs 107; tests/conformance/test_ci_watch.py and
+test_ci_watch_extract.py green; and every other field of the baseline capture.
+Mechanism: a committed CSV and contract text; no code path reads either.
+Result: reference 82.87 sigma 0.0211 threshold 86.66 runs 25 groups 6 Run set: 25 runs, 2026-11-14T01:34:40Z..2026-11-25T06:54:46Z, CSV SHA256 A75DE756EB12BE71EF3027CBB85FC2808409B44CE277093FB5CD002156C9E729. Contract figure: 86.66.
+END D-256
+
 ### D-66 pre-registered prediction
 
 ```
