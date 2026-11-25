@@ -39221,3 +39221,57 @@ OWNER:       campaign 15.
                  and exit 0; hotpath_executed.json
                  is gitignored. Run set: 25 runs,
                  2026-11-14T01:34:40Z..2026-11-25T06:54:46Z.
+  CI:            PR head 45581374509 success at 1b18e988
+                 (check 724 s, value 79.86). Tests
+                 5503 passed, 5 skipped, 1 xfailed,
+                 50 warnings in 625.31s; determinism
+                 148 passed, 1 warning in 7.83s.
+                 Merge run 45584136842 success at
+                 ed2fb49c (check 1056 s, value 85.09).
+                 Tests 5503 passed, 5 skipped, 1
+                 xfailed, 50 warnings in 947.88s;
+                 determinism 148 passed, 1 warning
+                 in 11.14s.
+  MERGE:         RESULT SHA
+                 ed2fb49cc27e3daf24b7c5017f7efd4c0cd81bc4,
+                 parents
+                 981da1fcee370cf940414399e95ff5574cd4fa4c
+                 and
+                 1b18e988bca842a0ab6b720ea0d98016622d701f,
+                 tree
+                 1aaaa697385f20a0546435716045fd482907ec36
+                 = PR head tree. PR #320. Merged
+                 2026-11-25T09:18:14Z.
+  CI WATCH:      head 724 s, value 79.86; merge 1056 s,
+                 value 85.09. Two-run geometric mean
+                 82.432959190427282802178900729333182150711706844361; D-209
+                 fired no (threshold 86.66, guard 1350 s,
+                 D-256).
+
+## CAMPAIGN CLOSE  Phase 14 position engine
+
+  DATE:          2026-11-25
+  SHA:           ed2fb49cc27e3daf24b7c5017f7efd4c0cd81bc4
+                 (arch/exec before this commit).
+  RUNGS:         P-00 to P-99c2 all DONE (plan).
+  PINS:          full 5523 passed, 0 failed,
+                 44 skipped, 2 xfailed;
+                 determinism 148; parity 64,
+                 fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97;
+                 legacy oracle 10 / 26.61 /
+                 ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e;
+                 position oracle 98 / -1321.15 /
+                 52e4fc3cf674658bfe03a3ea94a4930fbfdd7e73ffe1b3e7e279378a2f89d924
+                 / closed 34
+                 8ac400ed64e66dec78e659f6ab45fed14499c6178af2f791aa4c42e21eb46f06.
+  CI WATCH:      86.66 (D-256).
+  FINDINGS:      P-99c_findings_register.md,
+                 D-255, with F-P96-3 and
+                 F-P99b-4 closed by D-256.
+  CONTRACT:      version 8, in force until
+                 campaign 14E's contract
+                 replaces it.
+  OPEN:          PR #249 merge to main
+                 (D-255 4a). Campaign 14E setup
+                 (D-255 5a checklist).
