@@ -1,5 +1,5 @@
 ---
-description: Phase-14 standing contract (position engine, backtest only). Binds every Cursor session in this repo until P-99. Version 7 (T-15, D-248).
+description: Phase-14 standing contract (position engine, backtest only). Binds every Cursor session in this repo until campaign 14E's contract replaces it. Version 8 (P-99c1, D-255).
 alwaysApply: true
 ---
 
@@ -7,10 +7,10 @@ alwaysApply: true
 
 The operator (Lei) decides. Claude designs and gates. Cursor executes and reports.
 Each prompt carries only what is new; this file holds what is fixed. It changes
-only through its own rung, and is retired or replaced at P-99.
+only through its own rung, and stays in force until campaign 14E's contract replaces it (D-255).
 docs/architecture/target/prompts/exec/X0_CORE_EXEC.md and
 docs/architecture/target/EXEC-RUNBOOK.md are phase 7 and do not bind phase 14.
-The Claude chat rollover limit is 3 merged steps (playbook v1.2; D-202).
+The Claude chat rollover limit is 3 merged steps (playbook v1.3; D-202).
 
 ## Where things are
 - Plan: docs/architecture/target/out/phase14_position_engine.md
