@@ -2101,6 +2101,51 @@ Mechanism: a committed CSV and contract text; no code path reads either.
 Result: reference 82.87 sigma 0.0211 threshold 86.66 runs 25 groups 6 Run set: 25 runs, 2026-11-14T01:34:40Z..2026-11-25T06:54:46Z, CSV SHA256 A75DE756EB12BE71EF3027CBB85FC2808409B44CE277093FB5CD002156C9E729. Contract figure: 86.66.
 END D-256
 
+BEGIN D-257
+D-257 — PR #249 unresolved Bugbot threads dispositioned; P-99d
+
+Decided by the operator, 2026-11-26 (chat 16; approved as recommended).
+Evidence: PR249-M blocked at gate G2 (Cursor Bugbot neutral on e5629ed1: no
+new issues, 5 previously reported issues unresolved); censuses C16-2, C16-3.
+Dispositions, by PR #249 review-thread discussion id (all Medium):
+- r4133884594 (2026-09-29; mutant-kill also runs on workflow_dispatch,
+  .github/workflows/ci.yml line 533, from 82953f6a): ACCEPTED as F-C16-2.
+  CI cost only: dispatched runs also run both mutant-kill shards. No
+  correctness or parity effect.
+- r4277909399 (2026-10-15; partial exits leave stale entry cost): CLOSED,
+  fixed by 08960bebc31213ad5fbe78d561bbd2736e483b18 (P-31, D-196 FIFO lot
+  rule); exit-order path a53a62e911810348a73dba31dbe650e6215e160f (P-50).
+- r4301161738 (2026-10-17; member 9 omitted from the CI battery): CLOSED,
+  fixed by af4d98c21a185c7fe928671cae42093f0ee77132 (T-5; the
+  reference-battery job runs tests/position_engine/test_battery_m*.py).
+- r4653060126 (2026-11-21; legacy exit reason misses orchestrator signal
+  exits): CLOSED, fixed by 8c786de8879994e8cd1f91939f23cbf08039aaeb (P-96,
+  D-252 trace linkage). Without traces an unmatched exit is UNATTRIBUTED,
+  never a wrong reason.
+- r4653060131 (2026-11-21; reject reason misses order-level risk verdicts):
+  F-C16-1, CARRIED-14E. _reject_reason in
+  src/feelies/forensics/exit_attribution.py matches a REJECT verdict only on
+  the signal's correlation_id and symbol, so a rejection issued under an
+  order's correlation id is not attributed. Attribution only; no P&L or
+  parity effect.
+The P-99c findings register stays the snapshot generated at 140b2a3b (D-255).
+F-C16-1 and F-C16-2 are recorded here and in the P-99d ledger entry and enter
+campaign 14E's register. The operator answers each thread on GitHub naming
+this entry and resolves it.
+Pre-registered prediction (P-99d), against the pre capture:
+Changes: none in the baseline. Files: decisions.md (this entry), the plan
+(one P-99d row), LEDGER.md (the P-99d entry), two new captures.
+Holds: full suite 5523 passed, 0 failed, 44 skipped, 2 xfailed; prepush 5503
+passed, 5 skipped, 60 deselected, 1 xfailed; -n 4 5503; determinism 148;
+parity 64 constants, changed 0; fingerprint
+261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97, files 1;
+total_files 260; n_modules 209; n_edges 718; public_symbols 641; total_sloc
+51019; n_cycles 1; alphaleak 0; mypy 260 source files; lint-imports 2 kept 0
+broken; ruff format 826 files; universe 1 passed (PYTHONHASHSEED 0);
+tests/docs 107; and every other field of the baseline capture.
+Mechanism: docs text only; no code path reads these entries.
+END D-257
+
 ### D-66 pre-registered prediction
 
 ```

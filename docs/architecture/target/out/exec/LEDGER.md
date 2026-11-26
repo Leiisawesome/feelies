@@ -39248,6 +39248,203 @@ OWNER:       campaign 15.
                  fired no (threshold 86.66, guard 1350 s,
                  D-256).
 
+## P-99d PR #249 Bugbot thread dispositions
+
+  VERDICT:       passed
+  DECISIONS:     D-257. Prediction not amended.
+  E0:            none, docs only.
+  TREE:          git diff --stat
+                 e5629ed15080285be41d5f2d6e6ff1b1332e899b..HEAD,
+                 before this ledger commit:
+                  .../target/out/exec/baseline_post-P-99d.json       | 117 +++++++++++++++++++++
+                  .../target/out/exec/baseline_pre-P-99d.json        | 117 +++++++++++++++++++++
+                  .../target/out/phase14_position_engine.md          |   1 +
+                  .../target/position_engine/decisions.md            |  45 ++++++++
+                  4 files changed, 280 insertions(+)
+  SPEC:          3b1441cd13017bd16de54e27016faf32cd40f180.
+                 D-257, prediction in D-257.
+  TEST:          none.
+  IMPL:          none.
+  REPORT:        none.
+  BASE:          bdefe6cbd5b64c963c108722ae938ef43d7b49b6.
+                 pre baseline_pre-P-99d.json on
+                 3b1441cd13017bd16de54e27016faf32cd40f180,
+                 captured_at
+                 2026-11-26T02:20:40.980171+00:00,
+                 git.dirty false, porcelain [],
+                 PID 2528, launched
+                 2026-11-26T10:20:40+08:00,
+                 exit 0, BASELINE GREEN.
+                 Full 5523 passed, 0 failed, 44
+                 skipped, exit 0 (5523 passed,
+                 44 skipped, 2 xfailed, 49 warnings
+                 in 1734.52s (0:28:54));
+                 determinism 148 passed, 0 failed,
+                 exit 0 (148 passed, 1 warning in
+                 10.96s); parity 64 constants
+                 across 25 modules; fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1. Evidence: alphaleak n 0;
+                 available True; n_cycles 1,
+                 n_edges 718, n_modules 209;
+                 public_symbols 641, total_files
+                 260, total_sloc 51019. SHA256
+                 before the move and after the
+                 move:
+                 176C12EB14BD83827B8E0BA62FEE2D0A554D3716D56DBAFB95E7F6396E1FF2E8.
+                 post baseline_post-P-99d.json on
+                 80e5d839456147f2375a1ef885c22f6406eef0a5,
+                 captured_at
+                 2026-11-26T02:53:06.650550+00:00,
+                 git.dirty false, porcelain [],
+                 PID 26992, launched
+                 2026-11-26T10:53:06+08:00,
+                 exit 0, BASELINE GREEN. The
+                 untracked pre JSON was restored
+                 before that compare. SHA256 after
+                 the restore equals the same
+                 value. Full 5523 passed, 0 failed,
+                 44 skipped, exit 0 (5523 passed,
+                 44 skipped, 2 xfailed, 49 warnings
+                 in 1848.72s (0:30:48));
+                 determinism 148 passed, 0 failed,
+                 exit 0 (148 passed, 1 warning in
+                 10.47s); same fingerprint, files 1.
+                 Evidence: alphaleak n 0; available
+                 True; n_cycles 1, n_edges 718,
+                 n_modules 209; public_symbols 641,
+                 total_files 260, total_sloc 51019.
+                 compare parity-only, exit 0:
+                 constants 64 -> 64, changed 0.
+                 VERDICT: parity HOLDS -- no
+                 constant moved. JSON field diff
+                 count 5, all identity or elapsed
+                 time: captured_at, label, git.sha,
+                 and the seconds in tests.tail and
+                 determinism.tail. Count text in
+                 both tails matches, including
+                 2 xfailed and determinism
+                 148 passed, 1 warning. Predicted
+                 full suite 5523 passed, 0 failed,
+                 44 skipped, 2 xfailed | actual
+                 pre and post as above | MATCH.
+                 Predicted prepush 5503 passed,
+                 5 skipped, 60 deselected,
+                 1 xfailed | actual 5503 passed,
+                 5 skipped, 60 deselected,
+                 1 xfailed, 49 warnings in
+                 1013.24s (0:16:53) | MATCH.
+                 Predicted -n 4 5503 | actual
+                 5503 passed, 5 skipped,
+                 1 xfailed, 53 warnings in
+                 566.88s (0:09:26) (xdist printed
+                 no deselected count) | MATCH.
+                 Holds, each MATCH: determinism
+                 148; parity 64, changed 0;
+                 fingerprint
+                 261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97,
+                 files 1; total_files 260;
+                 n_modules 209; n_edges 718;
+                 public_symbols 641; total_sloc
+                 51019; n_cycles 1; alphaleak 0;
+                 mypy 260 source files
+                 (Success: no issues found in 260
+                 source files); lint-imports
+                 2 kept, 0 broken (Contracts: 2
+                 kept, 0 broken.); ruff format
+                 826 files (826 files already
+                 formatted); universe 1 passed
+                 (PYTHONHASHSEED 0; 1 passed in
+                 113.91s (0:01:53)); tests/docs
+                 107 (107 passed, 1 warning in
+                 0.46s). Every other measured
+                 field of the two captures holds;
+                 the five JSON diffs are label,
+                 captured_at, git.sha, and elapsed
+                 seconds in the two tails.
+  GATES:         Preflight P1: arch/exec at
+                 e5629ed15080285be41d5f2d6e6ff1b1332e899b,
+                 porcelain 0. P2: no pytest,
+                 baseline.py or perfmeasure after
+                 excluding the checker. P3:
+                 exec/P-99d at that HEAD.
+                 D-257 BEGIN 2104, END 2147;
+                 ### D-66 at 2149. Plan row 142;
+                 gate cell operator; parity cell
+                 hold. Prepush PID 9160, launched
+                 2026-11-26T11:27:00+08:00,
+                 exit 0. ruff check All checks
+                 passed!; ruff format 826 files
+                 already formatted; mypy Success:
+                 no issues found in 260 source
+                 files; lint-imports Contracts:
+                 2 kept, 0 broken. 5503 passed,
+                 5 skipped, 60 deselected,
+                 1 xfailed, 49 warnings in
+                 1013.24s (0:16:53). prepush: ok
+                 (ruff check, ruff format, mypy,
+                 lint-imports, pytest). -n 4
+                 PID 18172, launched
+                 2026-11-26T11:46:05+08:00,
+                 exit 0. The process command line
+                 was: pytest -m "not functional and not paper_rth and not battery_real and not universe_check" -q -n 4
+                 5503 passed, 5 skipped,
+                 1 xfailed, 53 warnings in
+                 566.88s (0:09:26). Universe
+                 PYTHONHASHSEED 0, PID 34396,
+                 launched
+                 2026-11-26T11:57:11+08:00,
+                 exit 0, 1 passed in 113.91s
+                 (0:01:53). tests/docs exit 0:
+                 107 passed, 1 warning in 0.46s.
+  CI:            pending. No dispatch this
+                 session.
+  MERGE:         not filled.
+  BUGBOT:        not read. CI has not completed.
+  CI WATCH:      not run.
+  DEVIATIONS:    The untracked pre JSON was moved
+                 to
+                 %USERPROFILE%\feelies-probes\P-99d\runs\
+                 so the tree was empty, then
+                 restored before the captures
+                 commit. SHA256 before the move,
+                 after the move, and after the
+                 restore:
+                 176C12EB14BD83827B8E0BA62FEE2D0A554D3716D56DBAFB95E7F6396E1FF2E8.
+                 git.dirty false on both
+                 captures. No discarded capture.
+                 The first P2 count matched the
+                 checking command; the recount
+                 excluding it was 0. No hot-path
+                 profile: no src edit. Capture
+                 evidence is measure.py modules,
+                 imports and alphaleak.
+  STANDING:      phase-14 contract version 8.
+  EVIDENCE:      total_files 260; n_modules 209;
+                 n_edges 718; public_symbols 641;
+                 total_sloc 51019; n_cycles 1;
+                 alphaleak 0.
+  FINDINGS:      F-C16-1: PR #249 r4653060131.
+                 _reject_reason matches REJECT
+                 verdicts only on the signal's
+                 correlation_id and symbol;
+                 order-level rejections are not
+                 attributed. Attribution only.
+                 CARRIED-14E (D-257).
+                 F-C16-2: PR #249 r4133884594.
+                 mutant-kill also runs on
+                 workflow_dispatch (ci.yml line
+                 533). CI cost only. ACCEPTED
+                 (D-257).
+  NOTES:         commits in order: SPEC
+                 3b1441cd13017bd16de54e27016faf32cd40f180,
+                 DOCS
+                 80e5d839456147f2375a1ef885c22f6406eef0a5,
+                 BASE
+                 bdefe6cbd5b64c963c108722ae938ef43d7b49b6,
+                 ledger this commit. No src/ or
+                 tests/ edit. Plan row at line 142.
+
 ## CAMPAIGN CLOSE  Phase 14 position engine
 
   DATE:          2026-11-25
