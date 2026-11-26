@@ -39444,16 +39444,40 @@ OWNER:       campaign 15.
                  bdefe6cbd5b64c963c108722ae938ef43d7b49b6,
                  ledger this commit. No src/ or
                  tests/ edit. Plan row at line 142.
-  CI:            head 45762294862 (check 725 s, ratio 81.18), merge 45764117526
-                 (729 s, 80.42), mean 80.80; D-209 fired no (vs 86.66).
-  MERGE:         25b3a90ba442105534ff557516336b7ade9b5428 (PR #321), mergedAt
-                 2026-11-26T05:49:40Z, parents e5629ed1 and 9aede811, tree
-                 66e0b774ef64865598a6733217f029730616b84e.
-  CI WATCH:      unknown
-  GATES:         G1-G5 PASS on 9aede811; Cursor Bugbot success; unresolved threads 0.
-  THREADS:       PR #249: the 5 threads in D-257 answered and resolved by the operator
-                 2026-11-26 (replies 4704505998, 4704506662, 4704507323, 4704507896,
-                 4704508591); unresolved after: 0.
+  CI:            PR head 45762294862 success at 9aede811
+                 (check 725 s, value 81.18). Tests
+                 5503 passed, 5 skipped, 1 xfailed,
+                 50 warnings in 632.43s; determinism
+                 148 passed, 1 warning in 7.79s.
+                 Merge run 45764117526 success at
+                 25b3a90b (check 729 s, value 80.42).
+                 Tests 5503 passed, 5 skipped, 1
+                 xfailed, 50 warnings in 633.71s;
+                 determinism 148 passed, 1 warning
+                 in 7.88s.
+  MERGE:         RESULT SHA
+                 25b3a90ba442105534ff557516336b7ade9b5428,
+                 parents
+                 e5629ed15080285be41d5f2d6e6ff1b1332e899b
+                 and
+                 9aede811bd159de3ceef6841225904d1f57d93d7,
+                 tree
+                 66e0b774ef64865598a6733217f029730616b84e
+                 = PR head tree. PR #321. Merged
+                 2026-11-26T05:49:40Z. Gates G1-G5
+                 PASS on 9aede811 (Cursor Bugbot
+                 success; unresolved threads 0).
+                 PR #249: the 5 threads in D-257
+                 answered and resolved by the
+                 operator 2026-11-26 (replies
+                 4704505998, 4704506662, 4704507323,
+                 4704507896, 4704508591); unresolved
+                 after: 0.
+  CI WATCH:      head 725 s, value 81.18; merge 729 s,
+                 value 80.42. Two-run geometric mean
+                 80.8015466995718580110915772; D-209
+                 fired no (threshold 86.66, guard 1350 s,
+                 D-256).
 
 ## CAMPAIGN CLOSE  Phase 14 position engine
 
