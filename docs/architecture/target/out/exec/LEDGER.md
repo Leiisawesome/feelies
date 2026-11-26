@@ -39444,6 +39444,16 @@ OWNER:       campaign 15.
                  bdefe6cbd5b64c963c108722ae938ef43d7b49b6,
                  ledger this commit. No src/ or
                  tests/ edit. Plan row at line 142.
+  CI:            head 45762294862 (check 725 s, ratio 81.18), merge 45764117526
+                 (729 s, 80.42), mean 80.80; D-209 fired no (vs 86.66).
+  MERGE:         25b3a90ba442105534ff557516336b7ade9b5428 (PR #321), mergedAt
+                 2026-11-26T05:49:40Z, parents e5629ed1 and 9aede811, tree
+                 66e0b774ef64865598a6733217f029730616b84e.
+  CI WATCH:      unknown
+  GATES:         G1-G5 PASS on 9aede811; Cursor Bugbot success; unresolved threads 0.
+  THREADS:       PR #249: the 5 threads in D-257 answered and resolved by the operator
+                 2026-11-26 (replies 4704505998, 4704506662, 4704507323, 4704507896,
+                 4704508591); unresolved after: 0.
 
 ## CAMPAIGN CLOSE  Phase 14 position engine
 
