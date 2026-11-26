@@ -102,6 +102,7 @@ def test_hot_path_allow_list() -> None:
     reason="fork PR: hot-path profile not generated",
 )
 def test_g45_keep() -> None:
+    """Hot-path edit reviewed under P-23g."""
     report = scan()
     keep_hits: set[tuple[str, str, str]] = set()
     for kind, row in report["prohibitions"].items():
@@ -117,6 +118,49 @@ def test_g45_keep() -> None:
     assert keep_hits == _G45_KEEP, (
         f"unexpected {sorted(keep_hits - _G45_KEEP)}; missing {sorted(_G45_KEEP - keep_hits)}"
     )
+
+
+_STALE = "stale hot-path profile — run perfmeasure --mode profile"
+
+
+def test_profile_fingerprint_rejects_stale_and_accepts_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import json
+
+    from tools.arch import hotpath
+
+    # Under the repo so scan()'s evidence path stays relative to ROOT.
+    executed = hotpath.EVIDENCE / "hotpath_executed_fingerprint_test.json"
+    executed.parent.mkdir(parents=True, exist_ok=True)
+    profile: dict[str, object] = {
+        "n_quotes": 1,
+        "parity_hash": "x",
+        "n_executed_functions": 0,
+        "executed": {},
+    }
+    blob: dict[str, object] = {"profile": profile}
+    executed.write_text(json.dumps(blob), encoding="utf-8")
+    monkeypatch.setattr(hotpath, "EXECUTED", executed)
+    try:
+        with pytest.raises(SystemExit, match=_STALE):
+            hotpath.scan()
+
+        profile["source_fingerprint"] = "0" * 64
+        profile["source_fingerprint_configs"] = ["configs/bt_app.yaml"]
+        executed.write_text(json.dumps(blob), encoding="utf-8")
+        with pytest.raises(SystemExit, match=_STALE):
+            hotpath.scan()
+
+        configs = hotpath.config_closure(hotpath.ROOT / "configs" / "bt_app.yaml")
+        profile["source_fingerprint_configs"] = [
+            path.relative_to(hotpath.ROOT).as_posix() for path in configs
+        ]
+        profile["source_fingerprint"] = hotpath.source_fingerprint(configs)
+        executed.write_text(json.dumps(blob), encoding="utf-8")
+        hotpath._load_executed()
+    finally:
+        executed.unlink(missing_ok=True)
 
 
 def test_g44_dead_compute() -> None:

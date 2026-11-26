@@ -69,4 +69,11 @@ STREAM_AUTHORITIES: tuple[SequenceAuthority, ...] = (
     SequenceAuthority("passive_limit_ack", "PassiveLimitOrderRouter", ("OrderAck",)),
     SequenceAuthority("ib_ack", "IBOrderRouter", ("OrderAck",)),
     SequenceAuthority("massive", "MassiveNormalizer", ("NBBOQuote", "Trade")),
+    SequenceAuthority("mark_rail", "MarkRail", ("MarkRailUpdate",)),
+    SequenceAuthority("slice_position", "Orchestrator", ("SlicePositionUpdate",)),
+    SequenceAuthority(
+        "position",
+        "PositionEngine",
+        ("PositionSnapshot", "GateDecision", "PositionClosed"),
+    ),
 )

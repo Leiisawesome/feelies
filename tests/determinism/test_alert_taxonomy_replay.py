@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 
 from feelies.bus.event_bus import EventBus
+from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
     Alert,
     CrossSectionalContext,
@@ -30,6 +31,7 @@ def _replay() -> tuple[str, int]:
     bus.subscribe(Alert, alerts.append)
     collector = HorizonMetricsCollector(
         bus=bus,
+        clock=SimulatedClock(start_ns=1),
         metric_sequence_generator=SequenceGenerator(start=1, stream="metric"),
     )
     collector.attach()

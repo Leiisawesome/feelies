@@ -284,7 +284,7 @@ EXPECTED_STOP_EXIT_STREAMS: dict[str, tuple[str, int]] = {
     "signal": ("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0),
     "intent": ("fa9a02d84aea823f4cf4bce6d572e87102c0021985ddb03b9c3ec67dd06cc080", 1),
     "order": ("831c3bf9d551b78bbabeeb88302876925a9317b67da6f54a67402d5dc668179c", 1),
-    "position_update": ("8e15beaa2ac3b90a26924571b7e15262d0fe1960f4faa28de26af86f6219caaf", 1),
+    "position_update": ("d70f2b00b1416e2d86cdf22ab8b920630edb712f834cc3cedfb6f6d02231ca08", 1),
 }
 
 

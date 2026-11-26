@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from feelies.bus.event_bus import EventBus
+from feelies.core.clock import Clock
 from feelies.core.events import (
     DeRiskRequirement,
     RegimeHazardSpike,
@@ -96,6 +97,8 @@ class HazardExitController:
         "_attached",
         "_emitted_for_episode",
         "_pending_exit_symbols",
+        "_market_data_latency_ns",
+        "_clock",
     )
 
     def __init__(
@@ -105,11 +108,15 @@ class HazardExitController:
         sequence_generator: SequenceGenerator,
         position_store: PositionStore,
         policies: Mapping[str, HazardPolicy] | None = None,
+        market_data_latency_ns: int = 0,
+        clock: Clock | None = None,
     ) -> None:
         self._bus = bus
         self._seq = sequence_generator
         self._position_store = position_store
         self._policies: dict[str, HazardPolicy] = dict(policies or {})
+        self._market_data_latency_ns = market_data_latency_ns
+        self._clock = clock
         self._attached = False
         # Per-symbol "already emitted" suppression — keyed by
         # ``(strategy_id, symbol, reason)``.  Cleared when the position
@@ -185,7 +192,9 @@ class HazardExitController:
             opened = self._position_store.opened_at_ns(trade.symbol)
             if opened is None:
                 continue
-            age_ns = trade.timestamp_ns - opened
+            # Visible time is exchange stamp plus market-data latency
+            # (market_data_visible_at_ns). Inlined: risk does not import ingestion.
+            age_ns = trade.timestamp_ns + self._market_data_latency_ns - opened
             if age_ns < int(policy.hard_exit_age_seconds) * 1_000_000_000:
                 continue
             self._maybe_emit_exit(
@@ -241,7 +250,7 @@ class HazardExitController:
         order_id = derive_order_id(f"{correlation_id}:{trigger_ts_ns}:{symbol}:{reason}")
 
         req = DeRiskRequirement(
-            timestamp_ns=trigger_ts_ns,
+            timestamp_ns=self._clock.now_ns() if self._clock is not None else trigger_ts_ns,
             correlation_id=correlation_id,
             sequence=self._seq.next(),
             source_layer=HAZARD_EXIT_SOURCE_LAYER,

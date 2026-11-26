@@ -17,7 +17,7 @@ from types import SimpleNamespace
 import pytest
 
 from feelies.core.events import Side
-from feelies.harness.backtest_report import compute_parity_hash
+from feelies.harness.backtest_report import compute_economic_trade_hash, compute_parity_hash
 from feelies.storage.trade_journal import TradeRecord
 
 _BASE = TradeRecord(
@@ -38,10 +38,16 @@ _BASE = TradeRecord(
 )
 
 
+def _journal(record: TradeRecord) -> SimpleNamespace:
+    return SimpleNamespace(trade_journal=SimpleNamespace(query=lambda: [record]))
+
+
 def _hash(record: TradeRecord) -> str:
-    return compute_parity_hash(
-        SimpleNamespace(trade_journal=SimpleNamespace(query=lambda: [record]))
-    )
+    return compute_parity_hash(_journal(record))
+
+
+def _economic(record: TradeRecord) -> str:
+    return compute_economic_trade_hash(_journal(record))
 
 
 _HASHED_FIELDS: list[tuple[str, object]] = [
@@ -133,6 +139,15 @@ def test_every_trade_record_field_is_classified() -> None:
     )
     stale = sorted(classified - declared)
     assert not stale, f"coverage lists name fields TradeRecord no longer has: {stale}"
+
+
+def test_economic_hash_ignores_order_id_and_sees_price() -> None:
+    """The companion hash drops order_id and keeps the fill price."""
+    renamed = replace(_BASE, order_id="o2")
+    repriced = replace(_BASE, fill_price=Decimal("151.00"))
+    assert _economic(renamed) == _economic(_BASE)
+    assert _economic(repriced) != _economic(_BASE)
+    assert _hash(renamed) != _hash(_BASE)
 
 
 def test_hash_is_order_sensitive() -> None:

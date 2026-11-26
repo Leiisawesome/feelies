@@ -75,15 +75,20 @@ def git(*args: str) -> str:
 
 
 def tools_fingerprint() -> dict:
-    """Fingerprint the frozen oracle (``tools/exec/``) that produced a capture.
+    """Fingerprint the code that builds a capture: baseline.py alone (D-212).
 
     X0 D2: a capture records the tool's fingerprint so ``compare`` can warn when
     two captures were taken by different tool versions -- "nothing moved" over a
     shrunken constant set (the documented 43 -> 62 blind spot) is not evidence
     that anything held.
+
+    The capture runs no other ``tools/exec`` file, so adding a tool there does
+    not move the fingerprint (F-P49-1). test_capture_fingerprint.py fails if
+    baseline.py imports anything outside the standard library.
+    ``tools/arch/measure.py``, which fills the evidence block, is not covered.
     """
     h = hashlib.sha256()
-    files = sorted(EXEC_TOOLS.rglob("*.py"))
+    files = [EXEC_TOOLS / "baseline.py"]
     for p in files:
         h.update(p.relative_to(EXEC_TOOLS).as_posix().encode("utf-8") + b"\0")
         h.update(p.read_bytes() + b"\0")

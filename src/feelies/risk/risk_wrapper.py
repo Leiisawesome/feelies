@@ -24,6 +24,7 @@ from decimal import Decimal
 from typing import Callable, Protocol
 
 from feelies.core.alpha_risk_budget import AlphaRiskBudget
+from feelies.core.clock import Clock, SimulatedClock
 from feelies.core.events import (
     OrderRequest,
     RiskAction,
@@ -78,12 +79,15 @@ class AlphaBudgetRiskWrapper:
         strategy_positions: _StrategyPositionStore,
         platform_config: RiskConfig,
         account_equity: Decimal,
+        *,
+        clock: Clock | None = None,
     ) -> None:
         self._inner = inner
         self._registry = registry
         self._strategy_positions = strategy_positions
         self._platform_config = platform_config
         self._account_equity = account_equity
+        self._clock = clock if clock is not None else SimulatedClock(start_ns=0)
         self._alpha_hwm: dict[str, Decimal] = {}
         refresh = getattr(inner, "refresh_high_water_mark", None)
         self._refresh_high_water_mark_hook: Callable[[PositionStore], None] | None = (
@@ -128,7 +132,7 @@ class AlphaBudgetRiskWrapper:
         )
         if abs(strategy_pos.quantity) >= effective_max and not signal_reduces:
             return RiskVerdict(
-                timestamp_ns=signal.timestamp_ns,
+                timestamp_ns=self._clock.now_ns(),
                 correlation_id=signal.correlation_id,
                 sequence=signal.sequence,
                 symbol=signal.symbol,
@@ -143,7 +147,7 @@ class AlphaBudgetRiskWrapper:
         )
         if alpha_exposure >= alpha_max_exposure and not signal_reduces:
             return RiskVerdict(
-                timestamp_ns=signal.timestamp_ns,
+                timestamp_ns=self._clock.now_ns(),
                 correlation_id=signal.correlation_id,
                 sequence=signal.sequence,
                 symbol=signal.symbol,
@@ -199,7 +203,7 @@ class AlphaBudgetRiskWrapper:
         drawdown_pct = float((hwm - current_equity) / hwm * 100)
         if drawdown_pct >= budget.max_drawdown_pct:
             return RiskVerdict(
-                timestamp_ns=signal.timestamp_ns,
+                timestamp_ns=self._clock.now_ns(),
                 correlation_id=signal.correlation_id,
                 sequence=signal.sequence,
                 symbol=signal.symbol,
@@ -233,7 +237,7 @@ class AlphaBudgetRiskWrapper:
                     f"unregistered strategy_id {strategy_id!r}",
                 )
                 return RiskVerdict(
-                    timestamp_ns=order.timestamp_ns,
+                    timestamp_ns=self._clock.now_ns(),
                     correlation_id=order.correlation_id,
                     sequence=order.sequence,
                     symbol=order.symbol,
@@ -259,7 +263,7 @@ class AlphaBudgetRiskWrapper:
             post_fill = abs(strategy_pos.quantity + signed_qty)
             if post_fill > effective_max:
                 return RiskVerdict(
-                    timestamp_ns=order.timestamp_ns,
+                    timestamp_ns=self._clock.now_ns(),
                     correlation_id=order.correlation_id,
                     sequence=order.sequence,
                     symbol=order.symbol,
@@ -277,7 +281,7 @@ class AlphaBudgetRiskWrapper:
             )
             if alpha_exposure >= alpha_max_exposure and not order_reduces:
                 return RiskVerdict(
-                    timestamp_ns=order.timestamp_ns,
+                    timestamp_ns=self._clock.now_ns(),
                     correlation_id=order.correlation_id,
                     sequence=order.sequence,
                     symbol=order.symbol,
