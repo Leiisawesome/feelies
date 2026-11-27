@@ -2146,6 +2146,109 @@ tests/docs 107; and every other field of the baseline capture.
 Mechanism: docs text only; no code path reads these entries.
 END D-257
 
+BEGIN D-258
+D-258 — main event cache primed; push CI on main restored (F-C16-3)
+
+Decided by the operator, 2026-11-26/27 (chat 16; authorised by running each step).
+Evidence: PR #249 merged to main at db472ce765ff0458414c65e791aac834c929dac0
+(2026-11-26T06:41:30Z; gates G1-G5 passed on head d26fd6ea). Push run 45769966144
+attempt 1 failed at "Check event cache" in check and parity oracle: the cache
+feelies-eventcache-APP-2026-03-25_26-v2 existed only under refs/heads/arch/exec and
+refs/pull/249/merge, and main cannot restore another branch's cache.
+Done: one workflow_dispatch of ci.yml on main with allow_fetch=true (run
+45919834948, success; reference battery (real) fetched APP 2026-03-25 and
+2026-03-26 and saved the cache under refs/heads/main, 15624741 bytes); then a rerun
+of the failed jobs of 45769966144 (attempt 2 success; check 964 s; parity oracle
+502 s; both locked APP baseline replays passed).
+Rule: main keeps the event cache in its own scope. A cache-key change needs one
+operator-authorised dispatch on main with allow_fetch=true.
+Findings: F-C16-3 opened and closed by this entry. F-T2-7 and F-T2-10 closed: PR
+#249 merged.
+END D-258
+
+BEGIN D-259
+D-259 — Campaign 14E data split (option C); F-C16-4
+
+Decided by the operator, 2026-11-27 (chat 16). Evidence: censuses C16-5 (cache
+inventory, 340 lines, SHA256
+23ED2F1BDDE46AE98FB3A1151D7E0857E88D9B9B0B03EE8B44F56581610D628B) and C16-6 (APP
+manifests, SHA256 B5A63DA461CF2C608236E31CECB87C8C0CC278E3CE293A3B328B24119117E1B9).
+- Universe: APP, CROX, DIOD, ENSG, MLI, OLN, PCTY, RMBS.
+- In-sample, calibration only: every cached day whose manifest has
+  ingestion_health HEALTHY and event_count > 0. The list is generated from the
+  manifests, never hand-picked.
+- Embargo: 2026-07-23 to 2026-07-31, never used.
+- Out-of-sample, evaluation only: every regular session from 2026-08-03 to
+  2026-10-30 on the exchange calendar; half days kept and tagged.
+- Read barrier: no out-of-sample day is fetched or read until the 14E plan fixes
+  delta, the alpha and configuration set, and the configuration counter N
+  (evaluation.md section 4). The fetch is its own per-run operator authorisation.
+  A fetched day that is not HEALTHY with event_count > 0 is a STOP.
+Reason: every cached day was fetched for earlier work and some were read with the
+engine on; all cached days therefore go in-sample, and the out-of-sample block is
+unseen, later in time and chosen by a date rule.
+Findings: F-C16-4 (APP 2026-03-21, a Saturday: empty placeholder, event_count 0,
+ingestion_health UNKNOWN, 20-byte data file) closed by the in-sample rule. The file
+stays in place.
+END D-259
+
+BEGIN D-260
+D-260 — Campaign 14E state files and branch
+
+Decided by the operator, 2026-11-27 (chat 16).
+- Integration branch: arch/exec. Protected branch: main.
+- Plan: docs/architecture/target/out/phase14e_calibration.md (new).
+- Ledger: docs/architecture/target/out/exec/LEDGER_14E.md (new), used from T-18.
+  Contract version 8 binds T-16 and T-17, so their ledger entries go in LEDGER.md;
+  their plan rows are in the 14E plan.
+- Decisions: this file, one D-id space.
+- Findings: a generated 14E register (T-18), not hand-kept.
+- Contract: .cursor/rules/exec-guardrail.mdc version 9 (T-17) replaces version 8.
+END D-260
+
+BEGIN D-261
+D-261 — Phase 14 cleanup executed (D-255 5a; F-C16-5)
+
+Decided by the operator, 2026-11-27 (chat 16); run by the operator.
+- Worktrees: 7 removed. The 5 with uncommitted changes were archived first as
+  patches under %USERPROFILE%\feelies-probes\cleanup-14e\ (p23g wt-cap 49138 B,
+  wt-g7 51040 B, wt-red 1905 B; p23g2-exec wt-patch 13168 B; wt-head's untracked
+  baseline_pre-P-23g2.json copied).
+- exec/P-99a: tag archive/exec-P-99a (tag object 5f20eb7c188c08b2f7552fd5602332af2865bd28,
+  commit 4846c15a7d448d887291ecd9fcf2d225c8e09514) pushed; the branch deleted.
+- exec/T-1-main: deleted locally and on origin (in main via PR #266).
+- Every exec/* branch merged into arch/exec deleted: 74 on origin, all local.
+- F-C16-5: the four submitted_order_journal-*.jsonl files moved from the event-cache
+  root to %USERPROFILE%\feelies-probes\cleanup-14e\F-C16-5\. Closed.
+Not touched: the operator's claude/* and refine-grok-* branches and stash@{0}.
+Left: 37 orphan folders under .git\worktrees that OneDrive holds read-only (F-C16-6).
+END D-261
+
+BEGIN D-262
+D-262 — Campaign 14E setup decisions; T-16
+
+Decided by the operator, 2026-11-27 (chat 16).
+- Freeze tag 14e-setup-base on arch/exec at T-16's merge commit.
+- Playbook master republished as v1.4 after T-17 (rules 103-129, gated MERGE G1-G5).
+- Cursor Hooks: watch until after T-18.
+- Cursor Bugbot auto-fix: off (operator's dashboard check, 2026-11-27).
+- Tooling review at setup, 2026-11-27: cursor.com/changelog has no entry after
+  2026-11-06; candidates unchanged from chat 15.
+Pre-registered prediction (T-16), against the pre capture:
+Changes: none in the baseline. Files: decisions.md (D-258 to D-262), the 14E plan
+(new), LEDGER_14E.md (new, header only), LEDGER.md (the T-16 entry), two new
+captures.
+Holds: full suite 5523 passed, 0 failed, 44 skipped, 2 xfailed; prepush 5503
+passed, 5 skipped, 60 deselected, 1 xfailed; -n 4 5503; determinism 148;
+parity 64 constants, changed 0; fingerprint
+261f203f547c04adc3faeca4132fc3f5057deed3bcb223ff7304677e39e1ba97, files 1;
+total_files 260; n_modules 209; n_edges 718; public_symbols 641; total_sloc
+51019; n_cycles 1; alphaleak 0; mypy 260 source files; lint-imports 2 kept 0
+broken; ruff format 826 files; universe 1 passed (PYTHONHASHSEED 0);
+tests/docs 107; and every other field of the baseline capture.
+Mechanism: docs text only; no code path reads these entries.
+END D-262
+
 ### D-66 pre-registered prediction
 
 ```
